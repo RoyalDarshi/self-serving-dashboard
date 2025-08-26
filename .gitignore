@@ -1,0 +1,5 @@
+**/node_modules/
+start.sh
+stop.sh
+
+.env
