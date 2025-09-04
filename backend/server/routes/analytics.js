@@ -92,16 +92,35 @@ router.post("/query", async (req, res) => {
                 fact_column: commonCol,
                 dimension_column: commonCol,
               });
+            } else if (dim.table_name === baseFact.table_name) {
+              // Handle same-table dimension without join
+              dimensions.push({
+                ...dim,
+                join_table: dim.table_name,
+                fact_column: dim.column_name,
+                dimension_column: dim.column_name,
+              });
             }
           }
         }
 
         const seenJoinTables = new Set([baseFact.table_name]);
         const uniqueDimensions = [];
+        const dimColumns = new Set();
+
         dimensions.forEach((d) => {
-          if (!seenJoinTables.has(d.join_table || d.table_name)) {
-            seenJoinTables.add(d.join_table || d.table_name);
-            uniqueDimensions.push(d);
+          const table = d.join_table || d.table_name;
+          if (table === baseFact.table_name) {
+            // Same-table dimension: no join needed
+            const col = `"${baseFact.table_name}"."${d.column_name}"`;
+            dimColumns.add(col);
+            uniqueDimensions.push({ ...d, isSameTable: true });
+          } else if (!seenJoinTables.has(table)) {
+            // Different table: add join
+            seenJoinTables.add(table);
+            const col = `"${table}"."${d.column_name}"`;
+            dimColumns.add(col);
+            uniqueDimensions.push({ ...d, isSameTable: false });
           }
         });
 
@@ -111,22 +130,17 @@ router.post("/query", async (req, res) => {
             .json({ error: "No valid dimensions found after deduplication" });
         }
 
-        const dimColumns = new Set();
-        dimSelects = uniqueDimensions
-          .map((d) => {
-            const col = `"${d.join_table || d.table_name}"."${d.column_name}"`;
-            dimColumns.add(col);
-            return col;
-          })
-          .join(", ");
+        dimSelects = [...dimColumns].join(", ");
         groupByClause = [...dimColumns].join(", ");
 
         uniqueDimensions.forEach((d) => {
-          fromClause += ` JOIN "${d.join_table || d.table_name}" ON "${
-            d.join_table || d.table_name
-          }"."${d.dimension_column}" = "${baseFact.table_name}"."${
-            d.fact_column
-          }"`;
+          if (!d.isSameTable) {
+            fromClause += ` JOIN "${d.join_table || d.table_name}" ON "${
+              d.join_table || d.table_name
+            }"."${d.dimension_column}" = "${baseFact.table_name}"."${
+              d.fact_column
+            }"`;
+          }
         });
       }
     } else {
@@ -182,6 +196,14 @@ router.post("/query", async (req, res) => {
               fact_column: commonCol,
               dimension_column: commonCol,
             });
+          } else if (dim.table_name === fact.table_name) {
+            // Handle same-table dimension without join
+            dimensions.push({
+              ...dim,
+              join_table: dim.table_name,
+              fact_column: dim.column_name,
+              dimension_column: dim.column_name,
+            });
           }
         }
       }
@@ -191,10 +213,21 @@ router.post("/query", async (req, res) => {
 
       const seenJoinTables = new Set([fact.table_name]);
       const uniqueDimensions = [];
+      const dimColumns = new Set();
+
       dimensions.forEach((d) => {
-        if (!seenJoinTables.has(d.join_table || d.table_name)) {
-          seenJoinTables.add(d.join_table || d.table_name);
-          uniqueDimensions.push(d);
+        const table = d.join_table || d.table_name;
+        if (table === fact.table_name) {
+          // Same-table dimension: no join needed
+          const col = `"${fact.table_name}"."${d.column_name}"`;
+          dimColumns.add(col);
+          uniqueDimensions.push({ ...d, isSameTable: true });
+        } else if (!seenJoinTables.has(table)) {
+          // Different table: add join
+          seenJoinTables.add(table);
+          const col = `"${table}"."${d.column_name}"`;
+          dimColumns.add(col);
+          uniqueDimensions.push({ ...d, isSameTable: false });
         }
       });
 
@@ -204,24 +237,19 @@ router.post("/query", async (req, res) => {
           .json({ error: "No valid dimensions found after deduplication" });
       }
 
-      const aggFunc = aggregation || "SUM";
+      const aggFunc = aggregation || fact.aggregate_function || "SUM";
       selectClause = `${aggFunc}("${fact.table_name}"."${fact.column_name}") AS value`;
 
-      const dimColumns = new Set();
-      dimSelects = uniqueDimensions
-        .map((d) => {
-          const col = `"${d.join_table || d.table_name}"."${d.column_name}"`;
-          dimColumns.add(col);
-          return col;
-        })
-        .join(", ");
+      dimSelects = [...dimColumns].join(", ");
       groupByClause = [...dimColumns].join(", ");
 
       fromClause = `"${fact.table_name}"`;
       uniqueDimensions.forEach((d) => {
-        fromClause += ` JOIN "${d.join_table || d.table_name}" ON "${
-          d.join_table || d.table_name
-        }"."${d.dimension_column}" = "${fact.table_name}"."${d.fact_column}"`;
+        if (!d.isSameTable) {
+          fromClause += ` JOIN "${d.join_table || d.table_name}" ON "${
+            d.join_table || d.table_name
+          }"."${d.dimension_column}" = "${fact.table_name}"."${d.fact_column}"`;
+        }
       });
     }
 

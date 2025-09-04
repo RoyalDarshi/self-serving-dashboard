@@ -82,6 +82,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
   }, [xAxisDimension, yAxisFact, groupByDimension]);
 
   // Generate chart data
+  // DynamicSemanticChartBuilder.tsx (partial update)
   const generateChartData = useCallback(async () => {
     if (!yAxisFact || !xAxisDimension) {
       setError("Please select a fact for Y-axis and a dimension for X-axis");
@@ -105,10 +106,9 @@ const DynamicSemanticChartBuilder: React.FC = () => {
 
       const res: AggregationResponse = await apiService.runQuery(body);
       if (res.rows && res.sql) {
-        // Normalize chart data
         const normalizedData = res.rows.map((row) => ({
-          name: row[xAxisDimension.column_name], // Use column_name for x-axis
-          [yAxisFact.name]: parseFloat(row.value), // Convert value to number
+          name: row[xAxisDimension.column_name],
+          [yAxisFact.name]: parseFloat(row.value),
           ...(groupByDimension && row[groupByDimension.column_name]
             ? { [groupByDimension.name]: row[groupByDimension.column_name] }
             : {}),
@@ -117,12 +117,19 @@ const DynamicSemanticChartBuilder: React.FC = () => {
         setGeneratedQuery(res.sql);
         setStacked(chartType === "bar" && groupByDimension !== null);
       } else {
-        setError(res.error || "Failed to generate chart data");
+        setError(
+          res.error ||
+            "Failed to generate chart data. Ensure fact-dimension mappings exist or run auto-mapping."
+        );
         setChartData([]);
         setGeneratedQuery("");
       }
     } catch (err) {
-      setError("Failed to generate chart data: " + (err as Error).message);
+      setError(
+        "Failed to generate chart data: " +
+          (err as Error).message +
+          ". Ensure fact-dimension mappings are valid or run auto-mapping."
+      );
       setChartData([]);
       setGeneratedQuery("");
     } finally {
