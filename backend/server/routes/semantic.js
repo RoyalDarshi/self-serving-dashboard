@@ -3,14 +3,13 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { dbPromise } from "../database/sqliteConnection.js";
+import pool from "../database/connection.js";
 
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 
-/**
- * AUTH
- */
+// AUTH
 router.post("/login", async (req, res) => {
   const db = await dbPromise;
   const { username, password } = req.body;
@@ -46,6 +45,7 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ success: false, error: "Failed to login" });
   }
 });
+
 // List all facts
 router.get("/facts", async (req, res) => {
   try {
@@ -76,7 +76,7 @@ router.get("/fact-dimensions", async (req, res) => {
     const db = await dbPromise;
     const mappings = await db.all(`
       SELECT fd.id, f.name AS fact_name, f.table_name AS fact_table, f.column_name AS fact_column,
-             d.name AS dimension_name, d.column_name AS dimension_column,
+             d.name AS dimension_name, d.table_name AS dimension_table, d.column_name AS dimension_column,
              fd.join_table, fd.fact_column, fd.dimension_column
       FROM fact_dimensions fd
       JOIN facts f ON fd.fact_id = f.id
@@ -111,23 +111,27 @@ router.post("/facts", async (req, res) => {
   }
 });
 
-// Add a new dimension
+// Add a new dimension (updated to include table_name)
 router.post("/dimensions", async (req, res) => {
   try {
-    const { name, column_name } = req.body;
+    console.log("Create dimension request body:", req.body);
+    const { name, table_name, column_name } = req.body;
+    if (!table_name) {
+      return res.status(400).json({ error: "table_name is required" });
+    }
     const db = await dbPromise;
     const result = await db.run(
-      "INSERT INTO dimensions (name, column_name) VALUES (?, ?)",
-      [name, column_name]
+      "INSERT INTO dimensions (name, table_name, column_name) VALUES (?, ?, ?)",
+      [name, table_name, column_name]
     );
-    res.json({ id: result.lastID, name, column_name });
+    res.json({ id: result.lastID, name, table_name, column_name });
   } catch (err) {
     console.error("Create dimension error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Add a fact-dimension mapping
+// Add a fact-dimension mapping (manual)
 router.post("/fact-dimensions", async (req, res) => {
   try {
     const { fact_id, dimension_id, join_table, fact_column, dimension_column } =
@@ -149,6 +153,88 @@ router.post("/fact-dimensions", async (req, res) => {
     });
   } catch (err) {
     console.error("Create fact-dimension error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Auto-map facts to dimensions by common columns
+router.post("/auto-map", async (req, res) => {
+  try {
+    const db = await dbPromise;
+
+    // Get all facts and dimensions from metadata
+    const facts = await db.all("SELECT * FROM facts");
+    const dimensions = await db.all("SELECT * FROM dimensions");
+
+    if (facts.length === 0 || dimensions.length === 0) {
+      return res.status(400).json({ error: "No facts or dimensions defined" });
+    }
+
+    const autoMappings = [];
+
+    // For each fact
+    for (const fact of facts) {
+      // Get columns of fact table
+      const factColumnsResult = await pool.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+        [fact.table_name]
+      );
+      const factColumns = factColumnsResult.rows.map((row) => row.column_name);
+
+      // For each dimension
+      for (const dim of dimensions) {
+        // Use dimension's table_name
+        const dimTableColumnsResult = await pool.query(
+          `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+          [dim.table_name]
+        );
+        const dimTableColumns = dimTableColumnsResult.rows.map(
+          (row) => row.column_name
+        );
+
+        // Skip if dimension column not in its table
+        if (!dimTableColumns.includes(dim.column_name)) {
+          console.warn(
+            `Dimension ${dim.name} column ${dim.column_name} not found in table ${dim.table_name}`
+          );
+          continue;
+        }
+
+        // Find common columns between fact table and dimension table
+        const commonColumns = factColumns.filter((col) =>
+          dimTableColumns.includes(col)
+        );
+
+        for (const commonCol of commonColumns) {
+          // Check if mapping already exists
+          const existing = await db.get(
+            `SELECT id FROM fact_dimensions WHERE fact_id = ? AND dimension_id = ? AND join_table = ? AND fact_column = ? AND dimension_column = ?`,
+            [fact.id, dim.id, dim.table_name, commonCol, commonCol]
+          );
+          if (existing) continue;
+
+          // Insert auto-mapping
+          const result = await db.run(
+            `INSERT INTO fact_dimensions (fact_id, dimension_id, join_table, fact_column, dimension_column) VALUES (?, ?, ?, ?, ?)`,
+            [fact.id, dim.id, dim.table_name, commonCol, commonCol]
+          );
+          autoMappings.push({
+            id: result.lastID,
+            fact_id: fact.id,
+            fact_name: fact.name,
+            dimension_id: dim.id,
+            dimension_name: dim.name,
+            join_table: dim.table_name,
+            fact_column: commonCol,
+            dimension_column: commonCol,
+          });
+        }
+      }
+    }
+
+    res.json({ success: true, autoMappings });
+  } catch (err) {
+    console.error("Auto-map error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -180,6 +266,5 @@ router.post("/kpis", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 
 export default router;

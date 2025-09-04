@@ -21,6 +21,41 @@ async function apiFetch(path: string, method = "GET", body?: any) {
   }
 }
 
+interface Fact {
+  id: number;
+  name: string;
+  table_name: string;
+  column_name: string;
+  aggregate_function: string;
+}
+
+interface Dimension {
+  id: number;
+  name: string;
+  table_name: string; // Added table_name
+  column_name: string;
+}
+
+interface AggregationResponse {
+  sql?: string;
+  rows?: { [key: string]: number | string }[];
+  error?: string;
+}
+
+interface AutoMapResponse {
+  success: boolean;
+  autoMappings: {
+    id: number;
+    fact_id: number;
+    fact_name: string;
+    dimension_id: number;
+    dimension_name: string;
+    join_table: string;
+    fact_column: string;
+    dimension_column: string;
+  }[];
+}
+
 export const apiService = {
   /**
    * AUTH
@@ -38,7 +73,7 @@ export const apiService = {
 
   getSchemas: () => apiFetch("/database/schemas"),
 
-  getFacts: () => apiFetch("/semantic/facts"),
+  getFacts: (): Promise<Fact[]> => apiFetch("/semantic/facts"),
   createFact: (body: {
     name: string;
     table_name: string;
@@ -46,9 +81,12 @@ export const apiService = {
     aggregate_function: string;
   }) => apiFetch("/semantic/facts", "POST", body),
 
-  getDimensions: () => apiFetch("/semantic/dimensions"),
-  createDimension: (body: { name: string; column_name: string }) =>
-    apiFetch("/semantic/dimensions", "POST", body),
+  getDimensions: (): Promise<Dimension[]> => apiFetch("/semantic/dimensions"),
+  createDimension: (body: {
+    name: string;
+    table_name: string; // Added table_name
+    column_name: string;
+  }) => apiFetch("/semantic/dimensions", "POST", body),
 
   getFactDimensions: () => apiFetch("/semantic/fact-dimensions"),
   createFactDimension: (body: {
@@ -65,9 +103,14 @@ export const apiService = {
     expression: string;
     description?: string;
   }) => apiFetch("/semantic/kpis", "POST", body),
+
   runQuery: (body: {
     factId: number;
     dimensionIds: number[];
     aggregation: string;
-  }) => apiFetch("/analytics/query", "POST", body),
+  }): Promise<AggregationResponse> =>
+    apiFetch("/analytics/query", "POST", body),
+
+  runAutoMap: (): Promise<AutoMapResponse> =>
+    apiFetch("/semantic/auto-map", "POST"),
 };

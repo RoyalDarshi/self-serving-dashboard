@@ -18,49 +18,52 @@ export async function initializeDatabase() {
   // Facts metadata
   await db.run(`
     CREATE TABLE IF NOT EXISTS facts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  table_name TEXT NOT NULL,
-  column_name TEXT NOT NULL,
-  aggregate_function TEXT NOT NULL CHECK (aggregate_function IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX'))
-);
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      table_name TEXT NOT NULL,
+      column_name TEXT NOT NULL,
+      aggregate_function TEXT NOT NULL CHECK (aggregate_function IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX'))
+    )
   `);
 
-  // Dimensions metadata (updated)
+  // Dimensions metadata (updated to include table_name)
   await db.run(`
-  CREATE TABLE IF NOT EXISTS dimensions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  table_name TEXT NOT NULL,
-  column_name TEXT NOT NULL
-);
-`);
+    CREATE TABLE IF NOT EXISTS dimensions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      table_name TEXT NOT NULL,  -- Added table_name
+      column_name TEXT NOT NULL
+    )
+  `);
 
-  await db.run(`CREATE TABLE IF NOT EXISTS fact_dimensions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  fact_id INTEGER NOT NULL,
-  dimension_id INTEGER NOT NULL,
-  join_table TEXT NOT NULL,
-  fact_column TEXT NOT NULL,
-  dimension_column TEXT NOT NULL,
-  FOREIGN KEY (fact_id) REFERENCES facts(id),
-  FOREIGN KEY (dimension_id) REFERENCES dimensions(id)
-);`);
+  // Fact-Dimensions mapping
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS fact_dimensions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fact_id INTEGER NOT NULL,
+      dimension_id INTEGER NOT NULL,
+      join_table TEXT NOT NULL,
+      fact_column TEXT NOT NULL,
+      dimension_column TEXT NOT NULL,
+      FOREIGN KEY (fact_id) REFERENCES facts(id),
+      FOREIGN KEY (dimension_id) REFERENCES dimensions(id)
+    )
+  `);
 
   // KPIs metadata
   await db.run(`
-  CREATE TABLE IF NOT EXISTS kpis (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,          
-  expression TEXT NOT NULL,
-  description TEXT,
-  created_by INTEGER,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (created_by) REFERENCES users(id)
-);
-`);
+    CREATE TABLE IF NOT EXISTS kpis (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,          
+      expression TEXT NOT NULL,
+      description TEXT,
+      created_by INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
 
-  // Dashboards (you already use this in dashboard.js)
+  // Dashboards
   await db.run(`
     CREATE TABLE IF NOT EXISTS dashboards (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,9 +82,7 @@ export async function initializeDatabase() {
     const hash = await bcrypt.hash("admin", 10);
     await db.run(
       `INSERT INTO users (username, password, role) VALUES (?, ?, ?)`,
-      "admin",
-      hash,
-      "admin"
+      ["admin", hash, "admin"]
     );
     console.log("Seeded default admin user: admin / admin");
   }
