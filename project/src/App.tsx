@@ -5,6 +5,9 @@ import Sidebar from "./components/Sidebar";
 import CreateUser from "./components/CreateUser";
 import AdminPanel from "./components/AdminPanel";
 import Dashboard from "./components/Dashboard";
+import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
+import DragDropProvider from "./components/DragDropProvider";
+import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<{ role: string } | null>(null);
@@ -63,7 +66,18 @@ const App: React.FC = () => {
             {activeTab === "admin-panel" && user.role === "admin" && (
               <AdminPanel />
             )}
-            {activeTab === "dashboard" && <Dashboard />}
+            {activeTab === "dashboard" && (
+              <DragDropProvider>
+                <div className="flex gap-4 p-4 h-screen">
+                  <div className="w-1/4">
+                    <DynamicSemanticPanel />
+                  </div>
+                  <div className="w-3/4">
+                    <DynamicSemanticChartBuilder />
+                  </div>
+                </div>
+              </DragDropProvider>
+            )}
           </div>
         </div>
       ) : (

@@ -1,7 +1,6 @@
-// services/api.ts
-const API_BASE = "http://localhost:3001/api"; // adjust if your backend runs elsewhere
+// src/services/api.ts
+const API_BASE = "http://localhost:3001/api";
 
-// Generic helper
 async function apiFetch(path: string, method = "GET", body?: any) {
   const token = localStorage.getItem("token");
   const headers: Record<string, string> = {
@@ -37,61 +36,38 @@ export const apiService = {
   createUser: (username: string, password: string, role: string) =>
     apiFetch("/semantic/users", "POST", { username, password, role }),
 
-  /**
-   * SOURCE DB SCHEMA
-   */
   getSchemas: () => apiFetch("/database/schemas"),
 
-  /**
-   * FACTS
-   */
+  getFacts: () => apiFetch("/semantic/facts"),
   createFact: (body: {
     name: string;
     table_name: string;
     column_name: string;
-    aggregation: string;
+    aggregate_function: string;
   }) => apiFetch("/semantic/facts", "POST", body),
 
-  getFacts: () => apiFetch("/semantic/facts"),
-
-  /**
-   * DIMENSIONS
-   */
-  createDimension: (body: {
-    name: string;
-    table_name: string;
-    column_name: string;
-  }) => apiFetch("/semantic/dimensions", "POST", body),
-
   getDimensions: () => apiFetch("/semantic/dimensions"),
+  createDimension: (body: { name: string; column_name: string }) =>
+    apiFetch("/semantic/dimensions", "POST", body),
 
-  /**
-   * KPIs
-   */
-  createKPI: (body: {
-    name: string;
-    sql_query: string;
-    fact_id?: number;
-    dimension_id?: number;
-  }) => apiFetch("/semantic/kpis", "POST", body),
+  getFactDimensions: () => apiFetch("/semantic/fact-dimensions"),
+  createFactDimension: (body: {
+    fact_id: number;
+    dimension_id: number;
+    join_table: string;
+    fact_column: string;
+    dimension_column: string;
+  }) => apiFetch("/semantic/fact-dimensions", "POST", body),
 
   getKpis: () => apiFetch("/semantic/kpis"),
-
-  /**
-   * ANALYTICS
-   */
+  createKPI: (body: {
+    name: string;
+    expression: string;
+    description?: string;
+  }) => apiFetch("/semantic/kpis", "POST", body),
   runQuery: (body: {
     factId: number;
-    dimensionId?: number;
-    filters?: any[];
-    limit?: number;
+    dimensionIds: number[];
+    aggregation: string;
   }) => apiFetch("/analytics/query", "POST", body),
-
-  /**
-   * DASHBOARDS (save/load layouts)
-   */
-  saveDashboard: (dashboardName: string, layout: any) =>
-    apiFetch("/dashboard/save", "POST", { dashboardName, layout }),
-
-  listDashboards: () => apiFetch("/dashboard/list"),
 };

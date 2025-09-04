@@ -1,16 +1,23 @@
-import React from 'react';
-import { useDrag } from 'react-dnd';
-import { Column } from '../types';
-import { GripVertical } from 'lucide-react';
+import React from "react";
+import { useDrag } from "react-dnd";
+import { Fact, Dimension } from "../services/api";
+import { GripVertical } from "lucide-react";
 
 interface DraggableColumnProps {
-  column: Column;
+  column: Fact | Dimension;
 }
 
 const DraggableColumn: React.FC<DraggableColumnProps> = ({ column }) => {
+  const isFact = "table_name" in column;
+  const type = isFact ? "fact" : "dimension";
+  const label = column.name;
+  const typeDisplay = isFact
+    ? (column as Fact).aggregate_function || "number"
+    : "string";
+
   const [{ isDragging }, drag] = useDrag(() => ({
-    type: 'column',
-    item: { column },
+    type,
+    item: { [type]: column },
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
@@ -25,8 +32,8 @@ const DraggableColumn: React.FC<DraggableColumnProps> = ({ column }) => {
     >
       <GripVertical className="h-4 w-4 text-slate-400" />
       <div>
-        <div className="font-medium text-slate-900">{column.label}</div>
-        <div className="text-xs text-slate-500 capitalize">{column.type}</div>
+        <div className="font-medium text-slate-900">{label}</div>
+        <div className="text-xs text-slate-500 capitalize">{typeDisplay}</div>
       </div>
     </div>
   );
