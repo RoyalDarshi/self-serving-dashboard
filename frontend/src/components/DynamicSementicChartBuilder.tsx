@@ -89,6 +89,13 @@ const DynamicSemanticChartBuilder: React.FC = () => {
     setError(null);
   }, [xAxisDimension, yAxisFact, groupByDimension]);
 
+  // Automatically generate chart when selections change
+  useEffect(() => {
+    if (xAxisDimension && yAxisFact) {
+      generateChartData();
+    }
+  }, [xAxisDimension, yAxisFact, groupByDimension, aggregationType, chartType]);
+
   // Generate chart data
   const generateChartData = useCallback(async () => {
     if (!yAxisFact || !xAxisDimension) {
@@ -349,17 +356,8 @@ const DynamicSemanticChartBuilder: React.FC = () => {
         }
       />
 
-      {/* Generate Button */}
-      <div className="flex items-center space-x-4 mb-4">
-        <button
-          onClick={generateChartData}
-          disabled={!xAxisDimension || !yAxisFact || loading}
-          className="flex items-center space-x-1 px-4 py-2 bg-blue-500 text-white rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          <span>Generate Chart</span>
-        </button>
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-      </div>
+      {/* Error Display */}
+      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
       {/* Download Buttons */}
       {chartData.length > 0 && (
