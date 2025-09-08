@@ -32,6 +32,12 @@ interface AggregationResponse {
   error?: string;
 }
 type AggregationType = "SUM" | "AVG" | "COUNT" | "MAX" | "MIN";
+interface Column {
+  key: string;
+  label: string;
+  type: "number" | "string";
+  [key: string]: any;
+}
 
 const DynamicSemanticChartBuilder: React.FC = () => {
   // State
@@ -45,6 +51,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
   const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
   const [aggregationType, setAggregationType] =
     useState<AggregationType>("SUM");
+  const [yAxisColumns, setYAxisColumns] = useState<Column[]>([]);
   const [chartData, setChartData] = useState<ChartDataItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,12 +84,12 @@ const DynamicSemanticChartBuilder: React.FC = () => {
   // Reset chart data when selections change
   useEffect(() => {
     setChartData([]);
+    setYAxisColumns([]);
     setGeneratedQuery("");
     setError(null);
   }, [xAxisDimension, yAxisFact, groupByDimension]);
 
   // Generate chart data
-  // DynamicSemanticChartBuilder.tsx (partial update)
   const generateChartData = useCallback(async () => {
     if (!yAxisFact || !xAxisDimension) {
       setError("Please select a fact for Y-axis and a dimension for X-axis");
@@ -106,14 +113,54 @@ const DynamicSemanticChartBuilder: React.FC = () => {
 
       const res: AggregationResponse = await apiService.runQuery(body);
       if (res.rows && res.sql) {
-        const normalizedData = res.rows.map((row) => ({
-          name: row[xAxisDimension.column_name],
-          [yAxisFact.name]: parseFloat(row.value),
-          ...(groupByDimension && row[groupByDimension.column_name]
-            ? { [groupByDimension.name]: row[groupByDimension.column_name] }
-            : {}),
-        }));
+        const xKey = xAxisDimension.column_name;
+        const gKey = groupByDimension?.column_name;
+
+        const dataMap = new Map<string, ChartDataItem>();
+        const groupSet = new Set<string>();
+
+        res.rows.forEach((row) => {
+          const xValue = (row[xKey] || "").toString().trim();
+          const gValue = gKey ? (row[gKey] || "").toString().trim() : null;
+          const val = parseFloat(row.value);
+
+          if (isNaN(val)) return; // Skip invalid values
+
+          if (!dataMap.has(xValue)) {
+            dataMap.set(xValue, { name: xValue });
+          }
+
+          const item = dataMap.get(xValue)!;
+
+          if (gValue) {
+            item[gValue] = val;
+            groupSet.add(gValue);
+          } else {
+            item[yAxisFact.name] = val;
+          }
+        });
+
+        const normalizedData = Array.from(dataMap.values());
+
+        const newYAxisColumns: Column[] = groupByDimension
+          ? Array.from(groupSet).map((g) => ({
+              key: g,
+              label: g,
+              type: "number",
+            }))
+          : yAxisFact
+          ? [
+              {
+                ...yAxisFact,
+                key: yAxisFact.name,
+                label: yAxisFact.name,
+                type: "number",
+              },
+            ]
+          : [];
+
         setChartData(normalizedData);
+        setYAxisColumns(newYAxisColumns);
         setGeneratedQuery(res.sql);
         setStacked(chartType === "bar" && groupByDimension !== null);
       } else {
@@ -122,6 +169,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
             "Failed to generate chart data. Ensure fact-dimension mappings exist or run auto-mapping."
         );
         setChartData([]);
+        setYAxisColumns([]);
         setGeneratedQuery("");
       }
     } catch (err) {
@@ -131,6 +179,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
           ". Ensure fact-dimension mappings are valid or run auto-mapping."
       );
       setChartData([]);
+      setYAxisColumns([]);
       setGeneratedQuery("");
     } finally {
       setLoading(false);
@@ -172,18 +221,13 @@ const DynamicSemanticChartBuilder: React.FC = () => {
   // Download table as CSV
   const handleDownloadTable = () => {
     if (chartData.length === 0) return;
-    const headers = [
-      "name",
-      yAxisFact?.name || "value",
-      groupByDimension?.name || "",
-    ].filter(Boolean);
+    const headers = ["name", ...yAxisColumns.map((col) => col.key)];
     const csvRows = [headers.join(",")];
     chartData.forEach((row) => {
       const values = [
         row.name,
-        row[yAxisFact?.name || "value"],
-        groupByDimension ? row[groupByDimension.name] : "",
-      ].filter(Boolean);
+        ...yAxisColumns.map((col) => row[col.key] ?? ""),
+      ];
       csvRows.push(values.join(","));
     });
     const csv = csvRows.join("\n");
@@ -292,7 +336,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
         setStacked={setStacked}
         activeView={activeView}
         setActiveView={setActiveView}
-        yAxisCount={yAxisFact ? 1 : 0}
+        yAxisCount={yAxisColumns.length}
         groupByColumn={
           groupByDimension
             ? {
@@ -357,18 +401,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
                 }
               : null
           }
-          yAxisColumns={
-            yAxisFact
-              ? [
-                  {
-                    ...yAxisFact,
-                    key: yAxisFact.name,
-                    label: yAxisFact.name,
-                    type: "number",
-                  },
-                ]
-              : []
-          }
+          yAxisColumns={yAxisColumns}
           groupByColumn={
             groupByDimension
               ? {
@@ -399,18 +432,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
                   }
                 : null
             }
-            yAxisColumns={
-              yAxisFact
-                ? [
-                    {
-                      ...yAxisFact,
-                      key: yAxisFact.name,
-                      label: yAxisFact.name,
-                      type: "number",
-                    },
-                  ]
-                : []
-            }
+            yAxisColumns={yAxisColumns}
             groupByColumn={
               groupByDimension
                 ? {

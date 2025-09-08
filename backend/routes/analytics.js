@@ -41,7 +41,7 @@ router.post("/query", async (req, res) => {
           .json({ error: "No facts available to build KPI" });
       }
       const baseFact = facts[0];
-      fromClause = `"${baseFact.table_name}"`;
+      fromClause = `"${baseFact.table_name}"`; // ✅ always include base table
 
       if (uniqueDimensionIds.length > 0) {
         let dimensions = await db.all(
@@ -54,8 +54,8 @@ router.post("/query", async (req, res) => {
           [baseFact.id, ...uniqueDimensionIds]
         );
 
+        // Auto-detect joins if no mapping found
         if (dimensions.length === 0) {
-          console.log("No mappings found; attempting auto-detection");
           const factColumnsResult = await pool.query(
             `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
             [baseFact.table_name]
@@ -64,7 +64,6 @@ router.post("/query", async (req, res) => {
             (row) => row.column_name
           );
 
-          dimensions = [];
           for (const dimId of uniqueDimensionIds) {
             const dim = await db.get("SELECT * FROM dimensions WHERE id = ?", [
               dimId,
@@ -84,6 +83,7 @@ router.post("/query", async (req, res) => {
             const commonColumns = factColumns.filter((col) =>
               dimTableColumns.includes(col)
             );
+
             if (commonColumns.length > 0) {
               const commonCol = commonColumns[0];
               dimensions.push({
@@ -93,7 +93,6 @@ router.post("/query", async (req, res) => {
                 dimension_column: commonCol,
               });
             } else if (dim.table_name === baseFact.table_name) {
-              // Handle same-table dimension without join
               dimensions.push({
                 ...dim,
                 join_table: dim.table_name,
@@ -104,44 +103,31 @@ router.post("/query", async (req, res) => {
           }
         }
 
-        const seenJoinTables = new Set([baseFact.table_name]);
-        const uniqueDimensions = [];
-        const dimColumns = new Set();
+        const seenJoins = new Set();
+        const dimColumns = [];
 
         dimensions.forEach((d) => {
           const table = d.join_table || d.table_name;
-          if (table === baseFact.table_name) {
-            // Same-table dimension: no join needed
-            const col = `"${baseFact.table_name}"."${d.column_name}"`;
-            dimColumns.add(col);
-            uniqueDimensions.push({ ...d, isSameTable: true });
-          } else if (!seenJoinTables.has(table)) {
-            // Different table: add join
-            seenJoinTables.add(table);
-            const col = `"${table}"."${d.column_name}"`;
-            dimColumns.add(col);
-            uniqueDimensions.push({ ...d, isSameTable: false });
+
+          // ✅ Always alias dimension columns to just column_name
+          const col = `"${table}"."${d.column_name}" AS "${d.column_name}"`;
+          dimColumns.push(col);
+
+          if (
+            table !== baseFact.table_name &&
+            !seenJoins.has(`${table}.${d.column_name}`)
+          ) {
+            seenJoins.add(`${table}.${d.column_name}`);
+            fromClause += ` JOIN "${table}" ON "${table}"."${d.dimension_column}" = "${baseFact.table_name}"."${d.fact_column}"`;
           }
         });
 
-        if (uniqueDimensions.length === 0) {
-          return res
-            .status(400)
-            .json({ error: "No valid dimensions found after deduplication" });
+        if (dimColumns.length > 0) {
+          dimSelects = dimColumns.join(", ");
+          groupByClause = dimensions
+            .map((d) => `"${d.join_table || d.table_name}"."${d.column_name}"`)
+            .join(", ");
         }
-
-        dimSelects = [...dimColumns].join(", ");
-        groupByClause = [...dimColumns].join(", ");
-
-        uniqueDimensions.forEach((d) => {
-          if (!d.isSameTable) {
-            fromClause += ` JOIN "${d.join_table || d.table_name}" ON "${
-              d.join_table || d.table_name
-            }"."${d.dimension_column}" = "${baseFact.table_name}"."${
-              d.fact_column
-            }"`;
-          }
-        });
       }
     } else {
       // --- FACT FLOW ---
@@ -158,8 +144,8 @@ router.post("/query", async (req, res) => {
         [fact.id, ...uniqueDimensionIds]
       );
 
+      // Auto-detect joins if no mapping found
       if (dimensions.length === 0) {
-        console.log("No mappings found; attempting auto-detection");
         const factColumnsResult = await pool.query(
           `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
           [fact.table_name]
@@ -168,7 +154,6 @@ router.post("/query", async (req, res) => {
           (row) => row.column_name
         );
 
-        dimensions = [];
         for (const dimId of uniqueDimensionIds) {
           const dim = await db.get("SELECT * FROM dimensions WHERE id = ?", [
             dimId,
@@ -188,6 +173,7 @@ router.post("/query", async (req, res) => {
           const commonColumns = factColumns.filter((col) =>
             dimTableColumns.includes(col)
           );
+
           if (commonColumns.length > 0) {
             const commonCol = commonColumns[0];
             dimensions.push({
@@ -197,7 +183,6 @@ router.post("/query", async (req, res) => {
               dimension_column: commonCol,
             });
           } else if (dim.table_name === fact.table_name) {
-            // Handle same-table dimension without join
             dimensions.push({
               ...dim,
               join_table: dim.table_name,
@@ -211,46 +196,35 @@ router.post("/query", async (req, res) => {
       if (dimensions.length === 0)
         return res.status(400).json({ error: "No valid dimensions found" });
 
-      const seenJoinTables = new Set([fact.table_name]);
-      const uniqueDimensions = [];
-      const dimColumns = new Set();
+      fromClause = `"${fact.table_name}"`; // ✅ always include base table
+      const seenJoins = new Set();
+      const dimColumns = [];
 
       dimensions.forEach((d) => {
         const table = d.join_table || d.table_name;
-        if (table === fact.table_name) {
-          // Same-table dimension: no join needed
-          const col = `"${fact.table_name}"."${d.column_name}"`;
-          dimColumns.add(col);
-          uniqueDimensions.push({ ...d, isSameTable: true });
-        } else if (!seenJoinTables.has(table)) {
-          // Different table: add join
-          seenJoinTables.add(table);
-          const col = `"${table}"."${d.column_name}"`;
-          dimColumns.add(col);
-          uniqueDimensions.push({ ...d, isSameTable: false });
+
+        // ✅ Always alias dimension columns to just column_name
+        const col = `"${table}"."${d.column_name}" AS "${d.column_name}"`;
+        dimColumns.push(col);
+
+        if (
+          table !== fact.table_name &&
+          !seenJoins.has(`${table}.${d.column_name}`)
+        ) {
+          seenJoins.add(`${table}.${d.column_name}`);
+          fromClause += ` JOIN "${table}" ON "${table}"."${d.dimension_column}" = "${fact.table_name}"."${d.fact_column}"`;
         }
       });
-
-      if (uniqueDimensions.length === 0) {
-        return res
-          .status(400)
-          .json({ error: "No valid dimensions found after deduplication" });
-      }
 
       const aggFunc = aggregation || fact.aggregate_function || "SUM";
       selectClause = `${aggFunc}("${fact.table_name}"."${fact.column_name}") AS value`;
 
-      dimSelects = [...dimColumns].join(", ");
-      groupByClause = [...dimColumns].join(", ");
-
-      fromClause = `"${fact.table_name}"`;
-      uniqueDimensions.forEach((d) => {
-        if (!d.isSameTable) {
-          fromClause += ` JOIN "${d.join_table || d.table_name}" ON "${
-            d.join_table || d.table_name
-          }"."${d.dimension_column}" = "${fact.table_name}"."${d.fact_column}"`;
-        }
-      });
+      if (dimColumns.length > 0) {
+        dimSelects = dimColumns.join(", ");
+        groupByClause = dimensions
+          .map((d) => `"${d.join_table || d.table_name}"."${d.column_name}"`)
+          .join(", ");
+      }
     }
 
     const sql = `
