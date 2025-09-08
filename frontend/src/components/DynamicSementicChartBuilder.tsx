@@ -1,3 +1,4 @@
+// DynamicSemanticChartBuilder.tsx (No changes needed, but providing full code for completeness as requested)
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import html2canvas from "html2canvas";
 import { v4 as uuidv4 } from "uuid";

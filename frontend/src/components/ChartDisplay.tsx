@@ -1,3 +1,4 @@
+// ChartDisplay.tsx (Updated with unified rendering, improved series naming, removed uniqueGroupKeys, industry-level comments and structure)
 import React from "react";
 import {
   ResponsiveContainer,
@@ -27,7 +28,6 @@ interface ChartDisplayProps {
   xAxisColumn: DatabaseColumn | null;
   yAxisColumns: DatabaseColumn[];
   groupByColumn: DatabaseColumn | null;
-  uniqueGroupKeys?: string[];
   aggregationType: AggregationType;
   loading: boolean;
   error: string | null;
@@ -47,6 +47,11 @@ const COLORS = [
   "#84CC16",
 ];
 
+/**
+ * Normalizes column type to 'string' or 'number'.
+ * @param type - The raw type string.
+ * @returns Normalized type.
+ */
 const normalizeType = (type: string): "string" | "number" => {
   const lower = type.toLowerCase();
   if (lower.includes("char") || lower === "text") return "string";
@@ -67,7 +72,6 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   xAxisColumn,
   yAxisColumns,
   groupByColumn,
-  uniqueGroupKeys = [],
   aggregationType,
   loading,
   error,
@@ -75,15 +79,31 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   chartContainerRef,
   sortOrder = null, // Default to null (no sorting)
 }) => {
-  const isGroupingValid =
-    !!groupByColumn &&
-    !!xAxisColumn &&
-    groupByColumn.key !== xAxisColumn.key &&
-    uniqueGroupKeys.length > 0;
+  const isGrouped =
+    !!groupByColumn && !!xAxisColumn && groupByColumn.key !== xAxisColumn.key;
+
+  /**
+   * Gets the display name for a series based on whether it's grouped or not.
+   * @param col - The column object.
+   * @returns Formatted series name.
+   */
+  const getSeriesName = (col: DatabaseColumn): string => {
+    if (isGrouped) {
+      // For grouped, use the group value directly (e.g., "USA")
+      return col.label || col.key;
+    } else {
+      // For non-grouped, use aggregation prefix (e.g., "SUM of Sales")
+      // Assuming always numeric in this context, but keeping isStr for robustness
+      const isStr = normalizeType(col.type) === "string";
+      return isStr
+        ? `Count of ${col.label || col.key}`
+        : `${aggregationType} of ${col.label || col.key}`;
+    }
+  };
 
   // Process data with optional sorting
   const processedChartData = React.useMemo(() => {
-    // If no sortOrder is specified, return original data
+    // If no sortOrder is specified or no Y columns, return original data
     if (!sortOrder || yAxisColumns.length === 0) {
       return chartData;
     }
@@ -94,20 +114,16 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
       const aValue = a[key] || 0;
       const bValue = b[key] || 0;
 
-      // Handle non-numeric values
+      // Handle non-numeric values gracefully
       if (typeof aValue !== "number" || typeof bValue !== "number") {
         return 0;
       }
 
-      if (sortOrder === "asc") {
-        return aValue - bValue; // Ascending order
-      } else {
-        return bValue - aValue; // Descending order
-      }
+      return sortOrder === "asc" ? aValue - bValue : bValue - aValue;
     });
   }, [chartData, sortOrder, yAxisColumns]);
 
-  // 1) Loading
+  // 1) Loading state
   if (loading) {
     return (
       <div className="h-96 flex flex-col items-center justify-center">
@@ -122,7 +138,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
     );
   }
 
-  // 2) Error
+  // 2) Error state
   if (error) {
     return (
       <div className="h-96 flex flex-col items-center justify-center bg-red-50 rounded-lg">
@@ -150,7 +166,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
     );
   }
 
-  // 3) Empty placeholder
+  // 3) Empty placeholder state
   if (!xAxisColumn || yAxisColumns.length === 0 || chartData.length === 0) {
     return (
       <div
@@ -158,10 +174,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
                       bg-gradient-to-br from-blue-50 to-indigo-50 
                       rounded-lg border border-dashed border-blue-200"
       >
-        <div
-          className="bg
-        -white p-6 rounded-2xl shadow-sm border border-blue-100"
-        >
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-100">
           <div className="flex justify-center mb-4">
             <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-3 rounded-full">
               <BarChart3 className="h-8 w-8 text-white" />
@@ -191,37 +204,18 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   }
 
   const commonProps = {
-    data: processedChartData, // Use the processed data (sorted or unsorted)
+    data: processedChartData,
     margin: { top: 20, right: 30, left: 20, bottom: 5 },
   };
 
+  /**
+   * Renders the appropriate chart based on chartType.
+   * Unified handling for grouped and non-grouped series.
+   * @returns The chart component.
+   */
   const renderChart = () => {
-    // ① BAR
+    // ① BAR Chart
     if (chartType === "bar") {
-      if (isGroupingValid) {
-        return (
-          <BarChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis
-              dataKey="name"
-              stroke="#6b7280"
-              interval="preserveStartEnd"
-            />
-            <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
-            <Tooltip formatter={formatNumericValue} />
-            <Legend />
-            {uniqueGroupKeys.map((gk, i) => (
-              <Bar
-                key={gk}
-                dataKey={gk}
-                name={gk}
-                stackId="a"
-                fill={COLORS[i % COLORS.length]}
-              />
-            ))}
-          </BarChart>
-        );
-      }
       return (
         <BarChart {...commonProps}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -229,49 +223,21 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
           <Tooltip formatter={formatNumericValue} />
           <Legend />
-          {yAxisColumns.map((col, i) => {
-            const isStr = normalizeType(col.type) === "string";
-            return (
-              <Bar
-                key={col.key}
-                dataKey={col.key}
-                name={
-                  isStr
-                    ? `Count of ${col.label || col.key}`
-                    : `${aggregationType} of ${col.label || col.key}`
-                }
-                fill={COLORS[i % COLORS.length]}
-                stackId={stacked ? "a" : undefined}
-              />
-            );
-          })}
+          {yAxisColumns.map((col, i) => (
+            <Bar
+              key={col.key}
+              dataKey={col.key}
+              name={getSeriesName(col)}
+              fill={COLORS[i % COLORS.length]}
+              stackId={stacked ? "a" : undefined}
+            />
+          ))}
         </BarChart>
       );
     }
 
-    // ② LINE
+    // ② LINE Chart
     if (chartType === "line") {
-      if (isGroupingValid) {
-        return (
-          <LineChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="name" stroke="#6b7280" />
-            <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
-            <Tooltip formatter={formatNumericValue} />
-            <Legend />
-            {uniqueGroupKeys.map((gk, i) => (
-              <Line
-                key={gk}
-                dataKey={gk}
-                name={gk}
-                stroke={COLORS[i % COLORS.length]}
-                strokeWidth={2}
-                dot
-              />
-            ))}
-          </LineChart>
-        );
-      }
       return (
         <LineChart {...commonProps}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -279,51 +245,22 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
           <Tooltip formatter={formatNumericValue} />
           <Legend />
-          {yAxisColumns.map((col, i) => {
-            const isStr = normalizeType(col.type) === "string";
-            return (
-              <Line
-                key={col.key}
-                dataKey={col.key}
-                name={
-                  isStr
-                    ? `Count of ${col.label || col.key}`
-                    : `${aggregationType} of ${col.label || col.key}`
-                }
-                stroke={COLORS[i % COLORS.length]}
-                strokeWidth={2}
-                dot
-              />
-            );
-          })}
+          {yAxisColumns.map((col, i) => (
+            <Line
+              key={col.key}
+              dataKey={col.key}
+              name={getSeriesName(col)}
+              stroke={COLORS[i % COLORS.length]}
+              strokeWidth={2}
+              dot
+            />
+          ))}
         </LineChart>
       );
     }
 
-    // ③ AREA
+    // ③ AREA Chart
     if (chartType === "area") {
-      if (isGroupingValid) {
-        return (
-          <AreaChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="name" stroke="#6b7280" />
-            <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
-            <Tooltip formatter={formatNumericValue} />
-            <Legend />
-            {uniqueGroupKeys.map((gk, i) => (
-              <Area
-                key={gk}
-                dataKey={gk}
-                name={gk}
-                stroke={COLORS[i % COLORS.length]}
-                fill={COLORS[i % COLORS.length]}
-                fillOpacity={0.3}
-                stackId={stacked ? "a" : undefined}
-              />
-            ))}
-          </AreaChart>
-        );
-      }
       return (
         <AreaChart {...commonProps}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -331,61 +268,23 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
           <Tooltip formatter={formatNumericValue} />
           <Legend />
-          {yAxisColumns.map((col, i) => {
-            const isStr = normalizeType(col.type) === "string";
-            return (
-              <Area
-                key={col.key}
-                dataKey={col.key}
-                name={
-                  isStr
-                    ? `Count of ${col.label || col.key}`
-                    : `${aggregationType} of ${col.label || col.key}`
-                }
-                stroke={COLORS[i % COLORS.length]}
-                fill={COLORS[i % COLORS.length]}
-                fillOpacity={0.3}
-                stackId={stacked ? "a" : undefined}
-              />
-            );
-          })}
+          {yAxisColumns.map((col, i) => (
+            <Area
+              key={col.key}
+              dataKey={col.key}
+              name={getSeriesName(col)}
+              stroke={COLORS[i % COLORS.length]}
+              fill={COLORS[i % COLORS.length]}
+              fillOpacity={0.3}
+              stackId={stacked ? "a" : undefined}
+            />
+          ))}
         </AreaChart>
       );
     }
 
-    // ④ COMPOSED
+    // ④ COMPOSED Chart
     if (chartType === "composed") {
-      if (isGroupingValid) {
-        // treat grouped as series
-        return (
-          <ComposedChart {...commonProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="name" stroke="#6b7280" />
-            <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
-            <Tooltip formatter={formatNumericValue} />
-            <Legend />
-            {uniqueGroupKeys.map((gk, i) =>
-              i % 2 === 0 ? (
-                <Line
-                  key={gk}
-                  dataKey={gk}
-                  name={gk}
-                  stroke={COLORS[i % COLORS.length]}
-                  strokeWidth={2}
-                />
-              ) : (
-                <Bar
-                  key={gk}
-                  dataKey={gk}
-                  name={gk}
-                  fill={COLORS[i % COLORS.length]}
-                  stackId="a"
-                />
-              )
-            )}
-          </ComposedChart>
-        );
-      }
       return (
         <ComposedChart {...commonProps}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -398,7 +297,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
               <Line
                 key={col.key}
                 dataKey={col.key}
-                name={col.label || col.key}
+                name={getSeriesName(col)}
                 stroke={COLORS[i % COLORS.length]}
                 strokeWidth={2}
               />
@@ -406,9 +305,9 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
               <Bar
                 key={col.key}
                 dataKey={col.key}
-                name={col.label || col.key}
+                name={getSeriesName(col)}
                 fill={COLORS[i % COLORS.length]}
-                stackId="a"
+                stackId={stacked ? "a" : undefined}
               />
             )
           )}
@@ -416,10 +315,9 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
       );
     }
 
-    // ⑤ PIE
+    // ⑤ PIE Chart (ignores multiple series, uses first Y column)
     if (chartType === "pie") {
-      // Pie ignores grouping — always uses first Y
-      const pieData = chartData.map((r) => ({
+      const pieData = processedChartData.map((r) => ({
         name: r.name,
         value: r[yAxisColumns[0].key] || 0,
       }));
@@ -452,7 +350,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   return (
     <div
       ref={chartContainerRef}
-      className=" rounded-md border border-slate-200 p-0.5"
+      className="rounded-md border border-slate-200 p-0.5"
     >
       <ResponsiveContainer width="100%" height={360}>
         {renderChart()}
