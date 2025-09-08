@@ -46,6 +46,36 @@ router.post("/login", async (req, res) => {
   }
 });
 
+router.get("/validate", async (req, res) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: "Token required" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const db = await dbPromise;
+    const user = await db.get(
+      "SELECT id, username, role FROM users WHERE id = ?",
+      decoded.userId
+    );
+
+    if (!user) {
+      return res
+        .status(401)
+        .json({ success: false, error: "Invalid token user" });
+    }
+
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error("Validate token error:", err.message);
+    res.status(401).json({ success: false, error: "Invalid or expired token" });
+  }
+});
+
 // List all facts
 router.get("/facts", async (req, res) => {
   try {

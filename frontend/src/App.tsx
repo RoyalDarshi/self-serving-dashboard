@@ -59,7 +59,7 @@ const App: React.FC = () => {
             user={user}
             onLogout={handleLogout}
           />
-          <div className="flex-1 p-6 ml-16">
+          <div className="flex-1 ml-16">
             {activeTab === "create-user" && user.role === "admin" && (
               <CreateUser />
             )}
