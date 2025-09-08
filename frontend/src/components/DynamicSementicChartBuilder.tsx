@@ -1,4 +1,3 @@
-// DynamicSemanticChartBuilder.tsx (No changes needed, but providing full code for completeness as requested)
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import html2canvas from "html2canvas";
 import { v4 as uuidv4 } from "uuid";
@@ -45,7 +44,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
   const [facts, setFacts] = useState<Fact[]>([]);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [xAxisDimension, setXAxisDimension] = useState<Dimension | null>(null);
-  const [yAxisFact, setYAxisFact] = useState<Fact | null>(null);
+  const [yAxisFacts, setYAxisFacts] = useState<Fact[]>([]);
   const [groupByDimension, setGroupByDimension] = useState<Dimension | null>(
     null
   );
@@ -88,19 +87,27 @@ const DynamicSemanticChartBuilder: React.FC = () => {
     setYAxisColumns([]);
     setGeneratedQuery("");
     setError(null);
-  }, [xAxisDimension, yAxisFact, groupByDimension]);
+  }, [xAxisDimension, yAxisFacts, groupByDimension]);
 
   // Automatically generate chart when selections change
   useEffect(() => {
-    if (xAxisDimension && yAxisFact) {
+    if (xAxisDimension && yAxisFacts.length > 0) {
       generateChartData();
     }
-  }, [xAxisDimension, yAxisFact, groupByDimension, aggregationType, chartType]);
+  }, [
+    xAxisDimension,
+    yAxisFacts,
+    groupByDimension,
+    aggregationType,
+    chartType,
+  ]);
 
   // Generate chart data
   const generateChartData = useCallback(async () => {
-    if (!yAxisFact || !xAxisDimension) {
-      setError("Please select a fact for Y-axis and a dimension for X-axis");
+    if (yAxisFacts.length === 0 || !xAxisDimension) {
+      setError(
+        "Please select at least one fact for Y-axis and a dimension for X-axis"
+      );
       return;
     }
 
@@ -114,7 +121,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
       }
 
       const body = {
-        factId: yAxisFact.id,
+        factIds: yAxisFacts.map((f) => f.id),
         dimensionIds,
         aggregation: aggregationType,
       };
@@ -130,9 +137,6 @@ const DynamicSemanticChartBuilder: React.FC = () => {
         res.rows.forEach((row) => {
           const xValue = (row[xKey] || "").toString().trim();
           const gValue = gKey ? (row[gKey] || "").toString().trim() : null;
-          const val = parseFloat(row.value);
-
-          if (isNaN(val)) return; // Skip invalid values
 
           if (!dataMap.has(xValue)) {
             dataMap.set(xValue, { name: xValue });
@@ -141,10 +145,20 @@ const DynamicSemanticChartBuilder: React.FC = () => {
           const item = dataMap.get(xValue)!;
 
           if (gValue) {
-            item[gValue] = val;
-            groupSet.add(gValue);
+            yAxisFacts.forEach((fact) => {
+              const val = parseFloat(row[fact.name]);
+              if (!isNaN(val)) {
+                item[`${gValue}_${fact.name}`] = val;
+                groupSet.add(`${gValue}_${fact.name}`);
+              }
+            });
           } else {
-            item[yAxisFact.name] = val;
+            yAxisFacts.forEach((fact) => {
+              const val = parseFloat(row[fact.name]);
+              if (!isNaN(val)) {
+                item[fact.name] = val;
+              }
+            });
           }
         });
 
@@ -156,21 +170,20 @@ const DynamicSemanticChartBuilder: React.FC = () => {
               label: g,
               type: "number",
             }))
-          : yAxisFact
-          ? [
-              {
-                ...yAxisFact,
-                key: yAxisFact.name,
-                label: yAxisFact.name,
-                type: "number",
-              },
-            ]
-          : [];
+          : yAxisFacts.map((fact) => ({
+              ...fact,
+              key: fact.name,
+              label: fact.name,
+              type: "number",
+            }));
 
         setChartData(normalizedData);
         setYAxisColumns(newYAxisColumns);
         setGeneratedQuery(res.sql);
-        setStacked(chartType === "bar" && groupByDimension !== null);
+        setStacked(
+          chartType === "bar" &&
+            (groupByDimension !== null || yAxisFacts.length > 1)
+        );
       } else {
         setError(
           res.error ||
@@ -192,7 +205,13 @@ const DynamicSemanticChartBuilder: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [yAxisFact, xAxisDimension, groupByDimension, aggregationType, chartType]);
+  }, [
+    yAxisFacts,
+    xAxisDimension,
+    groupByDimension,
+    aggregationType,
+    chartType,
+  ]);
 
   // Handle drop for dimensions (X-axis or Group By) and facts (Y-axis)
   const handleDrop = (
@@ -204,15 +223,22 @@ const DynamicSemanticChartBuilder: React.FC = () => {
     } else if (axis === "group" && item.dimension) {
       setGroupByDimension(item.dimension);
     } else if (axis === "y" && item.fact) {
-      setYAxisFact(item.fact);
+      setYAxisFacts((prev) => {
+        if (prev.some((f) => f.id === item.fact!.id)) {
+          return prev; // Prevent duplicates
+        }
+        return [...prev, item.fact!];
+      });
     }
   };
 
   // Handle remove from drop zone
-  const handleRemove = (axis: "x" | "y" | "group") => {
+  const handleRemove = (axis: "x" | "y" | "group", factId?: number) => {
     if (axis === "x") setXAxisDimension(null);
     if (axis === "group") setGroupByDimension(null);
-    if (axis === "y") setYAxisFact(null);
+    if (axis === "y" && factId) {
+      setYAxisFacts((prev) => prev.filter((f) => f.id !== factId));
+    }
   };
 
   // Download graph as PNG
@@ -285,26 +311,22 @@ const DynamicSemanticChartBuilder: React.FC = () => {
         <div className="bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-lg border p-2">
           <label className="flex items-center mb-2 text-sm font-medium text-slate-700">
             <span className="w-2 h-2 rounded-full mr-2 bg-indigo-500" />
-            Y-Axis (Fact)
+            Y-Axis (Facts)
           </label>
           <ChartDropZone
             axis="y"
             onDrop={(item) => handleDrop("y", item)}
-            onRemove={() => handleRemove("y")}
-            selectedColumns={
-              yAxisFact
-                ? [
-                    {
-                      ...yAxisFact,
-                      key: yAxisFact.name,
-                      label: yAxisFact.name,
-                      type: "number",
-                    },
-                  ]
-                : []
-            }
-            label="Drag fact for values"
+            onRemove={(factId) => handleRemove("y", factId)}
+            selectedColumns={yAxisFacts.map((fact) => ({
+              ...fact,
+              key: fact.name,
+              label: fact.name,
+              type: "number",
+              id: fact.id, // Include id for removal
+            }))}
+            label="Drag facts for values"
             accept={["fact"]}
+            multiple
           />
         </div>
         <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border p-2">

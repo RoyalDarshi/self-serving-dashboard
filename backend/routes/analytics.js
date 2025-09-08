@@ -1,4 +1,3 @@
-// analytics.js (Minor updates for better error handling, logging, and robustness; no major GROUP BY issues found, but ensured aliases don't affect GROUP BY)
 import { Router } from "express";
 import { dbPromise } from "../database/sqliteConnection.js";
 import pool from "../database/connection.js";
@@ -6,10 +5,10 @@ import pool from "../database/connection.js";
 const router = Router();
 
 /**
- * Builds and executes a dynamic SQL query based on fact + dimensions or KPI + dimensions.
+ * Builds and executes a dynamic SQL query based on facts + dimensions or KPI + dimensions.
  * Handles auto-join detection if no explicit mappings.
  * @route POST /query
- * @param {number} factId - ID of the fact (required for fact flow).
+ * @param {number[]} factIds - Array of fact IDs (required for fact flow).
  * @param {number[]} dimensionIds - Array of dimension IDs.
  * @param {string} aggregation - Aggregation function (e.g., SUM).
  * @param {number} kpiId - ID of the KPI (required for KPI flow).
@@ -17,7 +16,7 @@ const router = Router();
  */
 router.post("/query", async (req, res) => {
   try {
-    const { factId, dimensionIds = [], aggregation, kpiId } = req.body;
+    const { factIds, dimensionIds = [], aggregation, kpiId } = req.body;
     const db = await dbPromise;
 
     let selectClause = "";
@@ -28,7 +27,7 @@ router.post("/query", async (req, res) => {
     const uniqueDimensionIds = [...new Set(dimensionIds)];
 
     if (kpiId) {
-      // KPI Flow
+      // KPI Flow (unchanged)
       const kpi = await db.get("SELECT * FROM kpis WHERE id = ?", [kpiId]);
       if (!kpi) return res.status(400).json({ error: "Invalid kpiId" });
 
@@ -135,33 +134,55 @@ router.post("/query", async (req, res) => {
         }
       }
     } else {
-      // Fact Flow
-      const fact = await db.get("SELECT * FROM facts WHERE id = ?", [factId]);
-      if (!fact) return res.status(400).json({ error: "Invalid factId" });
+      // Fact Flow (modified to handle multiple factIds)
+      if (!factIds || !Array.isArray(factIds) || factIds.length === 0) {
+        return res.status(400).json({ error: "Invalid or missing factIds" });
+      }
+
+      const facts = await db.all(
+        `SELECT * FROM facts WHERE id IN (${factIds.map(() => "?").join(",")})`,
+        [...factIds]
+      );
+      if (facts.length !== factIds.length) {
+        return res.status(400).json({ error: "One or more invalid factIds" });
+      }
 
       let dimensions = await db.all(
         `SELECT d.*, fd.join_table, fd.fact_column, fd.dimension_column 
          FROM fact_dimensions fd
          JOIN dimensions d ON fd.dimension_id = d.id
-         WHERE fd.fact_id = ? AND d.id IN (${uniqueDimensionIds
+         WHERE fd.fact_id IN (${factIds
            .map(() => "?")
-           .join(",")})`,
-        [fact.id, ...uniqueDimensionIds]
+           .join(",")}) AND d.id IN (${uniqueDimensionIds
+          .map(() => "?")
+          .join(",")})`,
+        [...factIds, ...uniqueDimensionIds]
       );
 
       // Auto-detect joins if no mapping found
-      if (dimensions.length < uniqueDimensionIds.length) {
-        // Improved check for partial mappings
-        const factColumnsResult = await pool.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
-          [fact.table_name]
-        );
-        const factColumns = factColumnsResult.rows.map(
-          (row) => row.column_name
-        );
+      if (dimensions.length < uniqueDimensionIds.length * factIds.length) {
+        const factTables = [...new Set(facts.map((f) => f.table_name))];
+        const factColumnsByTable = {};
+
+        for (const table of factTables) {
+          const factColumnsResult = await pool.query(
+            `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+            [table]
+          );
+          factColumnsByTable[table] = factColumnsResult.rows.map(
+            (row) => row.column_name
+          );
+        }
 
         for (const dimId of uniqueDimensionIds) {
-          if (dimensions.some((d) => d.id === dimId)) continue; // Skip if already mapped
+          const existingDim = dimensions.find((d) => d.id === dimId);
+          if (
+            existingDim &&
+            facts.every((f) =>
+              dimensions.some((d) => d.id === dimId && d.fact_id === f.id)
+            )
+          )
+            continue;
 
           const dim = await db.get("SELECT * FROM dimensions WHERE id = ?", [
             dimId,
@@ -178,25 +199,30 @@ router.post("/query", async (req, res) => {
 
           if (!dimTableColumns.includes(dim.column_name)) continue;
 
-          const commonColumns = factColumns.filter((col) =>
-            dimTableColumns.includes(col)
-          );
+          for (const fact of facts) {
+            const factColumns = factColumnsByTable[fact.table_name];
+            const commonColumns = factColumns.filter((col) =>
+              dimTableColumns.includes(col)
+            );
 
-          if (commonColumns.length > 0) {
-            const commonCol = commonColumns[0];
-            dimensions.push({
-              ...dim,
-              join_table: dim.table_name,
-              fact_column: commonCol,
-              dimension_column: commonCol,
-            });
-          } else if (dim.table_name === fact.table_name) {
-            dimensions.push({
-              ...dim,
-              join_table: dim.table_name,
-              fact_column: dim.column_name,
-              dimension_column: dim.column_name,
-            });
+            if (commonColumns.length > 0) {
+              const commonCol = commonColumns[0];
+              dimensions.push({
+                ...dim,
+                join_table: dim.table_name,
+                fact_column: commonCol,
+                dimension_column: commonCol,
+                fact_id: fact.id,
+              });
+            } else if (dim.table_name === fact.table_name) {
+              dimensions.push({
+                ...dim,
+                join_table: dim.table_name,
+                fact_column: dim.column_name,
+                dimension_column: dim.column_name,
+                fact_id: fact.id,
+              });
+            }
           }
         }
       }
@@ -205,31 +231,42 @@ router.post("/query", async (req, res) => {
         return res.status(400).json({ error: "No valid dimensions found" });
       }
 
-      fromClause = `"${fact.table_name}"`; // Always include base table
+      // Use the first fact's table as the base table for joins
+      const baseFact = facts[0];
+      fromClause = `"${baseFact.table_name}"`;
       const seenJoins = new Set();
       const dimColumns = [];
 
       dimensions.forEach((d) => {
         const table = d.join_table || d.table_name;
         const col = `"${table}"."${d.column_name}" AS "${d.column_name}"`;
-        dimColumns.push(col);
+        if (!dimColumns.includes(col)) {
+          dimColumns.push(col);
+        }
 
         if (
-          table !== fact.table_name &&
+          table !== baseFact.table_name &&
           !seenJoins.has(`${table}.${d.column_name}`)
         ) {
           seenJoins.add(`${table}.${d.column_name}`);
-          fromClause += ` JOIN "${table}" ON "${table}"."${d.dimension_column}" = "${fact.table_name}"."${d.fact_column}"`;
+          fromClause += ` LEFT JOIN "${table}" ON "${table}"."${d.dimension_column}" = "${baseFact.table_name}"."${d.fact_column}"`;
         }
       });
 
-      const aggFunc = aggregation || fact.aggregate_function || "SUM";
-      selectClause = `${aggFunc}("${fact.table_name}"."${fact.column_name}") AS value`;
+      // Generate select clause for multiple facts
+      const aggFunc = aggregation || facts[0].aggregate_function || "SUM";
+      selectClause = facts
+        .map(
+          (f) =>
+            `${aggFunc}("${f.table_name}"."${f.column_name}") AS "${f.name}"`
+        )
+        .join(", ");
 
       if (dimColumns.length > 0) {
         dimSelects = dimColumns.join(", ");
         groupByClause = dimensions
           .map((d) => `"${d.join_table || d.table_name}"."${d.column_name}"`)
+          .filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
           .join(", ");
       }
     }
