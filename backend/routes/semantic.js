@@ -1,4 +1,3 @@
-// routes/semantic.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -8,6 +7,7 @@ import pool from "../database/connection.js";
 const router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
+const SALT_ROUNDS = 10;
 
 // AUTH
 router.post("/login", async (req, res) => {
@@ -43,6 +43,49 @@ router.post("/login", async (req, res) => {
   } catch (error) {
     console.error("Login error:", error.message);
     res.status(500).json({ success: false, error: "Failed to login" });
+  }
+});
+
+// Create a new user
+router.post("/users", async (req, res) => {
+  const db = await dbPromise;
+  const { username, password, role } = req.body;
+
+  if (!username || !password || !role) {
+    return res.status(400).json({
+      success: false,
+      error: "Username, password, and role are required",
+    });
+  }
+
+  try {
+    // Check if username already exists
+    const existingUser = await db.get(
+      "SELECT id FROM users WHERE username = ?",
+      username
+    );
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Username already exists" });
+    }
+
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+    // Insert the new user
+    const result = await db.run(
+      "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+      [username, hashedPassword, role]
+    );
+
+    res.json({
+      success: true,
+      user: { id: result.lastID, username, role },
+    });
+  } catch (err) {
+    console.error("Create user error:", err.message);
+    res.status(500).json({ success: false, error: "Failed to create user" });
   }
 });
 
@@ -233,7 +276,7 @@ router.post("/fact-dimensions", async (req, res) => {
     const db = await dbPromise;
     const result = await db.run(
       `INSERT INTO fact_dimensions 
-       (fact_id, dimension_id, join_table, fact_column, dimension_column) 
+        (fact_id, dimension_id, join_table, fact_column, dimension_column) 
        VALUES (?, ?, ?, ?, ?)`,
       [fact_id, dimension_id, join_table, fact_column, dimension_column]
     );

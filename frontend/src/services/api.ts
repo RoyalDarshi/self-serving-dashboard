@@ -1,4 +1,3 @@
-// src/services/api.ts
 const API_BASE = "http://localhost:3001/api";
 
 async function apiFetch(path: string, method = "GET", body?: any) {
@@ -32,7 +31,7 @@ interface Fact {
 interface Dimension {
   id: number;
   name: string;
-  table_name: string; // Added table_name
+  table_name: string;
   column_name: string;
 }
 
@@ -56,6 +55,12 @@ interface AutoMapResponse {
   }[];
 }
 
+interface User {
+  id: number;
+  username: string;
+  role: string;
+}
+
 export const apiService = {
   /**
    * AUTH
@@ -68,7 +73,11 @@ export const apiService = {
   /**
    * USER MANAGEMENT
    */
-  createUser: (username: string, password: string, role: string) =>
+  createUser: (
+    username: string,
+    password: string,
+    role: string
+  ): Promise<{ success: boolean; user?: User; error?: string }> =>
     apiFetch("/semantic/users", "POST", { username, password, role }),
 
   getSchemas: () => apiFetch("/database/schemas"),
@@ -94,7 +103,7 @@ export const apiService = {
   getDimensions: (): Promise<Dimension[]> => apiFetch("/semantic/dimensions"),
   createDimension: (body: {
     name: string;
-    table_name: string; // Added table_name
+    table_name: string;
     column_name: string;
   }) => apiFetch("/semantic/dimensions", "POST", body),
   updateDimension: (
