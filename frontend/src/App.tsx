@@ -4,7 +4,6 @@ import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import CreateUser from "./components/CreateUser";
 import AdminPanel from "./components/AdminPanel";
-import Dashboard from "./components/Dashboard";
 import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
 import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
