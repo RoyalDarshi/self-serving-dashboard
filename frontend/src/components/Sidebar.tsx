@@ -1,11 +1,12 @@
 // Sidebar.tsx
 import React from "react";
 import {
-  UserPlusIcon,
-  CogIcon,
-  ChartBarIcon,
-  ArrowLeftOnRectangleIcon,
-} from "@heroicons/react/24/outline";
+  UserPlus,
+  Settings,
+  BarChart3,
+  LayoutDashboard,
+  LogOut,
+} from "lucide-react";
 
 interface SidebarProps {
   activeTab: string;
@@ -31,7 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }`}
             title="Create User"
           >
-            <UserPlusIcon className="h-6 w-6" />
+            <UserPlus className="h-6 w-6" />
           </button>
           <button
             onClick={() => setActiveTab("admin-panel")}
@@ -40,7 +41,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }`}
             title="Admin Panel"
           >
-            <CogIcon className="h-6 w-6" />
+            <Settings className="h-6 w-6" />
           </button>
         </>
       )}
@@ -51,7 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         }`}
         title="Chart Builder"
       >
-        <ChartBarIcon className="h-6 w-6" />
+        <BarChart3 className="h-6 w-6" />
       </button>
       <button
         onClick={() => setActiveTab("my-dashboards")}
@@ -60,14 +61,14 @@ const Sidebar: React.FC<SidebarProps> = ({
         }`}
         title="My Dashboards"
       >
-        <ChartBarIcon className="h-6 w-6" />
+        <LayoutDashboard className="h-6 w-6" />
       </button>
       <button
         onClick={onLogout}
         className="p-2 rounded-md hover:bg-gray-700 mt-auto"
         title="Logout"
       >
-        <ArrowLeftOnRectangleIcon className="h-6 w-6" />
+        <LogOut className="h-6 w-6" />
       </button>
     </div>
   );
