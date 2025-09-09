@@ -5,8 +5,6 @@ const router = Router();
 
 router.get("/schemas", async (req, res) => {
   try {
-    console.log("Fetching source DB schemas...");
-    console.log(sourceDbPromise)
     const client = await sourceDbPromise.connect();
     try {
       const tablesResult = await client.query(`

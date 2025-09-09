@@ -219,7 +219,6 @@ router.delete("/facts/:id", async (req, res) => {
 // Add a new dimension (updated to include table_name)
 router.post("/dimensions", async (req, res) => {
   try {
-    console.log("Create dimension request body:", req.body);
     const { name, table_name, column_name } = req.body;
     if (!table_name) {
       return res.status(400).json({ error: "table_name is required" });
