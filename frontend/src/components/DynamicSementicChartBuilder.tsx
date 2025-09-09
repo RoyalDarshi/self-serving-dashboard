@@ -1,3 +1,4 @@
+// DynamicSemanticChartBuilder.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import html2canvas from "html2canvas";
 import { v4 as uuidv4 } from "uuid";
@@ -7,7 +8,7 @@ import ChartDataTable from "./ChartDataTable";
 import SqlQueryDisplay from "./SqlQueryDisplay";
 import ChartControls from "./ChartControls";
 import ChartDisplay from "./ChartDisplay";
-import { Download } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 
 // Types
 interface Fact {
@@ -39,7 +40,24 @@ interface Column {
   [key: string]: any;
 }
 
-const DynamicSemanticChartBuilder: React.FC = () => {
+interface ChartConfig {
+  xAxisDimension: Dimension | null;
+  yAxisFacts: Fact[];
+  groupByDimension: Dimension | null;
+  chartType: "bar" | "line" | "pie";
+  aggregationType: AggregationType;
+  stacked: boolean;
+}
+
+interface DynamicSemanticChartBuilderProps {
+  dashboards: { id: string; name: string; charts: ChartConfig[] }[];
+  addNewDashboard: (name: string) => string;
+  addChartToDashboard: (config: ChartConfig, dashboardId: string) => void;
+}
+
+const DynamicSemanticChartBuilder: React.FC<
+  DynamicSemanticChartBuilderProps
+> = ({ dashboards, addNewDashboard, addChartToDashboard }) => {
   // State
   const [facts, setFacts] = useState<Fact[]>([]);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
@@ -271,6 +289,33 @@ const DynamicSemanticChartBuilder: React.FC = () => {
     link.click();
   };
 
+  // Add to dashboard
+  const handleAddToDashboard = () => {
+    const name = window.prompt("Enter dashboard name:");
+    if (!name) return;
+
+    const existing = dashboards.find(
+      (d) => d.name.toLowerCase() === name.toLowerCase()
+    );
+    let dashboardId: string;
+    if (existing) {
+      dashboardId = existing.id;
+    } else {
+      dashboardId = addNewDashboard(name);
+    }
+
+    const config: ChartConfig = {
+      xAxisDimension,
+      yAxisFacts,
+      groupByDimension,
+      chartType,
+      aggregationType,
+      stacked,
+    };
+    addChartToDashboard(config, dashboardId);
+    alert("Chart added to dashboard!");
+  };
+
   // Value formatter for ChartDataTable
   const valueFormatter = (value: number | string) => {
     if (typeof value === "number") {
@@ -403,6 +448,13 @@ const DynamicSemanticChartBuilder: React.FC = () => {
               <span>Table</span>
             </button>
           )}
+          <button
+            onClick={handleAddToDashboard}
+            className="flex items-center space-x-1 px-4 py-2 bg-blue-500 text-white rounded-lg"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add to Dashboard</span>
+          </button>
         </div>
       )}
 

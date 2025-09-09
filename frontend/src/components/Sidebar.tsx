@@ -1,3 +1,4 @@
+// Sidebar.tsx
 import React from "react";
 import {
   UserPlusIcon,
@@ -48,7 +49,16 @@ const Sidebar: React.FC<SidebarProps> = ({
         className={`p-2 rounded-md ${
           activeTab === "dashboard" ? "bg-blue-600" : "hover:bg-gray-700"
         }`}
-        title="Dashboard"
+        title="Chart Builder"
+      >
+        <ChartBarIcon className="h-6 w-6" />
+      </button>
+      <button
+        onClick={() => setActiveTab("my-dashboards")}
+        className={`p-2 rounded-md ${
+          activeTab === "my-dashboards" ? "bg-blue-600" : "hover:bg-gray-700"
+        }`}
+        title="My Dashboards"
       >
         <ChartBarIcon className="h-6 w-6" />
       </button>

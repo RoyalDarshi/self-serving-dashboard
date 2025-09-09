@@ -1,4 +1,6 @@
+// App.tsx
 import React, { useState, useEffect } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { apiService } from "./services/api";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
@@ -7,11 +9,38 @@ import AdminPanel from "./components/AdminPanel";
 import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
 import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
+import Dashboard from "./components/Dashboard";
+
+// Types from DynamicSemanticChartBuilder
+interface Fact {
+  id: number;
+  name: string;
+  table_name: string;
+  column_name: string;
+  aggregate_function: string;
+}
+interface Dimension {
+  id: number;
+  name: string;
+  column_name: string;
+}
+type AggregationType = "SUM" | "AVG" | "COUNT" | "MAX" | "MIN";
+interface ChartConfig {
+  xAxisDimension: Dimension | null;
+  yAxisFacts: Fact[];
+  groupByDimension: Dimension | null;
+  chartType: "bar" | "line" | "pie";
+  aggregationType: AggregationType;
+  stacked: boolean;
+}
 
 const App: React.FC = () => {
   const [user, setUser] = useState<{ role: string } | null>(null);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [loading, setLoading] = useState<boolean>(true);
+  const [dashboards, setDashboards] = useState<
+    { id: string; name: string; charts: ChartConfig[] }[]
+  >([]);
 
   useEffect(() => {
     const validateUser = async () => {
@@ -39,6 +68,22 @@ const App: React.FC = () => {
     localStorage.removeItem("token");
     setUser(null);
     setActiveTab("dashboard");
+  };
+
+  const addNewDashboard = (name: string): string => {
+    const id = uuidv4();
+    setDashboards((prev) => [...prev, { id, name, charts: [] }]);
+    return id;
+  };
+
+  const addChartToDashboard = (config: ChartConfig, dashboardId: string) => {
+    setDashboards((prev) =>
+      prev.map((d) =>
+        d.id === dashboardId
+          ? { ...d, charts: [...d.charts, { ...config, id: uuidv4() }] }
+          : d
+      )
+    );
   };
 
   if (loading)
@@ -72,10 +117,20 @@ const App: React.FC = () => {
                     <DynamicSemanticPanel />
                   </div>
                   <div className="w-3/4">
-                    <DynamicSemanticChartBuilder />
+                    <DynamicSemanticChartBuilder
+                      dashboards={dashboards}
+                      addNewDashboard={addNewDashboard}
+                      addChartToDashboard={addChartToDashboard}
+                    />
                   </div>
                 </div>
               </DragDropProvider>
+            )}
+            {activeTab === "my-dashboards" && (
+              <Dashboard
+                dashboards={dashboards}
+                addNewDashboard={addNewDashboard}
+              />
             )}
           </div>
         </div>
