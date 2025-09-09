@@ -79,6 +79,9 @@ const DynamicSemanticChartBuilder: React.FC<
     "graph"
   );
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  // New state for modal
+  const [showDashboardModal, setShowDashboardModal] = useState(false);
+  const [selectedDashboard, setSelectedDashboard] = useState<string>("");
 
   // Fetch facts and dimensions on mount
   useEffect(() => {
@@ -289,21 +292,13 @@ const DynamicSemanticChartBuilder: React.FC<
     link.click();
   };
 
-  // Add to dashboard
+  // Open the modal instead of using alert/prompt
   const handleAddToDashboard = () => {
-    const name = window.prompt("Enter dashboard name:");
-    if (!name) return;
+    setShowDashboardModal(true);
+  };
 
-    const existing = dashboards.find(
-      (d) => d.name.toLowerCase() === name.toLowerCase()
-    );
-    let dashboardId: string;
-    if (existing) {
-      dashboardId = existing.id;
-    } else {
-      dashboardId = addNewDashboard(name);
-    }
-
+  // Logic for saving the chart to a selected dashboard
+  const handleSaveToDashboard = (dashboardId: string) => {
     const config: ChartConfig = {
       xAxisDimension,
       yAxisFacts,
@@ -313,7 +308,18 @@ const DynamicSemanticChartBuilder: React.FC<
       stacked,
     };
     addChartToDashboard(config, dashboardId);
-    alert("Chart added to dashboard!");
+    // Optional: Add a simple confirmation message
+    console.log("Chart added to dashboard!");
+    setShowDashboardModal(false);
+    setSelectedDashboard("");
+  };
+
+  // Logic for creating a new dashboard from the modal
+  const handleCreateNewDashboard = () => {
+    const name = window.prompt("Enter a name for the new dashboard:");
+    if (name) {
+      addNewDashboard(name);
+    }
   };
 
   // Value formatter for ChartDataTable
@@ -524,6 +530,64 @@ const DynamicSemanticChartBuilder: React.FC<
       {activeView === "query" && (
         <div className="bg-gradient-to-b from-white to-slate-50 rounded-xl border p-1">
           <SqlQueryDisplay generatedQuery={generatedQuery} />
+        </div>
+      )}
+
+      {/* The Modal */}
+      {showDashboardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+            <h2 className="text-xl font-bold mb-4">Add Chart to Dashboard</h2>
+            <div className="mb-4">
+              <label
+                htmlFor="dashboard-select"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Select a Dashboard:
+              </label>
+              <select
+                id="dashboard-select"
+                value={selectedDashboard}
+                onChange={(e) => setSelectedDashboard(e.target.value)}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              >
+                <option value="" disabled>
+                  Select a dashboard
+                </option>
+                {dashboards.map((dashboard) => (
+                  <option key={dashboard.id} value={dashboard.id}>
+                    {dashboard.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => {
+                  setShowDashboardModal(false);
+                  setSelectedDashboard("");
+                }}
+                className="px-4 py-2 text-gray-500 border rounded-md hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveToDashboard(selectedDashboard)}
+                disabled={!selectedDashboard}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:bg-blue-300"
+              >
+                Add Chart
+              </button>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <button
+                onClick={handleCreateNewDashboard}
+                className="w-full px-4 py-2 text-center text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50"
+              >
+                Create New Dashboard
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
