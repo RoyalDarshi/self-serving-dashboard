@@ -326,7 +326,7 @@ const DynamicSemanticChartBuilder: React.FC = () => {
             }))}
             label="Drag facts for values"
             accept={["fact"]}
-            multiple
+            allowMultiple
           />
         </div>
         <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border p-2">
