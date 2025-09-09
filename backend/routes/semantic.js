@@ -141,6 +141,38 @@ router.post("/facts", async (req, res) => {
   }
 });
 
+// Update a fact
+router.put("/facts/:id", async (req, res) => {
+  try {
+    const { name, table_name, column_name, aggregate_function } = req.body;
+    const db = await dbPromise;
+    await db.run(
+      "UPDATE facts SET name = ?, table_name = ?, column_name = ?, aggregate_function = ? WHERE id = ?",
+      [name, table_name, column_name, aggregate_function, req.params.id]
+    );
+    const updated = await db.get(
+      "SELECT * FROM facts WHERE id = ?",
+      req.params.id
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Update fact error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a fact
+router.delete("/facts/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM facts WHERE id = ?", req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete fact error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Add a new dimension (updated to include table_name)
 router.post("/dimensions", async (req, res) => {
   try {
@@ -161,6 +193,38 @@ router.post("/dimensions", async (req, res) => {
   }
 });
 
+// Update a dimension
+router.put("/dimensions/:id", async (req, res) => {
+  try {
+    const { name, table_name, column_name } = req.body;
+    const db = await dbPromise;
+    await db.run(
+      "UPDATE dimensions SET name = ?, table_name = ?, column_name = ? WHERE id = ?",
+      [name, table_name, column_name, req.params.id]
+    );
+    const updated = await db.get(
+      "SELECT * FROM dimensions WHERE id = ?",
+      req.params.id
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Update dimension error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a dimension
+router.delete("/dimensions/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM dimensions WHERE id = ?", req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete dimension error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Add a fact-dimension mapping (manual)
 router.post("/fact-dimensions", async (req, res) => {
   try {
@@ -169,7 +233,7 @@ router.post("/fact-dimensions", async (req, res) => {
     const db = await dbPromise;
     const result = await db.run(
       `INSERT INTO fact_dimensions 
-        (fact_id, dimension_id, join_table, fact_column, dimension_column) 
+       (fact_id, dimension_id, join_table, fact_column, dimension_column) 
        VALUES (?, ?, ?, ?, ?)`,
       [fact_id, dimension_id, join_table, fact_column, dimension_column]
     );
@@ -293,6 +357,38 @@ router.post("/kpis", async (req, res) => {
     res.json({ id: result.lastID, name, expression, description });
   } catch (err) {
     console.error("Create KPI error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update KPI
+router.put("/kpis/:id", async (req, res) => {
+  try {
+    const { name, expression, description } = req.body;
+    const db = await dbPromise;
+    await db.run(
+      "UPDATE kpis SET name = ?, expression = ?, description = ? WHERE id = ?",
+      [name, expression, description, req.params.id]
+    );
+    const updated = await db.get(
+      "SELECT * FROM kpis WHERE id = ?",
+      req.params.id
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Update KPI error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete KPI
+router.delete("/kpis/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM kpis WHERE id = ?", req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete KPI error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

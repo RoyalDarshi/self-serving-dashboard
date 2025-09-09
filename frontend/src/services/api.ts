@@ -80,6 +80,16 @@ export const apiService = {
     column_name: string;
     aggregate_function: string;
   }) => apiFetch("/semantic/facts", "POST", body),
+  updateFact: (
+    id: number,
+    body: {
+      name: string;
+      table_name: string;
+      column_name: string;
+      aggregate_function: string;
+    }
+  ) => apiFetch(`/semantic/facts/${id}`, "PUT", body),
+  deleteFact: (id: number) => apiFetch(`/semantic/facts/${id}`, "DELETE"),
 
   getDimensions: (): Promise<Dimension[]> => apiFetch("/semantic/dimensions"),
   createDimension: (body: {
@@ -87,6 +97,16 @@ export const apiService = {
     table_name: string; // Added table_name
     column_name: string;
   }) => apiFetch("/semantic/dimensions", "POST", body),
+  updateDimension: (
+    id: number,
+    body: {
+      name: string;
+      table_name: string;
+      column_name: string;
+    }
+  ) => apiFetch(`/semantic/dimensions/${id}`, "PUT", body),
+  deleteDimension: (id: number) =>
+    apiFetch(`/semantic/dimensions/${id}`, "DELETE"),
 
   getFactDimensions: () => apiFetch("/semantic/fact-dimensions"),
   createFactDimension: (body: {
@@ -103,6 +123,15 @@ export const apiService = {
     expression: string;
     description?: string;
   }) => apiFetch("/semantic/kpis", "POST", body),
+  updateKPI: (
+    id: number,
+    body: {
+      name: string;
+      expression: string;
+      description?: string;
+    }
+  ) => apiFetch(`/semantic/kpis/${id}`, "PUT", body),
+  deleteKPI: (id: number) => apiFetch(`/semantic/kpis/${id}`, "DELETE"),
 
   runQuery: (body: {
     factId: number;

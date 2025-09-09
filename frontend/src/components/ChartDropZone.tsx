@@ -7,12 +7,13 @@ interface Column {
   key: string;
   label: string;
   type: string;
+  id?: number; // Add id to Column interface
 }
 
 interface ChartDropZoneProps {
   axis: "x" | "y" | "group";
   onDrop: (item: { column?: Column; fact?: any; dimension?: any }) => void;
-  onRemove: () => void;
+  onRemove: (id?: number) => void; // Update to accept id
   selectedColumns: Column[];
   label: string;
   accept?: string[];
@@ -56,7 +57,7 @@ const ChartDropZone: React.FC<ChartDropZoneProps> = ({
             </span>
             {(allowMultiple || index === 0) && (
               <button
-                onClick={onRemove}
+                onClick={() => onRemove(col.id)} // Pass col.id to onRemove
                 className="text-red-500 hover:text-red-700"
               >
                 <X className="h-4 w-4" />
