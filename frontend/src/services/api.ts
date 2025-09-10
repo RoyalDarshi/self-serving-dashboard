@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:3001/api";
+const API_BASE = "http://192.168.29.120:3001/api";
 
 async function apiFetch(path: string, method = "GET", body?: any) {
   const token = localStorage.getItem("token");

@@ -79,7 +79,6 @@ const DynamicSemanticChartBuilder: React.FC<
     "graph"
   );
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  // New state for modal
   const [showDashboardModal, setShowDashboardModal] = useState(false);
   const [selectedDashboard, setSelectedDashboard] = useState<string>("");
 
@@ -157,6 +156,9 @@ const DynamicSemanticChartBuilder: React.FC<
 
         res.rows.forEach((row) => {
           const xValue = (row[xKey] || "").toString().trim();
+          // Skip rows where x-axis dimension is null or empty
+          if (!xValue) return;
+
           const gValue = gKey ? (row[gKey] || "").toString().trim() : null;
 
           if (!dataMap.has(xValue)) {
@@ -167,23 +169,34 @@ const DynamicSemanticChartBuilder: React.FC<
 
           if (gValue) {
             yAxisFacts.forEach((fact) => {
-              const val = parseFloat(row[fact.name]);
-              if (!isNaN(val)) {
-                item[`${gValue}_${fact.name}`] = val;
-                groupSet.add(`${gValue}_${fact.name}`);
+              const val = row[fact.name];
+              if (val != null) {
+                const parsedVal = parseFloat(val as string);
+                if (!isNaN(parsedVal)) {
+                  item[`${gValue}_${fact.name}`] = parsedVal;
+                  groupSet.add(`${gValue}_${fact.name}`);
+                }
               }
             });
           } else {
             yAxisFacts.forEach((fact) => {
-              const val = parseFloat(row[fact.name]);
-              if (!isNaN(val)) {
-                item[fact.name] = val;
+              const val = row[fact.name];
+              if (val != null) {
+                const parsedVal = parseFloat(val as string);
+                if (!isNaN(parsedVal)) {
+                  item[fact.name] = parsedVal;
+                }
               }
             });
           }
         });
 
-        const normalizedData = Array.from(dataMap.values());
+        // Filter out rows where all y-axis values are missing
+        const normalizedData = Array.from(dataMap.values()).filter((item) => {
+          return Object.keys(item).some(
+            (key) => key !== "name" && item[key] != null
+          );
+        });
 
         const newYAxisColumns: Column[] = groupByDimension
           ? Array.from(groupSet).map((g) => ({
@@ -281,7 +294,9 @@ const DynamicSemanticChartBuilder: React.FC<
     chartData.forEach((row) => {
       const values = [
         row.name,
-        ...yAxisColumns.map((col) => row[col.key] ?? ""),
+        ...yAxisColumns.map((col) =>
+          row[col.key] != null ? row[col.key] : ""
+        ),
       ];
       csvRows.push(values.join(","));
     });
@@ -308,7 +323,6 @@ const DynamicSemanticChartBuilder: React.FC<
       stacked,
     };
     addChartToDashboard(config, dashboardId);
-    // Optional: Add a simple confirmation message
     console.log("Chart added to dashboard!");
     setShowDashboardModal(false);
     setSelectedDashboard("");
