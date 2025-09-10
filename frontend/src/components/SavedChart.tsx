@@ -70,6 +70,22 @@ const SavedChart: React.FC<SavedChartProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState<number>(320);
+
+  // Observe container height changes for responsive charts
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { height } = entry.contentRect;
+        setContainerHeight(height - 60); // Account for header
+      }
+    });
+
+    resizeObserver.observe(chartContainerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -340,6 +356,7 @@ const SavedChart: React.FC<SavedChartProps> = ({
           loading={loading}
           error={error}
           stacked={config.stacked}
+          height={containerHeight}
         />
       </div>
     </div>

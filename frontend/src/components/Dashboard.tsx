@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import { Responsive, WidthProvider } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 import {
   LayoutDashboard,
   Plus,
@@ -19,8 +22,13 @@ import {
   Eye,
   Edit3,
   Trash2,
+  Move,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import SavedChart from "./SavedChart";
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
 
 // Types
 interface Fact {
@@ -59,6 +67,8 @@ interface DashboardData {
   lastModified?: string;
   tags?: string[];
   isPublic?: boolean;
+  layout?: any[];
+  layouts?: any;
 }
 
 interface DashboardProps {
@@ -79,6 +89,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDashboardName, setNewDashboardName] = useState("");
   const [newDashboardDescription, setNewDashboardDescription] = useState("");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [layouts, setLayouts] = useState<any>({});
 
   // Get chart type icon
   const getChartIcon = (chartType: string) => {
@@ -116,6 +128,26 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  // Generate default layout for charts
+  const generateLayout = (charts: ChartConfig[]) => {
+    return charts.map((chart, index) => ({
+      i: chart.id || `chart-${index}`,
+      x: (index % 3) * 4,
+      y: Math.floor(index / 3) * 4,
+      w: 4,
+      h: 4,
+      minW: 3,
+      minH: 3,
+    }));
+  };
+
+  // Handle layout change
+  const handleLayoutChange = (layout: any, layouts: any) => {
+    setLayouts(layouts);
+    // Here you would typically save the layout to your backend
+    console.log("Layout changed:", layouts);
+  };
+
   const selectedDashboardData = dashboards.find(
     (d) => d.id === selectedDashboard
   );
@@ -140,6 +172,26 @@ const Dashboard: React.FC<DashboardProps> = ({
               </h1>
             </div>
             <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setIsEditMode(!isEditMode)}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                  isEditMode
+                    ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                }`}
+              >
+                {isEditMode ? (
+                  <>
+                    <Lock className="h-4 w-4" />
+                    <span>Lock Layout</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="h-4 w-4" />
+                    <span>Edit Layout</span>
+                  </>
+                )}
+              </button>
               <button className="flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors">
                 <Share2 className="h-4 w-4" />
                 <span>Share</span>
@@ -163,6 +215,19 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Dashboard Content */}
         <div className="p-6">
+          {isEditMode && (
+            <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="flex items-center space-x-2 text-orange-800">
+                <Move className="h-5 w-5" />
+                <span className="font-medium">Edit Mode Active</span>
+              </div>
+              <p className="text-sm text-orange-700 mt-1">
+                Drag charts to reposition them and resize by dragging the
+                corners. Click "Lock Layout" when finished.
+              </p>
+            </div>
+          )}
+
           {selectedDashboardData.charts.length === 0 ? (
             <div className="text-center py-12">
               <BarChart3 className="h-16 w-16 text-slate-300 mx-auto mb-4" />
@@ -181,11 +246,26 @@ const Dashboard: React.FC<DashboardProps> = ({
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            <ResponsiveGridLayout
+              className="layout"
+              layouts={layouts}
+              onLayoutChange={handleLayoutChange}
+              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+              cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+              rowHeight={60}
+              isDraggable={isEditMode}
+              isResizable={isEditMode}
+              margin={[16, 16]}
+              containerPadding={[0, 0]}
+            >
               {selectedDashboardData.charts.map((chart, index) => (
                 <div
-                  key={chart.id || index}
-                  className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow"
+                  key={chart.id || `chart-${index}`}
+                  className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-200 ${
+                    isEditMode
+                      ? "hover:shadow-lg cursor-move"
+                      : "hover:shadow-md"
+                  }`}
                 >
                   <div className="p-4 border-b border-slate-100">
                     <div className="flex items-center justify-between">
@@ -199,9 +279,17 @@ const Dashboard: React.FC<DashboardProps> = ({
                             } Chart`}
                         </h3>
                       </div>
-                      <button className="text-slate-400 hover:text-slate-600">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center space-x-2">
+                        {isEditMode && (
+                          <div className="flex items-center space-x-1 text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                            <Move className="h-3 w-3" />
+                            <span>Drag</span>
+                          </div>
+                        )}
+                        <button className="text-slate-400 hover:text-slate-600">
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                     {chart.description && (
                       <p className="text-sm text-slate-600 mt-1">
@@ -209,12 +297,12 @@ const Dashboard: React.FC<DashboardProps> = ({
                       </p>
                     )}
                   </div>
-                  <div className="h-80">
-                    <SavedChart config={chart} />
+                  <div className="flex-1 min-h-0">
+                    <SavedChart config={chart} showControls={!isEditMode} />
                   </div>
                 </div>
               ))}
-            </div>
+            </ResponsiveGridLayout>
           )}
         </div>
       </div>
