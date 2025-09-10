@@ -192,10 +192,27 @@ const DynamicSemanticChartBuilder: React.FC<
         });
 
         // Filter out rows where all y-axis values are missing
-        const normalizedData = Array.from(dataMap.values()).filter((item) => {
+        let normalizedData = Array.from(dataMap.values()).filter((item) => {
           return Object.keys(item).some(
             (key) => key !== "name" && item[key] != null
           );
+        });
+
+        // Sort data by total y-axis values (high to low)
+        normalizedData.sort((a, b) => {
+          const aTotal = Object.entries(a)
+            .filter(([key]) => key !== "name")
+            .reduce(
+              (sum, [, value]) => sum + (typeof value === "number" ? value : 0),
+              0
+            );
+          const bTotal = Object.entries(b)
+            .filter(([key]) => key !== "name")
+            .reduce(
+              (sum, [, value]) => sum + (typeof value === "number" ? value : 0),
+              0
+            );
+          return bTotal - aTotal; // Descending order
         });
 
         const newYAxisColumns: Column[] = groupByDimension
