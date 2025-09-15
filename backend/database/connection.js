@@ -32,7 +32,10 @@ export async function getPoolForConnection(connection_id, user_id) {
     });
     const client = await pool.connect();
     try {
-      await client.query(`SET search_path TO ${conn.selected_db}`);
+      // ✅ only set search_path if selected_db is provided
+      if (conn.selected_db) {
+        await client.query(`SET search_path TO "${conn.selected_db}"`);
+      }
     } finally {
       client.release();
     }
@@ -46,7 +49,10 @@ export async function getPoolForConnection(connection_id, user_id) {
       connectTimeout: conn.command_timeout || 10000,
       connectionLimit: conn.max_transport_objects || 10,
     });
-    await pool.query(`USE ${conn.selected_db}`);
+    // ✅ only USE if selected_db is provided
+    if (conn.selected_db) {
+      await pool.query(`USE \`${conn.selected_db}\``);
+    }
   } else {
     throw new Error(`Unsupported database type: ${conn.type}`);
   }

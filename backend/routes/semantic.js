@@ -292,6 +292,147 @@ router.delete("/connections/:id", async (req, res) => {
   }
 });
 
+router.get("/schemas", async (req, res) => {
+  try {
+    const { connection_id } = req.query;
+    if (!connection_id) {
+      return res
+        .status(400)
+        .json({ success: false, error: "connection_id required" });
+    }
+
+    // get connection + pool
+    const { pool, type } = await getPoolForConnection(
+      connection_id,
+      req.user?.userId
+    );
+
+    // fetch connection details to know schema/database
+    const db = await dbPromise;
+    const conn = await db.get(`SELECT * FROM connections WHERE id = ?`, [
+      connection_id,
+    ]);
+
+    const client = await pool.connect();
+    try {
+      const schemas = [];
+      let tablesQuery, columnsQuery;
+
+      if (type === "postgres") {
+        // 🔎 list tables in public schema
+        tablesQuery = `
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_type = 'BASE TABLE';
+        `;
+
+        columnsQuery = `
+          SELECT 
+            c.column_name, 
+            c.data_type, 
+            c.is_nullable,
+            COALESCE(
+              (SELECT 1
+               FROM information_schema.table_constraints tc
+               JOIN information_schema.key_column_usage kcu
+                 ON tc.constraint_name = kcu.constraint_name
+                 AND tc.table_schema = kcu.table_schema
+               WHERE tc.constraint_type = 'PRIMARY KEY'
+                 AND tc.table_name = c.table_name
+                 AND kcu.column_name = c.column_name
+                 AND tc.table_schema = c.table_schema), 0
+            ) AS pk
+          FROM information_schema.columns c
+          WHERE c.table_name = $1
+            AND c.table_schema = 'public';
+        `;
+      } else if (type === "mysql") {
+        // 🔎 list tables in selected database
+        tablesQuery = `
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = ?
+            AND table_type = 'BASE TABLE';
+        `;
+
+        columnsQuery = `
+          SELECT 
+            c.column_name, 
+            c.data_type, 
+            c.is_nullable,
+            (CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN 1 ELSE 0 END) AS pk
+          FROM information_schema.columns c
+          LEFT JOIN information_schema.key_column_usage kcu
+            ON c.table_name = kcu.table_name 
+            AND c.column_name = kcu.column_name 
+            AND c.table_schema = kcu.table_schema
+          LEFT JOIN information_schema.table_constraints tc
+            ON tc.constraint_name = kcu.constraint_name 
+            AND tc.table_schema = kcu.table_schema
+          WHERE c.table_name = ?
+            AND c.table_schema = ?;
+        `;
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: `Unsupported database type: ${type}`,
+        });
+      }
+
+      // ✅ Fetch all tables
+      let tablesResult;
+      if (type === "postgres") {
+        tablesResult = await client.query(tablesQuery);
+      } else {
+        tablesResult = await client.query(tablesQuery, [conn.database]);
+      }
+
+      const tables =
+        type === "postgres"
+          ? tablesResult.rows.map((r) => r.table_name)
+          : tablesResult[0].map((r) => r.table_name);
+
+      console.log("Tables found:", tables);
+
+      // ✅ Fetch columns for each table
+      for (const tableName of tables) {
+        console.log("Fetching columns for table:", tableName);
+
+        let columnsResult;
+        if (type === "postgres") {
+          columnsResult = await client.query(columnsQuery, [tableName]);
+        } else {
+          columnsResult = await client.query(columnsQuery, [
+            tableName,
+            conn.database,
+          ]);
+        }
+
+        const rows =
+          type === "postgres" ? columnsResult.rows : columnsResult[0];
+
+        const columns = rows.map((row) => ({
+          name: row.column_name,
+          type: row.data_type,
+          notnull: row.is_nullable === "NO" ? 1 : 0,
+          pk: row.pk ? 1 : 0,
+        }));
+
+        schemas.push({ tableName, columns });
+      }
+
+      res.json({ success: true, schemas });
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error("Error fetching schemas:", err.message, "Stack:", err.stack);
+    res.status(500).json({ success: false, error: "Failed to fetch schemas" });
+  }
+});
+
+
 router.get("/facts", async (req, res) => {
   try {
     const { connection_id } = req.query;

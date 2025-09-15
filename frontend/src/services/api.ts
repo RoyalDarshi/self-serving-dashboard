@@ -199,7 +199,7 @@ export const apiService = {
   getSchemas: (
     connection_id: number
   ): Promise<{ success: boolean; schemas?: Schema[]; error?: string }> =>
-    apiFetch(`/database/schemas?connection_id=${connection_id}`),
+    apiFetch(`/semantic/schemas?connection_id=${connection_id}`),
 
   /**
    * FACT MANAGEMENT
