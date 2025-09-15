@@ -7,6 +7,7 @@ import databaseRouter from "./routes/database.js";
 import analyticsRouter from "./routes/analytics.js";
 import { initializeDatabase } from "./database/setupDatabase.js";
 import dotenv from "dotenv";
+
 dotenv.config();
 
 const app = express();
@@ -15,7 +16,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 app.use(cors());
 app.use(express.json());
 
-// JWT decode (optional auth for routes that need it)
+// JWT middleware for optional authentication
 app.use((req, res, next) => {
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) {

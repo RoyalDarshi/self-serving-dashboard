@@ -1,15 +1,17 @@
+// routes/semantic.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { dbPromise } from "../database/sqliteConnection.js";
-import pool from "../database/connection.js";
+import {
+  getPoolForConnection,
+  quoteIdentifier,
+} from "../database/connection.js";
 
 const router = Router();
-
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 const SALT_ROUNDS = 10;
 
-// AUTH
 router.post("/login", async (req, res) => {
   const db = await dbPromise;
   const { username, password } = req.body;
@@ -25,16 +27,18 @@ router.post("/login", async (req, res) => {
       "SELECT * FROM users WHERE username = ?",
       username
     );
-    if (!user)
+    if (!user) {
       return res
         .status(401)
         .json({ success: false, error: "Invalid username or password" });
+    }
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match)
+    if (!match) {
       return res
         .status(401)
         .json({ success: false, error: "Invalid username or password" });
+    }
 
     const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, {
       expiresIn: "1h",
@@ -46,7 +50,6 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Create a new user
 router.post("/users", async (req, res) => {
   const db = await dbPromise;
   const { username, password, role } = req.body;
@@ -59,7 +62,6 @@ router.post("/users", async (req, res) => {
   }
 
   try {
-    // Check if username already exists
     const existingUser = await db.get(
       "SELECT id FROM users WHERE username = ?",
       username
@@ -70,10 +72,7 @@ router.post("/users", async (req, res) => {
         .json({ success: false, error: "Username already exists" });
     }
 
-    // Hash the password
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-    // Insert the new user
     const result = await db.run(
       "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
       [username, hashedPassword, role]
@@ -99,7 +98,6 @@ router.get("/validate", async (req, res) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-
     const db = await dbPromise;
     const user = await db.get(
       "SELECT id, username, role FROM users WHERE id = ?",
@@ -119,11 +117,113 @@ router.get("/validate", async (req, res) => {
   }
 });
 
-// List all facts
-router.get("/facts", async (req, res) => {
+router.get("/connections", async (req, res) => {
   try {
     const db = await dbPromise;
-    const facts = await db.all("SELECT * FROM facts");
+    const connections = await db.all(
+      "SELECT id, connection_name, description, type, hostname, port, database, command_timeout, max_transport_objects, username, selected_db, created_at FROM connections WHERE user_id = ?",
+      [req.user.userId]
+    );
+    res.json(connections);
+  } catch (err) {
+    console.error("List connections error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/connections", async (req, res) => {
+  try {
+    const {
+      connection_name,
+      description,
+      type,
+      hostname,
+      port,
+      database,
+      command_timeout,
+      max_transport_objects,
+      username,
+      password,
+      selected_db,
+    } = req.body;
+
+    if (
+      !connection_name ||
+      !type ||
+      !hostname ||
+      !port ||
+      !database ||
+      !username ||
+      !password
+    ) {
+      return res.status(400).json({ error: "Required fields missing" });
+    }
+
+    const db = await dbPromise;
+    const result = await db.run(
+      `INSERT INTO connections (
+        user_id, connection_name, description, type, hostname, port, database,
+        command_timeout, max_transport_objects, username, password, selected_db
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.user.userId,
+        connection_name,
+        description,
+        type,
+        hostname,
+        port,
+        database,
+        command_timeout,
+        max_transport_objects,
+        username,
+        password,
+        selected_db,
+      ]
+    );
+
+    res.json({
+      id: result.lastID,
+      connection_name,
+      description,
+      type,
+      hostname,
+      port,
+      database,
+      command_timeout,
+      max_transport_objects,
+      username,
+      selected_db,
+    });
+  } catch (err) {
+    console.error("Create connection error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/connections/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM connections WHERE id = ? AND user_id = ?", [
+      req.params.id,
+      req.user.userId,
+    ]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete connection error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/facts", async (req, res) => {
+  try {
+    const { connection_id } = req.query;
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
+    }
+    const db = await dbPromise;
+    const facts = await db.all("SELECT * FROM facts WHERE connection_id = ?", [
+      connection_id,
+    ]);
     res.json(facts);
   } catch (err) {
     console.error("List facts error:", err.message);
@@ -131,11 +231,17 @@ router.get("/facts", async (req, res) => {
   }
 });
 
-// List all dimensions
 router.get("/dimensions", async (req, res) => {
   try {
+    const { connection_id } = req.query;
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
+    }
     const db = await dbPromise;
-    const dimensions = await db.all("SELECT * FROM dimensions");
+    const dimensions = await db.all(
+      "SELECT * FROM dimensions WHERE connection_id = ?",
+      [connection_id]
+    );
     res.json(dimensions);
   } catch (err) {
     console.error("List dimensions error:", err.message);
@@ -143,18 +249,25 @@ router.get("/dimensions", async (req, res) => {
   }
 });
 
-// List fact-dimension mappings
 router.get("/fact-dimensions", async (req, res) => {
   try {
+    const { connection_id } = req.query;
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
+    }
     const db = await dbPromise;
-    const mappings = await db.all(`
+    const mappings = await db.all(
+      `
       SELECT fd.id, f.name AS fact_name, f.table_name AS fact_table, f.column_name AS fact_column,
              d.name AS dimension_name, d.table_name AS dimension_table, d.column_name AS dimension_column,
              fd.join_table, fd.fact_column, fd.dimension_column
       FROM fact_dimensions fd
       JOIN facts f ON fd.fact_id = f.id
       JOIN dimensions d ON fd.dimension_id = d.id
-    `);
+      WHERE f.connection_id = ?
+    `,
+      [connection_id]
+    );
     res.json(mappings);
   } catch (err) {
     console.error("List fact-dimensions error:", err.message);
@@ -162,17 +275,21 @@ router.get("/fact-dimensions", async (req, res) => {
   }
 });
 
-// Add a new fact
 router.post("/facts", async (req, res) => {
   try {
-    const { name, table_name, column_name, aggregate_function } = req.body;
+    const { connection_id, name, table_name, column_name, aggregate_function } =
+      req.body;
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
+    }
     const db = await dbPromise;
     const result = await db.run(
-      "INSERT INTO facts (name, table_name, column_name, aggregate_function) VALUES (?, ?, ?, ?)",
-      [name, table_name, column_name, aggregate_function]
+      "INSERT INTO facts (connection_id, name, table_name, column_name, aggregate_function) VALUES (?, ?, ?, ?, ?)",
+      [connection_id, name, table_name, column_name, aggregate_function]
     );
     res.json({
       id: result.lastID,
+      connection_id,
       name,
       table_name,
       column_name,
@@ -184,7 +301,6 @@ router.post("/facts", async (req, res) => {
   }
 });
 
-// Update a fact
 router.put("/facts/:id", async (req, res) => {
   try {
     const { name, table_name, column_name, aggregate_function } = req.body;
@@ -204,7 +320,6 @@ router.put("/facts/:id", async (req, res) => {
   }
 });
 
-// Delete a fact
 router.delete("/facts/:id", async (req, res) => {
   try {
     const db = await dbPromise;
@@ -216,26 +331,32 @@ router.delete("/facts/:id", async (req, res) => {
   }
 });
 
-// Add a new dimension (updated to include table_name)
 router.post("/dimensions", async (req, res) => {
   try {
-    const { name, table_name, column_name } = req.body;
-    if (!table_name) {
-      return res.status(400).json({ error: "table_name is required" });
+    const { connection_id, name, table_name, column_name } = req.body;
+    if (!connection_id || !table_name) {
+      return res
+        .status(400)
+        .json({ error: "connection_id and table_name are required" });
     }
     const db = await dbPromise;
     const result = await db.run(
-      "INSERT INTO dimensions (name, table_name, column_name) VALUES (?, ?, ?)",
-      [name, table_name, column_name]
+      "INSERT INTO dimensions (connection_id, name, table_name, column_name) VALUES (?, ?, ?, ?)",
+      [connection_id, name, table_name, column_name]
     );
-    res.json({ id: result.lastID, name, table_name, column_name });
+    res.json({
+      id: result.lastID,
+      connection_id,
+      name,
+      table_name,
+      column_name,
+    });
   } catch (err) {
     console.error("Create dimension error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update a dimension
 router.put("/dimensions/:id", async (req, res) => {
   try {
     const { name, table_name, column_name } = req.body;
@@ -255,7 +376,6 @@ router.put("/dimensions/:id", async (req, res) => {
   }
 });
 
-// Delete a dimension
 router.delete("/dimensions/:id", async (req, res) => {
   try {
     const db = await dbPromise;
@@ -267,7 +387,6 @@ router.delete("/dimensions/:id", async (req, res) => {
   }
 });
 
-// Add a fact-dimension mapping (manual)
 router.post("/fact-dimensions", async (req, res) => {
   try {
     const { fact_id, dimension_id, join_table, fact_column, dimension_column } =
@@ -275,7 +394,7 @@ router.post("/fact-dimensions", async (req, res) => {
     const db = await dbPromise;
     const result = await db.run(
       `INSERT INTO fact_dimensions 
-        (fact_id, dimension_id, join_table, fact_column, dimension_column) 
+       (fact_id, dimension_id, join_table, fact_column, dimension_column) 
        VALUES (?, ?, ?, ?, ?)`,
       [fact_id, dimension_id, join_table, fact_column, dimension_column]
     );
@@ -293,93 +412,110 @@ router.post("/fact-dimensions", async (req, res) => {
   }
 });
 
-// Auto-map facts to dimensions by common columns
 router.post("/auto-map", async (req, res) => {
   try {
+    const { connection_id } = req.body;
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
+    }
+    const { pool, type } = await getPoolForConnection(
+      connection_id,
+      req.user?.userId
+    );
+    const client = await pool.connect();
     const db = await dbPromise;
 
-    // Get all facts and dimensions from metadata
-    const facts = await db.all("SELECT * FROM facts");
-    const dimensions = await db.all("SELECT * FROM dimensions");
+    const facts = await db.all("SELECT * FROM facts WHERE connection_id = ?", [
+      connection_id,
+    ]);
+    const dimensions = await db.all(
+      "SELECT * FROM dimensions WHERE connection_id = ?",
+      [connection_id]
+    );
 
     if (facts.length === 0 || dimensions.length === 0) {
       return res.status(400).json({ error: "No facts or dimensions defined" });
     }
 
     const autoMappings = [];
+    let columnsQuery =
+      type === "postgres"
+        ? `SELECT column_name FROM information_schema.columns WHERE table_name = $1`
+        : `SELECT column_name FROM information_schema.columns WHERE table_name = ?`;
 
-    // For each fact
-    for (const fact of facts) {
-      // Get columns of fact table
-      const factColumnsResult = await pool.query(
-        `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
-        [fact.table_name]
-      );
-      const factColumns = factColumnsResult.rows.map((row) => row.column_name);
+    try {
+      for (const fact of facts) {
+        const factColumnsResult = await client.query(columnsQuery, [
+          fact.table_name,
+        ]);
+        const factColumns = (
+          factColumnsResult.rows || factColumnsResult[0]
+        ).map((row) => row.column_name);
 
-      // For each dimension
-      for (const dim of dimensions) {
-        // Use dimension's table_name
-        const dimTableColumnsResult = await pool.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
-          [dim.table_name]
-        );
-        const dimTableColumns = dimTableColumnsResult.rows.map(
-          (row) => row.column_name
-        );
+        for (const dim of dimensions) {
+          const dimTableColumnsResult = await client.query(columnsQuery, [
+            dim.table_name,
+          ]);
+          const dimTableColumns = (
+            dimTableColumnsResult.rows || dimTableColumnsResult[0]
+          ).map((row) => row.column_name);
 
-        // Skip if dimension column not in its table
-        if (!dimTableColumns.includes(dim.column_name)) {
-          console.warn(
-            `Dimension ${dim.name} column ${dim.column_name} not found in table ${dim.table_name}`
+          if (!dimTableColumns.includes(dim.column_name)) {
+            console.warn(
+              `Dimension ${dim.name} column ${dim.column_name} not found in table ${dim.table_name}`
+            );
+            continue;
+          }
+
+          const commonColumns = factColumns.filter((col) =>
+            dimTableColumns.includes(col)
           );
-          continue;
-        }
 
-        // Find common columns between fact table and dimension table
-        const commonColumns = factColumns.filter((col) =>
-          dimTableColumns.includes(col)
-        );
+          for (const commonCol of commonColumns) {
+            const existing = await db.get(
+              `SELECT id FROM fact_dimensions WHERE fact_id = ? AND dimension_id = ? AND join_table = ? AND fact_column = ? AND dimension_column = ?`,
+              [fact.id, dim.id, dim.table_name, commonCol, commonCol]
+            );
+            if (existing) continue;
 
-        for (const commonCol of commonColumns) {
-          // Check if mapping already exists
-          const existing = await db.get(
-            `SELECT id FROM fact_dimensions WHERE fact_id = ? AND dimension_id = ? AND join_table = ? AND fact_column = ? AND dimension_column = ?`,
-            [fact.id, dim.id, dim.table_name, commonCol, commonCol]
-          );
-          if (existing) continue;
-
-          // Insert auto-mapping
-          const result = await db.run(
-            `INSERT INTO fact_dimensions (fact_id, dimension_id, join_table, fact_column, dimension_column) VALUES (?, ?, ?, ?, ?)`,
-            [fact.id, dim.id, dim.table_name, commonCol, commonCol]
-          );
-          autoMappings.push({
-            id: result.lastID,
-            fact_id: fact.id,
-            fact_name: fact.name,
-            dimension_id: dim.id,
-            dimension_name: dim.name,
-            join_table: dim.table_name,
-            fact_column: commonCol,
-            dimension_column: commonCol,
-          });
+            const result = await db.run(
+              `INSERT INTO fact_dimensions (fact_id, dimension_id, join_table, fact_column, dimension_column) VALUES (?, ?, ?, ?, ?)`,
+              [fact.id, dim.id, dim.table_name, commonCol, commonCol]
+            );
+            autoMappings.push({
+              id: result.lastID,
+              fact_id: fact.id,
+              fact_name: fact.name,
+              dimension_id: dim.id,
+              dimension_name: dim.name,
+              join_table: dim.table_name,
+              fact_column: commonCol,
+              dimension_column: commonCol,
+            });
+          }
         }
       }
-    }
 
-    res.json({ success: true, autoMappings });
+      res.json({ success: true, autoMappings });
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error("Auto-map error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// List KPIs
 router.get("/kpis", async (req, res) => {
   try {
+    const { connection_id } = req.query;
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
+    }
     const db = await dbPromise;
-    const kpis = await db.all("SELECT * FROM kpis");
+    const kpis = await db.all("SELECT * FROM kpis WHERE connection_id = ?", [
+      connection_id,
+    ]);
     res.json(kpis);
   } catch (err) {
     console.error("List KPIs error:", err.message);
@@ -387,23 +523,30 @@ router.get("/kpis", async (req, res) => {
   }
 });
 
-// Add KPI
 router.post("/kpis", async (req, res) => {
   try {
-    const { name, expression, description } = req.body;
+    const { connection_id, name, expression, description } = req.body;
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
+    }
     const db = await dbPromise;
     const result = await db.run(
-      "INSERT INTO kpis (name, expression, description, created_by) VALUES (?, ?, ?, ?)",
-      [name, expression, description, req.user?.userId || null]
+      "INSERT INTO kpis (connection_id, name, expression, description, created_by) VALUES (?, ?, ?, ?, ?)",
+      [connection_id, name, expression, description, req.user?.userId || null]
     );
-    res.json({ id: result.lastID, name, expression, description });
+    res.json({
+      id: result.lastID,
+      connection_id,
+      name,
+      expression,
+      description,
+    });
   } catch (err) {
     console.error("Create KPI error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update KPI
 router.put("/kpis/:id", async (req, res) => {
   try {
     const { name, expression, description } = req.body;
@@ -423,7 +566,6 @@ router.put("/kpis/:id", async (req, res) => {
   }
 });
 
-// Delete KPI
 router.delete("/kpis/:id", async (req, res) => {
   try {
     const db = await dbPromise;
