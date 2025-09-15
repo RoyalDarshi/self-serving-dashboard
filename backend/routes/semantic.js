@@ -1,4 +1,3 @@
-// routes/semantic.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -7,6 +6,8 @@ import {
   getPoolForConnection,
   quoteIdentifier,
 } from "../database/connection.js";
+import pg from "pg";
+import mysql from "mysql2/promise";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
@@ -193,10 +194,87 @@ router.post("/connections", async (req, res) => {
       max_transport_objects,
       username,
       selected_db,
+      created_at: new Date().toISOString(),
     });
   } catch (err) {
     console.error("Create connection error:", err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/connections/test", async (req, res) => {
+  try {
+    const {
+      type,
+      hostname,
+      port,
+      database,
+      username,
+      password,
+      command_timeout,
+      max_transport_objects,
+      selected_db,
+    } = req.body;
+
+    if (!type || !hostname || !port || !database || !username || !password) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Required fields missing" });
+    }
+
+    let pool;
+    if (type === "postgres") {
+      pool = new pg.Pool({
+        host: hostname,
+        port,
+        database,
+        user: username,
+        password,
+        connectionTimeoutMillis: command_timeout || 5000,
+        max: max_transport_objects || 20,
+      });
+      const client = await pool.connect();
+      try {
+        if (selected_db) {
+          await client.query(
+            `SET search_path TO ${quoteIdentifier(selected_db, type)}`
+          );
+        }
+        await client.query("SELECT 1");
+        res.json({ success: true, message: "Connection test successful" });
+      } finally {
+        client.release();
+        await pool.end();
+      }
+    } else if (type === "mysql") {
+      pool = await mysql.createPool({
+        host: hostname,
+        port,
+        database,
+        user: username,
+        password,
+        connectTimeout: command_timeout || 10000,
+        connectionLimit: max_transport_objects || 10,
+      });
+      try {
+        if (selected_db) {
+          await pool.query(`USE ${quoteIdentifier(selected_db, type)}`);
+        }
+        await pool.query("SELECT 1");
+        res.json({ success: true, message: "Connection test successful" });
+      } finally {
+        await pool.end();
+      }
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, error: `Unsupported database type: ${type}` });
+    }
+  } catch (err) {
+    console.error("Test connection error:", err.message);
+    res
+      .status(500)
+      .json({ success: false, error: `Failed to connect: ${err.message}` });
   }
 });
 
