@@ -40,7 +40,9 @@ interface Dimension {
 interface FactDimension {
   id: number;
   fact_id: number;
+  fact_name: string;
   dimension_id: number;
+  dimension_name: string;
   join_table: string;
   fact_column: string;
   dimension_column: string;
@@ -89,6 +91,8 @@ const AdminPanel: React.FC = () => {
   const [editingDimension, setEditingDimension] = useState<Dimension | null>(
     null
   );
+  const [editingFactDimension, setEditingFactDimension] =
+    useState<FactDimension | null>(null);
   const [editingKPI, setEditingKPI] = useState<KPI | null>(null);
 
   // Form states
@@ -210,6 +214,17 @@ const AdminPanel: React.FC = () => {
     }
   }, [mappingDimensionId, dimensions]);
 
+  // Prefill mapping fields when editing fact-dimension
+  useEffect(() => {
+    if (editingFactDimension) {
+      setMappingFactId(editingFactDimension.fact_id.toString());
+      setMappingDimensionId(editingFactDimension.dimension_id.toString());
+      setMappingJoinTable(editingFactDimension.join_table);
+      setMappingFactColumn(editingFactDimension.fact_column);
+      setMappingDimensionColumn(editingFactDimension.dimension_column);
+    }
+  }, [editingFactDimension]);
+
   const clearForm = () => {
     setFactName("");
     setFactTable("");
@@ -218,11 +233,21 @@ const AdminPanel: React.FC = () => {
     setDimensionName("");
     setDimensionTable("");
     setDimensionColumn("");
+    setMappingFactId("");
+    setMappingDimensionId("");
+    setMappingJoinTable("");
+    setMappingFactColumn("");
+    setMappingDimensionColumn("");
     setKpiName("");
     setKpiExpression("");
     setKpiDescription("");
+    setKpiInsertType("");
+    setKpiInsertFactId("");
+    setKpiInsertTable("");
+    setKpiInsertColumn("");
     setEditingFact(null);
     setEditingDimension(null);
+    setEditingFactDimension(null);
     setEditingKPI(null);
   };
 
@@ -265,6 +290,7 @@ const AdminPanel: React.FC = () => {
       return setError("All fact fields are required");
     try {
       const response = await apiService.updateFact(editingFact.id, {
+        connection_id: selectedConnectionId!,
         name: factName,
         table_name: factTable,
         column_name: factColumn,
@@ -342,6 +368,7 @@ const AdminPanel: React.FC = () => {
     }
     try {
       const response = await apiService.updateDimension(editingDimension.id, {
+        connection_id: selectedConnectionId!,
         name: dimensionName,
         table_name: dimensionTable,
         column_name: dimensionColumn,
@@ -375,6 +402,105 @@ const AdminPanel: React.FC = () => {
       }
     } catch (err) {
       setError(`Failed to delete dimension: ${(err as Error).message}`);
+    }
+  };
+
+  // Fact-Dimension CRUD operations
+  const handleCreateFactDimension = async () => {
+    if (
+      !mappingFactId ||
+      !mappingDimensionId ||
+      !mappingJoinTable ||
+      !mappingFactColumn ||
+      !mappingDimensionColumn
+    ) {
+      return setError("All mapping fields are required");
+    }
+    try {
+      const response = await apiService.createFactDimension({
+        fact_id: Number(mappingFactId),
+        dimension_id: Number(mappingDimensionId),
+        join_table: mappingJoinTable,
+        fact_column: mappingFactColumn,
+        dimension_column: mappingDimensionColumn,
+      });
+      if (response.success && response.data) {
+        setFactDimensions([...factDimensions, response.data]);
+        clearForm();
+        setSuccess("Fact-Dimension mapping created successfully");
+      } else {
+        setError(response.error || "Failed to create mapping");
+      }
+    } catch (err) {
+      setError(`Failed to create mapping: ${(err as Error).message}`);
+    }
+  };
+
+  const handleEditFactDimension = (factDimension: FactDimension) => {
+    setEditingFactDimension(factDimension);
+  };
+
+  const handleUpdateFactDimension = async () => {
+    if (
+      !editingFactDimension ||
+      !mappingFactId ||
+      !mappingDimensionId ||
+      !mappingJoinTable ||
+      !mappingFactColumn ||
+      !mappingDimensionColumn
+    ) {
+      return setError("All mapping fields are required");
+    }
+    try {
+      const response = await apiService.updateFactDimension(
+        editingFactDimension.id,
+        {
+          fact_id: Number(mappingFactId),
+          dimension_id: Number(mappingDimensionId),
+          join_table: mappingJoinTable,
+          fact_column: mappingFactColumn,
+          dimension_column: mappingDimensionColumn,
+        }
+      );
+      if (response.success && response.data) {
+        setFactDimensions(
+          factDimensions.map((fd) =>
+            fd.id === editingFactDimension.id ? response.data : fd
+          )
+        );
+        clearForm();
+        setSuccess("Fact-Dimension mapping updated successfully");
+      } else {
+        setError(response.error || "Failed to update mapping");
+      }
+    } catch (err) {
+      setError(`Failed to update mapping: ${(err as Error).message}`);
+    }
+  };
+
+  const handleDeleteFactDimension = async (
+    id: number,
+    factName: string,
+    dimensionName: string
+  ) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete the mapping between "${factName}" and "${dimensionName}"?`
+      )
+    )
+      return;
+    try {
+      const response = await apiService.deleteFactDimension(id);
+      if (response.success) {
+        setFactDimensions(factDimensions.filter((fd) => fd.id !== id));
+        setSuccess(
+          `Mapping between "${factName}" and "${dimensionName}" deleted successfully`
+        );
+      } else {
+        setError(response.error || "Failed to delete mapping");
+      }
+    } catch (err) {
+      setError(`Failed to delete mapping: ${(err as Error).message}`);
     }
   };
 
@@ -446,40 +572,6 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const handleCreateFactDimension = async () => {
-    if (
-      !mappingFactId ||
-      !mappingDimensionId ||
-      !mappingJoinTable ||
-      !mappingFactColumn ||
-      !mappingDimensionColumn
-    ) {
-      return setError("All mapping fields are required");
-    }
-    try {
-      const response = await apiService.createFactDimension({
-        fact_id: Number(mappingFactId),
-        dimension_id: Number(mappingDimensionId),
-        join_table: mappingJoinTable,
-        fact_column: mappingFactColumn,
-        dimension_column: mappingDimensionColumn,
-      });
-      if (response.success && response.data) {
-        setFactDimensions([...factDimensions, response.data]);
-        setMappingFactId("");
-        setMappingDimensionId("");
-        setMappingJoinTable("");
-        setMappingFactColumn("");
-        setMappingDimensionColumn("");
-        setSuccess("Fact-Dimension mapping created successfully");
-      } else {
-        setError(response.error || "Failed to create mapping");
-      }
-    } catch (err) {
-      setError(`Failed to create mapping: ${(err as Error).message}`);
-    }
-  };
-
   const handleAutoMap = async () => {
     if (!selectedConnectionId)
       return setError("Please select a connection first.");
@@ -497,6 +589,11 @@ const AdminPanel: React.FC = () => {
   );
   const filteredDimensions = dimensions.filter((d) =>
     d.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const filteredFactDimensions = factDimensions.filter((fd) =>
+    `${fd.fact_name} ${fd.dimension_name}`
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase())
   );
   const filteredKpis = kpis.filter((k) =>
     k.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -565,11 +662,35 @@ const AdminPanel: React.FC = () => {
                 onCreate={(newConn) =>
                   setConnections([...connections, newConn])
                 }
+                onUpdate={(updatedConn) =>
+                  setConnections(
+                    connections.map((c) =>
+                      c.id === updatedConn.id ? updatedConn : c
+                    )
+                  )
+                }
               />
               <ConnectionsList
                 connections={connections}
                 selectedConnectionId={selectedConnectionId}
                 setSelectedConnectionId={setSelectedConnectionId}
+                onDelete={(id, name) =>
+                  apiService.deleteConnection(id).then((response) => {
+                    if (response.success) {
+                      setConnections(connections.filter((c) => c.id !== id));
+                      setSuccess(`Connection "${name}" deleted successfully`);
+                      if (selectedConnectionId === id) {
+                        setSelectedConnectionId(
+                          connections.length > 1
+                            ? connections.find((c) => c.id !== id)!.id
+                            : null
+                        );
+                      }
+                    } else {
+                      setError(response.error || "Failed to delete connection");
+                    }
+                  })
+                }
               />
             </div>
           )}
@@ -627,6 +748,7 @@ const AdminPanel: React.FC = () => {
                     schemas={schemas}
                     facts={facts}
                     dimensions={dimensions}
+                    editingFactDimension={editingFactDimension}
                     mappingFactId={mappingFactId}
                     mappingDimensionId={mappingDimensionId}
                     mappingJoinTable={mappingJoinTable}
@@ -638,6 +760,8 @@ const AdminPanel: React.FC = () => {
                     setMappingFactColumn={setMappingFactColumn}
                     setMappingDimensionColumn={setMappingDimensionColumn}
                     onCreate={handleCreateFactDimension}
+                    onUpdate={handleUpdateFactDimension}
+                    onCancel={clearForm}
                     onAutoMap={handleAutoMap}
                   />
                 )}
@@ -674,6 +798,7 @@ const AdminPanel: React.FC = () => {
                 facts={facts}
                 dimensions={dimensions}
                 factDimensions={factDimensions}
+                filteredFactDimensions={filteredFactDimensions}
                 kpis={kpis}
                 filteredFacts={filteredFacts}
                 filteredDimensions={filteredDimensions}
@@ -682,6 +807,8 @@ const AdminPanel: React.FC = () => {
                 onDeleteFact={handleDeleteFact}
                 onEditDimension={handleEditDimension}
                 onDeleteDimension={handleDeleteDimension}
+                onEditFactDimension={handleEditFactDimension}
+                onDeleteFactDimension={handleDeleteFactDimension}
                 onEditKPI={handleEditKPI}
                 onDeleteKPI={handleDeleteKPI}
               />

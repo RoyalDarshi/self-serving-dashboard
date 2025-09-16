@@ -1,3 +1,4 @@
+// semantic.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -131,6 +132,82 @@ router.post("/connections", async (req, res) => {
   }
 });
 
+router.put("/connections/:id", async (req, res) => {
+  try {
+    const {
+      connection_name,
+      description,
+      type,
+      hostname,
+      port,
+      database,
+      command_timeout,
+      max_transport_objects,
+      username,
+      password,
+      selected_db,
+    } = req.body;
+    if (
+      !connection_name ||
+      !type ||
+      !hostname ||
+      !port ||
+      !database ||
+      !username ||
+      !password
+    ) {
+      return res.status(400).json({
+        error: "Missing required connection fields",
+      });
+    }
+    const db = await dbPromise;
+    await db.run(
+      `UPDATE connections SET
+        connection_name = ?, description = ?, type = ?, hostname = ?, port = ?,
+        database = ?, command_timeout = ?, max_transport_objects = ?, username = ?,
+        password = ?, selected_db = ?
+      WHERE id = ? AND user_id = ?`,
+      [
+        connection_name,
+        description || null,
+        type,
+        hostname,
+        port,
+        database,
+        command_timeout || null,
+        max_transport_objects || null,
+        username,
+        password,
+        selected_db,
+        req.params.id,
+        req.user?.userId,
+      ]
+    );
+    const updated = await db.get(
+      "SELECT * FROM connections WHERE id = ?",
+      req.params.id
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Update connection error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/connections/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM connections WHERE id = ? AND user_id = ?", [
+      req.params.id,
+      req.user?.userId,
+    ]);
+    res.json({});
+  } catch (err) {
+    console.error("Delete connection error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post("/connections/test", async (req, res) => {
   try {
     const {
@@ -233,6 +310,57 @@ router.post("/facts", async (req, res) => {
   }
 });
 
+router.put("/facts/:id", async (req, res) => {
+  try {
+    const { connection_id, name, table_name, column_name, aggregate_function } =
+      req.body;
+    if (
+      !connection_id ||
+      !name ||
+      !table_name ||
+      !column_name ||
+      !aggregate_function
+    ) {
+      return res.status(400).json({
+        error: "Missing required fact fields",
+      });
+    }
+    const db = await dbPromise;
+    await db.run(
+      `UPDATE facts SET
+        connection_id = ?, name = ?, table_name = ?, column_name = ?, aggregate_function = ?
+       WHERE id = ?`,
+      [
+        connection_id,
+        name,
+        table_name,
+        column_name,
+        aggregate_function,
+        req.params.id,
+      ]
+    );
+    const updated = await db.get(
+      "SELECT * FROM facts WHERE id = ?",
+      req.params.id
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Update fact error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/facts/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM facts WHERE id = ?", req.params.id);
+    res.json({});
+  } catch (err) {
+    console.error("Delete fact error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/dimensions", async (req, res) => {
   try {
     const { connection_id } = req.query;
@@ -278,6 +406,43 @@ router.post("/dimensions", async (req, res) => {
   }
 });
 
+router.put("/dimensions/:id", async (req, res) => {
+  try {
+    const { connection_id, name, table_name, column_name } = req.body;
+    if (!connection_id || !name || !table_name || !column_name) {
+      return res.status(400).json({
+        error: "Missing required dimension fields",
+      });
+    }
+    const db = await dbPromise;
+    await db.run(
+      `UPDATE dimensions SET
+        connection_id = ?, name = ?, table_name = ?, column_name = ?
+       WHERE id = ?`,
+      [connection_id, name, table_name, column_name, req.params.id]
+    );
+    const updated = await db.get(
+      "SELECT * FROM dimensions WHERE id = ?",
+      req.params.id
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Update dimension error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/dimensions/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM dimensions WHERE id = ?", req.params.id);
+    res.json({});
+  } catch (err) {
+    console.error("Delete dimension error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/fact-dimensions", async (req, res) => {
   try {
     const { connection_id } = req.query;
@@ -297,6 +462,103 @@ router.get("/fact-dimensions", async (req, res) => {
     res.json(factDimensions);
   } catch (err) {
     console.error("List fact-dimensions error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/fact-dimensions", async (req, res) => {
+  try {
+    const { fact_id, dimension_id, join_table, fact_column, dimension_column } =
+      req.body;
+    if (
+      !fact_id ||
+      !dimension_id ||
+      !join_table ||
+      !fact_column ||
+      !dimension_column
+    ) {
+      return res.status(400).json({
+        error: "Missing required fact-dimension fields",
+      });
+    }
+    const db = await dbPromise;
+    const result = await db.run(
+      `INSERT INTO fact_dimensions (fact_id, dimension_id, join_table, fact_column, dimension_column)
+       VALUES (?, ?, ?, ?, ?)`,
+      [fact_id, dimension_id, join_table, fact_column, dimension_column]
+    );
+    const fact = await db.get("SELECT name FROM facts WHERE id = ?", [fact_id]);
+    const dimension = await db.get("SELECT name FROM dimensions WHERE id = ?", [
+      dimension_id,
+    ]);
+    res.json({
+      id: result.lastID,
+      fact_id,
+      fact_name: fact.name,
+      dimension_id,
+      dimension_name: dimension.name,
+      join_table,
+      fact_column,
+      dimension_column,
+    });
+  } catch (err) {
+    console.error("Create fact-dimension error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/fact-dimensions/:id", async (req, res) => {
+  try {
+    const { fact_id, dimension_id, join_table, fact_column, dimension_column } =
+      req.body;
+    if (
+      !fact_id ||
+      !dimension_id ||
+      !join_table ||
+      !fact_column ||
+      !dimension_column
+    ) {
+      return res.status(400).json({
+        error: "Missing required fact-dimension fields",
+      });
+    }
+    const db = await dbPromise;
+    await db.run(
+      `UPDATE fact_dimensions SET
+        fact_id = ?, dimension_id = ?, join_table = ?, fact_column = ?, dimension_column = ?
+       WHERE id = ?`,
+      [
+        fact_id,
+        dimension_id,
+        join_table,
+        fact_column,
+        dimension_column,
+        req.params.id,
+      ]
+    );
+    const updated = await db.get(
+      `SELECT fd.id, fd.fact_id, f.name AS fact_name, fd.dimension_id, d.name AS dimension_name,
+              fd.join_table, fd.fact_column, fd.dimension_column
+       FROM fact_dimensions fd
+       JOIN facts f ON fd.fact_id = f.id
+       JOIN dimensions d ON fd.dimension_id = d.id
+       WHERE fd.id = ?`,
+      [req.params.id]
+    );
+    res.json(updated);
+  } catch (err) {
+    console.error("Update fact-dimension error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/fact-dimensions/:id", async (req, res) => {
+  try {
+    const db = await dbPromise;
+    await db.run("DELETE FROM fact_dimensions WHERE id = ?", req.params.id);
+    res.json({});
+  } catch (err) {
+    console.error("Delete fact-dimension error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

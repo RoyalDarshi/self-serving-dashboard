@@ -1,3 +1,4 @@
+// api.ts
 const API_BASE = "http://localhost:3001/api"; // Adjust to your backend URL
 
 interface Fact {
@@ -11,6 +12,7 @@ interface Fact {
 interface Dimension {
   id: number;
   name: string;
+  table_name: string;
   column_name: string;
 }
 
@@ -173,6 +175,17 @@ export const apiService = {
     return apiFetch("/semantic/connections", "POST", connection);
   },
 
+  async updateConnection(
+    id: number,
+    connection: Omit<Connection, "id" | "created_at">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/connections/${id}`, "PUT", connection);
+  },
+
+  async deleteConnection(id: number): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/connections/${id}`, "DELETE");
+  },
+
   async testConnection(
     connection: Omit<Connection, "id" | "created_at">
   ): Promise<ApiResponse<{ success: boolean; message?: string }>> {
@@ -197,12 +210,44 @@ export const apiService = {
     return response.success ? response.data || [] : [];
   },
 
+  async createFact(fact: Omit<Fact, "id">): Promise<ApiResponse<unknown>> {
+    return apiFetch("/semantic/facts", "POST", fact);
+  },
+
+  async updateFact(
+    id: number,
+    fact: Omit<Fact, "id">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/facts/${id}`, "PUT", fact);
+  },
+
+  async deleteFact(id: number): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/facts/${id}`, "DELETE");
+  },
+
   async getDimensions(connectionId: number): Promise<Dimension[]> {
     const response = await apiFetch<Dimension[]>(
       `/semantic/dimensions?connection_id=${connectionId}`,
       "GET"
     );
     return response.success ? response.data || [] : [];
+  },
+
+  async createDimension(
+    dimension: Omit<Dimension, "id">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch("/semantic/dimensions", "POST", dimension);
+  },
+
+  async updateDimension(
+    id: number,
+    dimension: Omit<Dimension, "id">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/dimensions/${id}`, "PUT", dimension);
+  },
+
+  async deleteDimension(id: number): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/dimensions/${id}`, "DELETE");
   },
 
   async getFactDimensions(connectionId: number): Promise<FactDimension[]> {
@@ -214,12 +259,46 @@ export const apiService = {
     return response.success ? response.data || [] : [];
   },
 
+  async createFactDimension(
+    factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch("/semantic/fact-dimensions", "POST", factDimension);
+  },
+
+  async updateFactDimension(
+    id: number,
+    factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/fact-dimensions/${id}`, "PUT", factDimension);
+  },
+
+  async deleteFactDimension(id: number): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/fact-dimensions/${id}`, "DELETE");
+  },
+
   async getKpis(connectionId: number): Promise<Kpi[]> {
     const response = await apiFetch<Kpi[]>(
       `/semantic/kpis?connection_id=${connectionId}`,
       "GET"
     );
     return response.success ? response.data || [] : [];
+  },
+
+  async createKpi(
+    kpi: Omit<Kpi, "id" | "created_by">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch("/semantic/kpis", "POST", kpi);
+  },
+
+  async updateKpi(
+    id: number,
+    kpi: Omit<Kpi, "id" | "connection_id" | "created_by">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/kpis/${id}`, "PUT", kpi);
+  },
+
+  async deleteKpi(id: number): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/kpis/${id}`, "DELETE");
   },
 
   // Query Execution
