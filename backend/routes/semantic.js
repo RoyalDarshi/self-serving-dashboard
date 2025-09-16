@@ -5,6 +5,7 @@ import { dbPromise } from "../database/sqliteConnection.js";
 import {
   getPoolForConnection,
   quoteIdentifier,
+  testConnection,
 } from "../database/connection.js";
 
 const router = Router();
@@ -83,8 +84,7 @@ router.post("/connections", async (req, res) => {
       !port ||
       !database ||
       !username ||
-      !password ||
-      !selected_db
+      !password
     ) {
       return res.status(400).json({
         error: "Missing required connection fields",
@@ -141,7 +141,6 @@ router.post("/connections/test", async (req, res) => {
       database,
       username,
       password,
-      selected_db,
     } = req.body;
 
     if (
@@ -151,43 +150,32 @@ router.post("/connections/test", async (req, res) => {
       !port ||
       !database ||
       !username ||
-      !password ||
-      !selected_db
+      !password
     ) {
       return res.status(400).json({
         error: "Missing required connection fields",
       });
     }
 
-    const { pool } = await getPoolForConnection(
-      {
-        connection_name,
-        type,
-        hostname,
-        port,
-        database,
-        username,
-        password,
-        selected_db,
-      },
-      req.user?.userId
-    );
+    await testConnection({
+      type,
+      hostname,
+      port,
+      database,
+      username,
+      password,
+    });
 
-    const client = await pool.connect();
-    try {
-      // Perform a simple query to test the connection
-      const testQuery =
-        type === "postgres" ? "SELECT 1 AS test" : "SELECT 1 AS test";
-      await client.query(testQuery);
-      res.json({ success: true, message: "Connection successful" });
-    } finally {
-      client.release();
-    }
+    res.json({
+      success: true,
+      message: "Connection successful",
+    });
   } catch (err) {
     console.error("Test connection error:", err.message);
-    res
-      .status(500)
-      .json({ success: false, error: `Failed to connect: ${err.message}` });
+    res.status(500).json({
+      success: false,
+      error: `Failed to connect: ${err.message}`,
+    });
   }
 });
 
