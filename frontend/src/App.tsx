@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { apiService } from "./services/api";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
-import CreateUser from "./components/CreateUser";
+import UserManagement from "./components/UserManagement";
 import AdminPanel from "./components/AdminPanel";
 import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
 import DragDropProvider from "./components/DragDropProvider";
@@ -203,7 +203,7 @@ const App: React.FC = () => {
           />
           <div className="flex-1 ml-16">
             {activeTab === "create-user" && user.role === "admin" && (
-              <CreateUser />
+              <UserManagement />
             )}
             {activeTab === "admin-panel" && user.role === "admin" && (
               <AdminPanel />

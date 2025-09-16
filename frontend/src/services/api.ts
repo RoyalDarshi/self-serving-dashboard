@@ -93,6 +93,21 @@ interface Kpi {
   created_by?: number;
 }
 
+interface User {
+  id: number;
+  username: string;
+  role: "admin" | "user" | "designer";
+  designation?:
+    | "Business Analyst"
+    | "Data Scientist"
+    | "Operations Manager"
+    | "Finance Manager"
+    | "Consumer Insights Manager"
+    | "Store / Regional Manager"
+    | null;
+  created_at: string;
+}
+
 interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -155,9 +170,42 @@ export const apiService = {
   async createUser(
     username: string,
     password: string,
-    role: string
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch("/semantic/users", "POST", { username, password, role });
+    role: "admin" | "user" | "designer",
+    designation?:
+      | "Business Analyst"
+      | "Data Scientist"
+      | "Operations Manager"
+      | "Finance Manager"
+      | "Consumer Insights Manager"
+      | "Store / Regional Manager"
+      | null
+  ): Promise<ApiResponse<{ user: User }>> {
+    return apiFetch("/semantic/users", "POST", {
+      username,
+      password,
+      role,
+      designation,
+    });
+  },
+
+  async getUsers(): Promise<User[]> {
+    const response = await apiFetch<User[]>("/semantic/users", "GET");
+    return response.success ? response.data || [] : [];
+  },
+
+  async getUser(id: number): Promise<ApiResponse<User>> {
+    return apiFetch(`/semantic/users/${id}`, "GET");
+  },
+
+  async updateUser(
+    id: number,
+    user: Partial<Omit<User, "id" | "created_at">>
+  ): Promise<ApiResponse<User>> {
+    return apiFetch(`/semantic/users/${id}`, "PUT", user);
+  },
+
+  async deleteUser(id: number): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/users/${id}`, "DELETE");
   },
 
   // Connection Management

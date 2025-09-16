@@ -10,7 +10,15 @@ export async function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+      role TEXT NOT NULL CHECK (role IN ('admin', 'user', 'designer')),
+      designation TEXT CHECK (designation IN (
+        'Business Analyst',
+        'Data Scientist',
+        'Operations Manager',
+        'Finance Manager',
+        'Consumer Insights Manager',
+        'Store / Regional Manager'
+      )),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -133,9 +141,11 @@ export async function initializeDatabase() {
   if (!admin) {
     const hash = await bcrypt.hash("admin", 10);
     await db.run(
-      `INSERT INTO users (username, password, role) VALUES (?, ?, ?)`,
-      ["admin", hash, "admin"]
+      `INSERT INTO users (username, password, role, designation) VALUES (?, ?, ?, ?)`,
+      ["admin", hash, "admin", "Business Analyst"]
     );
-    console.log("Seeded default admin user: admin / admin");
+    console.log(
+      "Seeded default admin user: admin / admin with designation Business Analyst"
+    );
   }
 }

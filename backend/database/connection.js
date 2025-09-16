@@ -11,10 +11,9 @@ export async function getPoolForConnection(connection_id, user_id) {
   }
 
   const db = await dbPromise;
-  const conn = await db.get(
-    `SELECT * FROM connections WHERE id = ? AND user_id = ?`,
-    [connection_id, user_id]
-  );
+  const conn = await db.get(`SELECT * FROM connections WHERE id = ?`, [
+    connection_id,
+  ]);
   if (!conn) {
     throw new Error("Invalid connection or unauthorized");
   }

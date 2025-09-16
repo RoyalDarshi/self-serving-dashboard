@@ -13,15 +13,35 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 const SALT_ROUNDS = 10;
 
-// User creation
+// Create user
 router.post("/users", async (req, res) => {
   const db = await dbPromise;
-  const { username, password, role } = req.body;
+  const { username, password, role, designation } = req.body;
 
   if (!username || !password || !role) {
     return res.status(400).json({
       error: "Username, password, and role are required",
     });
+  }
+
+  if (!["admin", "user", "designer"].includes(role)) {
+    return res
+      .status(400)
+      .json({ error: "Invalid role. Must be 'admin', 'user', or 'designer'" });
+  }
+
+  if (
+    designation &&
+    ![
+      "Business Analyst",
+      "Data Scientist",
+      "Operations Manager",
+      "Finance Manager",
+      "Consumer Insights Manager",
+      "Store / Regional Manager",
+    ].includes(designation)
+  ) {
+    return res.status(400).json({ error: "Invalid designation" });
   }
 
   try {
@@ -35,16 +55,182 @@ router.post("/users", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await db.run(
-      "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-      [username, hashedPassword, role]
+      "INSERT INTO users (username, password, role, designation) VALUES (?, ?, ?, ?)",
+      [username, hashedPassword, role, designation || null]
     );
 
     res.json({
-      user: { id: result.lastID, username, role },
+      user: { id: result.lastID, username, role, designation },
     });
   } catch (err) {
     console.error("Create user error:", err.message);
     res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
+// Get all users (admin only)
+router.get("/users", async (req, res) => {
+  try {
+    if (req.user?.role !== "admin") {
+      return res
+        .status(403)
+        .json({ error: "Access denied. Admin role required" });
+    }
+    const db = await dbPromise;
+    const users = await db.all(
+      "SELECT id, username, role, designation, created_at FROM users"
+    );
+    res.json(users);
+  } catch (err) {
+    console.error("List users error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get single user by ID
+router.get("/users/:id", async (req, res) => {
+  try {
+    if (
+      req.user?.role !== "admin" &&
+      req.user?.userId !== parseInt(req.params.id)
+    ) {
+      return res
+        .status(403)
+        .json({ error: "Access denied. Admin or self only" });
+    }
+    const db = await dbPromise;
+    const user = await db.get(
+      "SELECT id, username, role, designation, created_at FROM users WHERE id = ?",
+      req.params.id
+    );
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json(user);
+  } catch (err) {
+    console.error("Get user error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update user
+router.put("/users/:id", async (req, res) => {
+  try {
+    if (
+      req.user?.role !== "admin" &&
+      req.user?.userId !== parseInt(req.params.id)
+    ) {
+      return res
+        .status(403)
+        .json({ error: "Access denied. Admin or self only" });
+    }
+    const { username, password, role, designation } = req.body;
+
+    if (username || role || designation || password) {
+      const db = await dbPromise;
+      const updates = [];
+      const values = [];
+
+      if (username) {
+        const existingUser = await db.get(
+          "SELECT id FROM users WHERE username = ? AND id != ?",
+          [username, req.params.id]
+        );
+        if (existingUser) {
+          return res.status(400).json({ error: "Username already exists" });
+        }
+        updates.push("username = ?");
+        values.push(username);
+      }
+
+      if (password) {
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+        updates.push("password = ?");
+        values.push(hashedPassword);
+      }
+
+      if (role) {
+        if (!["admin", "user", "designer"].includes(role)) {
+          return res
+            .status(400)
+            .json({
+              error: "Invalid role. Must be 'admin', 'user', or 'designer'",
+            });
+        }
+        updates.push("role = ?");
+        values.push(role);
+      }
+
+      if (designation) {
+        if (
+          ![
+            "Business Analyst",
+            "Data Scientist",
+            "Operations Manager",
+            "Finance Manager",
+            "Consumer Insights Manager",
+            "Store / Regional Manager",
+          ].includes(designation)
+        ) {
+          return res.status(400).json({ error: "Invalid designation" });
+        }
+        updates.push("designation = ?");
+        values.push(designation);
+      } else if (designation === null) {
+        updates.push("designation = ?");
+        values.push(null);
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      values.push(req.params.id);
+      await db.run(
+        `UPDATE users SET ${updates.join(", ")} WHERE id = ?`,
+        values
+      );
+
+      const updated = await db.get(
+        "SELECT id, username, role, designation, created_at FROM users WHERE id = ?",
+        req.params.id
+      );
+      res.json(updated);
+    } else {
+      return res
+        .status(400)
+        .json({
+          error:
+            "At least one field (username, password, role, designation) must be provided",
+        });
+    }
+  } catch (err) {
+    console.error("Update user error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete user (admin only)
+router.delete("/users/:id", async (req, res) => {
+  try {
+    if (req.user?.role !== "admin") {
+      return res
+        .status(403)
+        .json({ error: "Access denied. Admin role required" });
+    }
+    const db = await dbPromise;
+    const user = await db.get(
+      "SELECT id FROM users WHERE id = ?",
+      req.params.id
+    );
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    await db.run("DELETE FROM users WHERE id = ?", req.params.id);
+    res.json({});
+  } catch (err) {
+    console.error("Delete user error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -53,8 +239,7 @@ router.get("/connections", async (req, res) => {
   try {
     const db = await dbPromise;
     const connections = await db.all(
-      "SELECT id, connection_name, description, type, hostname, port, database, command_timeout, max_transport_objects, username, selected_db, created_at FROM connections WHERE user_id = ?",
-      [req.user?.userId]
+      "SELECT id, connection_name, description, type, hostname, port, database, command_timeout, max_transport_objects, username, selected_db, created_at FROM connections"
     );
     res.json(connections);
   } catch (err) {
