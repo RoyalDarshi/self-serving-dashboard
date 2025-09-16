@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Database, BarChart3, Layers, Target, Zap } from "lucide-react";
 import { apiService } from "../services/api";
-import LoginForm from "./LoginForm";
 import ConnectionForm from "./ConnectionForm";
 import ConnectionsList from "./ConnectionsList";
 import FactForm from "./FactForm";
@@ -225,13 +224,6 @@ const AdminPanel: React.FC = () => {
     setEditingFact(null);
     setEditingDimension(null);
     setEditingKPI(null);
-  };
-
-  const handleLogout = () => {
-    setToken("");
-    localStorage.removeItem("token");
-    setConnections([]);
-    setSelectedConnectionId(null);
   };
 
   // Fact CRUD operations
@@ -536,192 +528,181 @@ const AdminPanel: React.FC = () => {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
-        {!token ? (
-          <LoginForm
-            onLogin={setToken}
-            setError={setError}
-            setSuccess={setSuccess}
-          />
-        ) : (
-          <div className="container mx-auto p-6">
-            <div className="flex justify-between items-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
-              <Button onClick={handleLogout} variant="secondary">
-                Logout
-              </Button>
+        <div className="container mx-auto p-6">
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex space-x-1 bg-white p-1 rounded-2xl shadow-sm border border-gray-100 mb-8">
+            {[
+              { id: "connections", label: "Connections", icon: Database },
+              { id: "facts", label: "Facts", icon: BarChart3 },
+              { id: "dimensions", label: "Dimensions", icon: Layers },
+              { id: "mappings", label: "Mappings", icon: Target },
+              { id: "kpis", label: "KPIs", icon: Zap },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-medium rounded-xl transition-all ${
+                  activeTab === tab.id
+                    ? "bg-white shadow-sm text-blue-600"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                <tab.icon className="w-4 h-4" />
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "connections" && (
+            <div className="grid lg:grid-cols-2 gap-6">
+              <ConnectionForm
+                onSuccess={setSuccess}
+                onError={setError}
+                onCreate={(newConn) =>
+                  setConnections([...connections, newConn])
+                }
+              />
+              <ConnectionsList
+                connections={connections}
+                selectedConnectionId={selectedConnectionId}
+                setSelectedConnectionId={setSelectedConnectionId}
+              />
             </div>
+          )}
 
-            {/* Tabs */}
-            <div className="flex space-x-1 bg-white p-1 rounded-2xl shadow-sm border border-gray-100 mb-8">
-              {[
-                { id: "connections", label: "Connections", icon: Database },
-                { id: "facts", label: "Facts", icon: BarChart3 },
-                { id: "dimensions", label: "Dimensions", icon: Layers },
-                { id: "mappings", label: "Mappings", icon: Target },
-                { id: "kpis", label: "KPIs", icon: Zap },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-medium rounded-xl transition-all ${
-                    activeTab === tab.id
-                      ? "bg-white shadow-sm text-blue-600"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  <tab.icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {activeTab === "connections" && (
-              <div className="grid lg:grid-cols-2 gap-6">
-                <ConnectionForm
-                  onSuccess={setSuccess}
-                  onError={setError}
-                  onCreate={(newConn) =>
-                    setConnections([...connections, newConn])
-                  }
-                />
-                <ConnectionsList
-                  connections={connections}
-                  selectedConnectionId={selectedConnectionId}
-                  setSelectedConnectionId={setSelectedConnectionId}
-                />
-              </div>
-            )}
-
-            {activeTab !== "connections" && (
-              <div className="grid lg:grid-cols-3 gap-6">
-                <div>
-                  <div className="p-6 mb-6 sticky top-6 bg-white rounded-2xl shadow-sm border border-gray-100">
-                    <div className="relative mb-4">
-                      <input
-                        placeholder="Search..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full px-4 py-3 pl-10 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                      />
-                    </div>
+          {activeTab !== "connections" && (
+            <div className="grid lg:grid-cols-3 gap-6">
+              <div>
+                <div className="p-6 mb-6 sticky top-6 bg-white rounded-2xl shadow-sm border border-gray-100">
+                  <div className="relative mb-4">
+                    <input
+                      placeholder="Search..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full px-4 py-3 pl-10 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    />
                   </div>
-
-                  {activeTab === "facts" && (
-                    <FactForm
-                      schemas={schemas}
-                      editingFact={editingFact}
-                      factName={factName}
-                      factTable={factTable}
-                      factColumn={factColumn}
-                      factAggregation={factAggregation}
-                      setFactName={setFactName}
-                      setFactTable={setFactTable}
-                      setFactColumn={setFactColumn}
-                      setFactAggregation={setFactAggregation}
-                      onCreate={handleCreateFact}
-                      onUpdate={handleUpdateFact}
-                      onCancel={clearForm}
-                    />
-                  )}
-
-                  {activeTab === "dimensions" && (
-                    <DimensionForm
-                      schemas={schemas}
-                      editingDimension={editingDimension}
-                      dimensionName={dimensionName}
-                      dimensionTable={dimensionTable}
-                      dimensionColumn={dimensionColumn}
-                      setDimensionName={setDimensionName}
-                      setDimensionTable={setDimensionTable}
-                      setDimensionColumn={setDimensionColumn}
-                      onCreate={handleCreateDimension}
-                      onUpdate={handleUpdateDimension}
-                      onCancel={clearForm}
-                    />
-                  )}
-
-                  {activeTab === "mappings" && (
-                    <MappingForm
-                      schemas={schemas}
-                      facts={facts}
-                      dimensions={dimensions}
-                      mappingFactId={mappingFactId}
-                      mappingDimensionId={mappingDimensionId}
-                      mappingJoinTable={mappingJoinTable}
-                      mappingFactColumn={mappingFactColumn}
-                      mappingDimensionColumn={mappingDimensionColumn}
-                      setMappingFactId={setMappingFactId}
-                      setMappingDimensionId={setMappingDimensionId}
-                      setMappingJoinTable={setMappingJoinTable}
-                      setMappingFactColumn={setMappingFactColumn}
-                      setMappingDimensionColumn={setMappingDimensionColumn}
-                      onCreate={handleCreateFactDimension}
-                      onAutoMap={handleAutoMap}
-                    />
-                  )}
-
-                  {activeTab === "kpis" && (
-                    <KPIForm
-                      schemas={schemas}
-                      facts={facts}
-                      editingKPI={editingKPI}
-                      kpiName={kpiName}
-                      kpiExpression={kpiExpression}
-                      kpiDescription={kpiDescription}
-                      kpiInsertType={kpiInsertType}
-                      kpiInsertFactId={kpiInsertFactId}
-                      kpiInsertTable={kpiInsertTable}
-                      kpiInsertColumn={kpiInsertColumn}
-                      setKpiName={setKpiName}
-                      setKpiExpression={setKpiExpression}
-                      setKpiDescription={setKpiDescription}
-                      setKpiInsertType={setKpiInsertType}
-                      setKpiInsertFactId={setKpiInsertFactId}
-                      setKpiInsertTable={setKpiInsertTable}
-                      setKpiInsertColumn={setKpiInsertColumn}
-                      onCreate={handleCreateKPI}
-                      onUpdate={handleUpdateKPI}
-                      onCancel={clearForm}
-                      onInsert={insertIntoKpiExpression}
-                    />
-                  )}
                 </div>
 
-                <DataList
-                  activeTab={activeTab}
-                  facts={facts}
-                  dimensions={dimensions}
-                  factDimensions={factDimensions}
-                  kpis={kpis}
-                  filteredFacts={filteredFacts}
-                  filteredDimensions={filteredDimensions}
-                  filteredKpis={filteredKpis}
-                  onEditFact={handleEditFact}
-                  onDeleteFact={handleDeleteFact}
-                  onEditDimension={handleEditDimension}
-                  onDeleteDimension={handleDeleteDimension}
-                  onEditKPI={handleEditKPI}
-                  onDeleteKPI={handleDeleteKPI}
-                />
-              </div>
-            )}
+                {activeTab === "facts" && (
+                  <FactForm
+                    schemas={schemas}
+                    editingFact={editingFact}
+                    factName={factName}
+                    factTable={factTable}
+                    factColumn={factColumn}
+                    factAggregation={factAggregation}
+                    setFactName={setFactName}
+                    setFactTable={setFactTable}
+                    setFactColumn={setFactColumn}
+                    setFactAggregation={setFactAggregation}
+                    onCreate={handleCreateFact}
+                    onUpdate={handleUpdateFact}
+                    onCancel={clearForm}
+                  />
+                )}
 
-            {(error || success) && (
-              <div className="fixed bottom-4 right-4 z-50">
-                {error && (
-                  <div className="bg-red-500 text-white px-6 py-4 rounded-xl shadow-lg mb-2 flex items-center space-x-3 animate-slide-up">
-                    <span>{error}</span>
-                  </div>
+                {activeTab === "dimensions" && (
+                  <DimensionForm
+                    schemas={schemas}
+                    editingDimension={editingDimension}
+                    dimensionName={dimensionName}
+                    dimensionTable={dimensionTable}
+                    dimensionColumn={dimensionColumn}
+                    setDimensionName={setDimensionName}
+                    setDimensionTable={setDimensionTable}
+                    setDimensionColumn={setDimensionColumn}
+                    onCreate={handleCreateDimension}
+                    onUpdate={handleUpdateDimension}
+                    onCancel={clearForm}
+                  />
                 )}
-                {success && (
-                  <div className="bg-green-500 text-white px-6 py-4 rounded-xl shadow-lg mb-2 flex items-center space-x-3 animate-slide-up">
-                    <span>{success}</span>
-                  </div>
+
+                {activeTab === "mappings" && (
+                  <MappingForm
+                    schemas={schemas}
+                    facts={facts}
+                    dimensions={dimensions}
+                    mappingFactId={mappingFactId}
+                    mappingDimensionId={mappingDimensionId}
+                    mappingJoinTable={mappingJoinTable}
+                    mappingFactColumn={mappingFactColumn}
+                    mappingDimensionColumn={mappingDimensionColumn}
+                    setMappingFactId={setMappingFactId}
+                    setMappingDimensionId={setMappingDimensionId}
+                    setMappingJoinTable={setMappingJoinTable}
+                    setMappingFactColumn={setMappingFactColumn}
+                    setMappingDimensionColumn={setMappingDimensionColumn}
+                    onCreate={handleCreateFactDimension}
+                    onAutoMap={handleAutoMap}
+                  />
+                )}
+
+                {activeTab === "kpis" && (
+                  <KPIForm
+                    schemas={schemas}
+                    facts={facts}
+                    editingKPI={editingKPI}
+                    kpiName={kpiName}
+                    kpiExpression={kpiExpression}
+                    kpiDescription={kpiDescription}
+                    kpiInsertType={kpiInsertType}
+                    kpiInsertFactId={kpiInsertFactId}
+                    kpiInsertTable={kpiInsertTable}
+                    kpiInsertColumn={kpiInsertColumn}
+                    setKpiName={setKpiName}
+                    setKpiExpression={setKpiExpression}
+                    setKpiDescription={setKpiDescription}
+                    setKpiInsertType={setKpiInsertType}
+                    setKpiInsertFactId={setKpiInsertFactId}
+                    setKpiInsertTable={setKpiInsertTable}
+                    setKpiInsertColumn={setKpiInsertColumn}
+                    onCreate={handleCreateKPI}
+                    onUpdate={handleUpdateKPI}
+                    onCancel={clearForm}
+                    onInsert={insertIntoKpiExpression}
+                  />
                 )}
               </div>
-            )}
-          </div>
-        )}
+
+              <DataList
+                activeTab={activeTab}
+                facts={facts}
+                dimensions={dimensions}
+                factDimensions={factDimensions}
+                kpis={kpis}
+                filteredFacts={filteredFacts}
+                filteredDimensions={filteredDimensions}
+                filteredKpis={filteredKpis}
+                onEditFact={handleEditFact}
+                onDeleteFact={handleDeleteFact}
+                onEditDimension={handleEditDimension}
+                onDeleteDimension={handleDeleteDimension}
+                onEditKPI={handleEditKPI}
+                onDeleteKPI={handleDeleteKPI}
+              />
+            </div>
+          )}
+
+          {(error || success) && (
+            <div className="fixed bottom-4 right-4 z-50">
+              {error && (
+                <div className="bg-red-500 text-white px-6 py-4 rounded-xl shadow-lg mb-2 flex items-center space-x-3 animate-slide-up">
+                  <span>{error}</span>
+                </div>
+              )}
+              {success && (
+                <div className="bg-green-500 text-white px-6 py-4 rounded-xl shadow-lg mb-2 flex items-center space-x-3 animate-slide-up">
+                  <span>{success}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </ErrorBoundary>
   );
