@@ -66,3 +66,55 @@ export function quoteIdentifier(name, type) {
   if (type === "mysql") return `\`${name}\``;
   return name;
 }
+
+export async function testConnection({
+  type,
+  hostname,
+  port,
+  database,
+  username,
+  password,
+  selected_db,
+}) {
+  let pool;
+  if (type === "postgres") {
+    pool = new pg.Pool({
+      host: hostname,
+      port,
+      database,
+      user: username,
+      password,
+      connectionTimeoutMillis: 5000,
+      max: 5,
+    });
+    const client = await pool.connect();
+    try {
+      if (selected_db) {
+        await client.query(`SET search_path TO "${selected_db}"`);
+      }
+      await client.query("SELECT 1");
+    } finally {
+      client.release();
+      await pool.end(); // cleanup
+    }
+    return { success: true };
+  } else if (type === "mysql") {
+    const conn = await mysql.createConnection({
+      host: hostname,
+      port,
+      database,
+      user: username,
+      password,
+      connectTimeout: 5000,
+    });
+    if (selected_db) {
+      await conn.query(`USE \`${selected_db}\``);
+    }
+    await conn.query("SELECT 1");
+    await conn.end();
+    return { success: true };
+  } else {
+    throw new Error(`Unsupported database type: ${type}`);
+  }
+}
+

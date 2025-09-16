@@ -1,5 +1,5 @@
-// database/setupDatabase.js
 import { dbPromise } from "./sqliteConnection.js";
+import bcrypt from "bcrypt";
 
 export async function initializeDatabase() {
   const db = await dbPromise;
@@ -15,7 +15,7 @@ export async function initializeDatabase() {
     )
   `);
 
-  // Connections table with specified fields
+  // Connections table
   await db.run(`
     CREATE TABLE IF NOT EXISTS connections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,17 +97,40 @@ export async function initializeDatabase() {
       user_id INTEGER NOT NULL,
       connection_id INTEGER NOT NULL,
       name TEXT NOT NULL,
-      layout TEXT NOT NULL,
+      description TEXT,
+      layout TEXT,
+      is_public BOOLEAN DEFAULT FALSE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_modified DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(user_id) REFERENCES users(id),
       FOREIGN KEY(connection_id) REFERENCES connections(id)
+    )
+  `);
+
+  // Charts table
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS charts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dashboard_id INTEGER NOT NULL,
+      x_axis_dimension_id INTEGER,
+      y_axis_facts TEXT NOT NULL,
+      group_by_dimension_id INTEGER,
+      chart_type TEXT NOT NULL CHECK (chart_type IN ('bar', 'line', 'pie')),
+      aggregation_type TEXT NOT NULL CHECK (aggregation_type IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX')),
+      stacked BOOLEAN DEFAULT FALSE,
+      title TEXT,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_modified DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(dashboard_id) REFERENCES dashboards(id),
+      FOREIGN KEY(x_axis_dimension_id) REFERENCES dimensions(id),
+      FOREIGN KEY(group_by_dimension_id) REFERENCES dimensions(id)
     )
   `);
 
   // Seed default admin user
   const admin = await db.get(`SELECT id FROM users WHERE username = 'admin'`);
   if (!admin) {
-    const bcrypt = (await import("bcrypt")).default;
     const hash = await bcrypt.hash("admin", 10);
     await db.run(
       `INSERT INTO users (username, password, role) VALUES (?, ?, ?)`,

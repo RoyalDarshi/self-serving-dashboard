@@ -1,10 +1,11 @@
-// server.js
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import semanticRouter from "./routes/semantic.js";
 import databaseRouter from "./routes/database.js";
 import analyticsRouter from "./routes/analytics.js";
+import dashboardRouter from "./routes/dashboard.js";
+import authRouter from "./routes/auth.js";
 import { initializeDatabase } from "./database/setupDatabase.js";
 import dotenv from "dotenv";
 
@@ -16,7 +17,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 app.use(cors());
 app.use(express.json());
 
-// JWT middleware for optional authentication
+// JWT middleware for authentication
 app.use((req, res, next) => {
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) {
@@ -29,9 +30,12 @@ app.use((req, res, next) => {
   next();
 });
 
+// Register routes
 app.use("/api/semantic", semanticRouter);
 app.use("/api/database", databaseRouter);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/dashboard", dashboardRouter);
+app.use("/api/auth", authRouter);
 
 (async () => {
   try {

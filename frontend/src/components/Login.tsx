@@ -14,9 +14,9 @@ const Login: React.FC<LoginProps> = ({ setUser }) => {
     e.preventDefault();
     try {
       const response = await apiService.login(username, password);
-      if (response.success) {
-        localStorage.setItem("token", response.token);
-        setUser({ role: response.user.role });
+      if (response.success && response.data) {
+        localStorage.setItem("token", response.data?.token || "");
+        setUser({ role: response.data.user.role });
         setError(null);
       } else {
         setError("Invalid username or password");

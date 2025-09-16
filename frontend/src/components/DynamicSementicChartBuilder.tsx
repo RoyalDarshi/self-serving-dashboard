@@ -1,4 +1,3 @@
-// DynamicSemanticChartBuilder.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import html2canvas from "html2canvas";
 import { v4 as uuidv4 } from "uuid";
@@ -41,6 +40,7 @@ interface Column {
 }
 
 interface ChartConfig {
+  id?: string;
   xAxisDimension: Dimension | null;
   yAxisFacts: Fact[];
   groupByDimension: Dimension | null;
@@ -50,17 +50,28 @@ interface ChartConfig {
 }
 
 interface DynamicSemanticChartBuilderProps {
-  dashboards: { id: string; name: string; charts: ChartConfig[] }[];
-  addNewDashboard: (name: string) => string;
+  dashboards: {
+    id: string;
+    name: string;
+    description?: string;
+    connectionId: number;
+    charts: ChartConfig[];
+    layout: any[];
+  }[];
+  addNewDashboard: (name: string, description?: string) => Promise<string>;
   addChartToDashboard: (config: ChartConfig, dashboardId: string) => void;
+  selectedConnectionId: number | null;
 }
 
 const DynamicSemanticChartBuilder: React.FC<
   DynamicSemanticChartBuilderProps
-> = ({ dashboards, addNewDashboard, addChartToDashboard }) => {
+> = ({
+  dashboards,
+  addNewDashboard,
+  addChartToDashboard,
+  selectedConnectionId,
+}) => {
   // State
-  const [facts, setFacts] = useState<Fact[]>([]);
-  const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [xAxisDimension, setXAxisDimension] = useState<Dimension | null>(null);
   const [yAxisFacts, setYAxisFacts] = useState<Fact[]>([]);
   const [groupByDimension, setGroupByDimension] = useState<Dimension | null>(
@@ -81,25 +92,8 @@ const DynamicSemanticChartBuilder: React.FC<
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [showDashboardModal, setShowDashboardModal] = useState(false);
   const [selectedDashboard, setSelectedDashboard] = useState<string>("");
-
-  // Fetch facts and dimensions on mount
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [factsRes, dimensionsRes] = await Promise.all([
-          apiService.getFacts(),
-          apiService.getDimensions(),
-        ]);
-        setFacts(factsRes);
-        setDimensions(dimensionsRes);
-      } catch (err) {
-        setError(
-          "Failed to fetch facts and dimensions: " + (err as Error).message
-        );
-      }
-    };
-    fetchData();
-  }, []);
+  const [newDashboardName, setNewDashboardName] = useState("");
+  const [newDashboardDescription, setNewDashboardDescription] = useState("");
 
   // Reset chart data when selections change
   useEffect(() => {
@@ -124,6 +118,11 @@ const DynamicSemanticChartBuilder: React.FC<
 
   // Generate chart data
   const generateChartData = useCallback(async () => {
+    if (!selectedConnectionId) {
+      setError("No connection selected");
+      return;
+    }
+
     if (yAxisFacts.length === 0 || !xAxisDimension) {
       setError(
         "Please select at least one fact for Y-axis and a dimension for X-axis"
@@ -141,6 +140,7 @@ const DynamicSemanticChartBuilder: React.FC<
       }
 
       const body = {
+        connection_id: selectedConnectionId,
         factIds: yAxisFacts.map((f) => f.id),
         dimensionIds,
         aggregation: aggregationType,
@@ -257,6 +257,7 @@ const DynamicSemanticChartBuilder: React.FC<
       setLoading(false);
     }
   }, [
+    selectedConnectionId,
     yAxisFacts,
     xAxisDimension,
     groupByDimension,
@@ -324,13 +325,17 @@ const DynamicSemanticChartBuilder: React.FC<
     link.click();
   };
 
-  // Open the modal instead of using alert/prompt
+  // Open the modal for adding to dashboard
   const handleAddToDashboard = () => {
     setShowDashboardModal(true);
   };
 
-  // Logic for saving the chart to a selected dashboard
-  const handleSaveToDashboard = (dashboardId: string) => {
+  // Save chart to selected dashboard
+  const handleSaveToDashboard = async (dashboardId: string) => {
+    if (!selectedConnectionId) {
+      setError("No connection selected");
+      return;
+    }
     const config: ChartConfig = {
       xAxisDimension,
       yAxisFacts,
@@ -339,17 +344,37 @@ const DynamicSemanticChartBuilder: React.FC<
       aggregationType,
       stacked,
     };
-    addChartToDashboard(config, dashboardId);
-    console.log("Chart added to dashboard!");
+    await addChartToDashboard(config, dashboardId);
     setShowDashboardModal(false);
     setSelectedDashboard("");
   };
 
-  // Logic for creating a new dashboard from the modal
-  const handleCreateNewDashboard = () => {
-    const name = window.prompt("Enter a name for the new dashboard:");
-    if (name) {
-      addNewDashboard(name);
+  // Create new dashboard and save chart
+  const handleCreateNewDashboard = async () => {
+    if (!newDashboardName.trim() || !selectedConnectionId) {
+      setError("Dashboard name and connection are required");
+      return;
+    }
+    try {
+      const dashboardId = await addNewDashboard(
+        newDashboardName,
+        newDashboardDescription
+      );
+      const config: ChartConfig = {
+        xAxisDimension,
+        yAxisFacts,
+        groupByDimension,
+        chartType,
+        aggregationType,
+        stacked,
+      };
+      await addChartToDashboard(config, dashboardId);
+      setShowDashboardModal(false);
+      setSelectedDashboard("");
+      setNewDashboardName("");
+      setNewDashboardDescription("");
+    } catch (error) {
+      console.error("Error creating new dashboard:", error);
     }
   };
 
@@ -564,7 +589,7 @@ const DynamicSemanticChartBuilder: React.FC<
         </div>
       )}
 
-      {/* The Modal */}
+      {/* Dashboard Modal */}
       {showDashboardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded-lg shadow-lg w-96">
@@ -585,18 +610,45 @@ const DynamicSemanticChartBuilder: React.FC<
                 <option value="" disabled>
                   Select a dashboard
                 </option>
-                {dashboards.map((dashboard) => (
-                  <option key={dashboard.id} value={dashboard.id}>
-                    {dashboard.name}
-                  </option>
-                ))}
+                {dashboards
+                  .filter((d) => d.connectionId === selectedConnectionId)
+                  .map((dashboard) => (
+                    <option key={dashboard.id} value={dashboard.id}>
+                      {dashboard.name}
+                    </option>
+                  ))}
               </select>
+            </div>
+            <div className="mb-4">
+              <label
+                htmlFor="new-dashboard-name"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Or Create New Dashboard:
+              </label>
+              <input
+                id="new-dashboard-name"
+                type="text"
+                value={newDashboardName}
+                onChange={(e) => setNewDashboardName(e.target.value)}
+                placeholder="New dashboard name..."
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              />
+              <textarea
+                value={newDashboardDescription}
+                onChange={(e) => setNewDashboardDescription(e.target.value)}
+                placeholder="Description (optional)"
+                rows={3}
+                className="mt-2 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+              />
             </div>
             <div className="flex justify-end space-x-2">
               <button
                 onClick={() => {
                   setShowDashboardModal(false);
                   setSelectedDashboard("");
+                  setNewDashboardName("");
+                  setNewDashboardDescription("");
                 }}
                 className="px-4 py-2 text-gray-500 border rounded-md hover:bg-gray-100"
               >
@@ -607,15 +659,14 @@ const DynamicSemanticChartBuilder: React.FC<
                 disabled={!selectedDashboard}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:bg-blue-300"
               >
-                Add Chart
+                Add to Existing
               </button>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-200">
               <button
                 onClick={handleCreateNewDashboard}
-                className="w-full px-4 py-2 text-center text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50"
+                disabled={!newDashboardName.trim()}
+                className="px-4 py-2 bg-green-600 text-white rounded-md disabled:bg-green-300"
               >
-                Create New Dashboard
+                Create & Add
               </button>
             </div>
           </div>

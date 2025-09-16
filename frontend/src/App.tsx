@@ -1,4 +1,3 @@
-// App.tsx
 import React, { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { apiService } from "./services/api";
@@ -26,6 +25,7 @@ interface Dimension {
 }
 type AggregationType = "SUM" | "AVG" | "COUNT" | "MAX" | "MIN";
 interface ChartConfig {
+  id?: string;
   xAxisDimension: Dimension | null;
   yAxisFacts: Fact[];
   groupByDimension: Dimension | null;
@@ -34,13 +34,39 @@ interface ChartConfig {
   stacked: boolean;
 }
 
+interface Connection {
+  id: number;
+  connection_name: string;
+  description?: string;
+  type: string;
+  hostname: string;
+  port: number;
+  database: string;
+  command_timeout?: number;
+  max_transport_objects?: number;
+  username: string;
+  selected_db: string;
+  created_at: string;
+}
+
 const App: React.FC = () => {
   const [user, setUser] = useState<{ role: string } | null>(null);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [loading, setLoading] = useState<boolean>(true);
   const [dashboards, setDashboards] = useState<
-    { id: string; name: string; charts: ChartConfig[] }[]
+    {
+      id: string;
+      name: string;
+      description?: string;
+      connectionId: number;
+      charts: ChartConfig[];
+      layout: any[];
+    }[]
   >([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<
+    number | null
+  >(null);
 
   useEffect(() => {
     const validateUser = async () => {
@@ -48,8 +74,8 @@ const App: React.FC = () => {
       if (token) {
         try {
           const response = await apiService.validateToken();
-          if (response.success) {
-            setUser({ role: response.user.role });
+          if (response.success && response.data) {
+            setUser({ role: response.data.user.role });
           } else {
             localStorage.removeItem("token");
           }
@@ -64,26 +90,98 @@ const App: React.FC = () => {
     validateUser();
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      apiService.getConnections().then(setConnections);
+      fetchDashboards();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (connections.length > 0 && selectedConnectionId === null) {
+      setSelectedConnectionId(connections[0].id);
+    }
+  }, [connections]);
+
+  const fetchDashboards = async () => {
+    const dashboards = await apiService.getDashboards();
+    setDashboards(dashboards);
+  };
+
+  const addNewDashboard = async (
+    name: string,
+    description?: string
+  ): Promise<string> => {
+    if (!selectedConnectionId) {
+      throw new Error("No connection selected");
+    }
+    const response = await apiService.saveDashboard({
+      name,
+      description,
+      connection_id: selectedConnectionId,
+      charts: [],
+      layout: [],
+    });
+    if (response.success && response.data) {
+      setDashboards((prev) => [
+        ...prev,
+        {
+          id: response.data.dashboardId,
+          name,
+          description,
+          connectionId: selectedConnectionId,
+          charts: [],
+          layout: [],
+        },
+      ]);
+      return response.data.dashboardId;
+    }
+    throw new Error(response.error || "Failed to create dashboard");
+  };
+
+  const addChartToDashboard = async (
+    config: ChartConfig,
+    dashboardId: string
+  ) => {
+    const dashboard = dashboards.find((d) => d.id === dashboardId);
+    if (!dashboard) return;
+
+    const updatedCharts = [...dashboard.charts, { ...config, id: uuidv4() }];
+    const updatedLayout = [
+      ...dashboard.layout,
+      {
+        i: config.id || `chart-${updatedCharts.length - 1}`,
+        x: ((updatedCharts.length - 1) % 3) * 4,
+        y: Math.floor((updatedCharts.length - 1) / 3) * 4,
+        w: 4,
+        h: 4,
+        minW: 3,
+        minH: 3,
+      },
+    ];
+
+    const response = await apiService.updateDashboard(dashboardId, {
+      name: dashboard.name,
+      description: dashboard.description,
+      charts: updatedCharts,
+      layout: updatedLayout,
+    });
+
+    if (response.success) {
+      setDashboards((prev) =>
+        prev.map((d) =>
+          d.id === dashboardId
+            ? { ...d, charts: updatedCharts, layout: updatedLayout }
+            : d
+        )
+      );
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     setUser(null);
     setActiveTab("dashboard");
-  };
-
-  const addNewDashboard = (name: string): string => {
-    const id = uuidv4();
-    setDashboards((prev) => [...prev, { id, name, charts: [] }]);
-    return id;
-  };
-
-  const addChartToDashboard = (config: ChartConfig, dashboardId: string) => {
-    setDashboards((prev) =>
-      prev.map((d) =>
-        d.id === dashboardId
-          ? { ...d, charts: [...d.charts, { ...config, id: uuidv4() }] }
-          : d
-      )
-    );
   };
 
   if (loading)
@@ -114,13 +212,18 @@ const App: React.FC = () => {
               <DragDropProvider>
                 <div className="flex gap-4 p-4 h-screen">
                   <div className="w-1/4">
-                    <DynamicSemanticPanel />
+                    <DynamicSemanticPanel
+                      connections={connections}
+                      selectedConnectionId={selectedConnectionId}
+                      setSelectedConnectionId={setSelectedConnectionId}
+                    />
                   </div>
                   <div className="w-3/4">
                     <DynamicSemanticChartBuilder
                       dashboards={dashboards}
                       addNewDashboard={addNewDashboard}
                       addChartToDashboard={addChartToDashboard}
+                      selectedConnectionId={selectedConnectionId}
                     />
                   </div>
                 </div>
@@ -130,6 +233,7 @@ const App: React.FC = () => {
               <Dashboard
                 dashboards={dashboards}
                 addNewDashboard={addNewDashboard}
+                selectedConnectionId={selectedConnectionId}
               />
             )}
           </div>

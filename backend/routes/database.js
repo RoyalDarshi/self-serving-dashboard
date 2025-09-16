@@ -7,9 +7,7 @@ const router = Router();
 router.get("/schemas", async (req, res) => {
   const { connection_id } = req.query;
   if (!connection_id) {
-    return res
-      .status(400)
-      .json({ success: false, error: "connection_id required" });
+    return res.status(400).json({ error: "connection_id required" });
   }
 
   try {
@@ -20,37 +18,45 @@ router.get("/schemas", async (req, res) => {
     const client = await pool.connect();
     try {
       let tablesResult;
+
       if (type === "postgres") {
+        // Fetch all tables from public schema
         tablesResult = await client.query(
           `
           SELECT table_name
           FROM information_schema.tables
-          WHERE table_schema = $1
-        `,
-          [selected_db]
+          WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+        `
         );
       } else if (type === "mysql") {
+        // Fetch tables from selected database
         tablesResult = await client.query(
           `
           SELECT table_name
           FROM information_schema.tables
           WHERE table_schema = ?
-        `,
+          `,
           [selected_db]
         );
       }
 
       const schemas = [];
-      for (const { table_name } of tablesResult.rows || tablesResult[0]) {
+
+      // Normalize rows
+      const tableRows = tablesResult.rows || tablesResult[0];
+
+      for (const { table_name } of tableRows) {
         let columnsResult;
+
         if (type === "postgres") {
           columnsResult = await client.query(
             `
             SELECT column_name, data_type, is_nullable, column_default
             FROM information_schema.columns
-            WHERE table_schema = $1 AND table_name = $2
+            WHERE table_schema = 'public' AND table_name = $1
             `,
-            [selected_db, table_name]
+            [table_name]
           );
         } else if (type === "mysql") {
           columnsResult = await client.query(
@@ -63,9 +69,11 @@ router.get("/schemas", async (req, res) => {
           );
         }
 
+        const columnRows = columnsResult.rows || columnsResult[0];
+
         schemas.push({
           tableName: table_name,
-          columns: (columnsResult.rows || columnsResult[0]).map((col) => ({
+          columns: columnRows.map((col) => ({
             name: col.column_name,
             type: col.data_type.toUpperCase(),
             notnull: col.is_nullable === "NO" ? 1 : 0,
@@ -80,13 +88,14 @@ router.get("/schemas", async (req, res) => {
           })),
         });
       }
-      res.json({ success: true, schemas });
+
+      res.json(schemas);
     } finally {
       client.release();
     }
   } catch (error) {
     console.error("Error fetching schemas:", error.message);
-    res.status(500).json({ success: false, error: "Failed to fetch schemas" });
+    res.status(500).json({ error: "Failed to fetch schemas" });
   }
 });
 

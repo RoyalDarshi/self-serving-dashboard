@@ -22,10 +22,59 @@ import {
 } from "lucide-react";
 import { apiService } from "../services/api";
 
+// Copy of apiFetch from api.ts since it's not exported
+const API_BASE = "http://localhost:3001/api"; // Adjust to your backend URL
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+async function localApiFetch<T>(
+  endpoint: string,
+  method: string = "GET",
+  body?: any,
+  requiresAuth: boolean = true
+): Promise<ApiResponse<T>> {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+
+  if (requiresAuth) {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      return { success: false, error: "No authentication token found" };
+    }
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return { success: false, error: data.error || "Request failed" };
+    }
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
 // Types
 interface Schema {
   tableName: string;
-  columns: { name: string; type: string; notnull: number; pk: number }[];
+  columns: {
+    name: string;
+    type: string;
+    notnull: number;
+    pk: number;
+  }[];
 }
 
 interface Fact {
@@ -284,6 +333,7 @@ const ConnectionForm: React.FC<{
     }
     try {
       const body = {
+        connection_name: connName,
         type: connType,
         hostname: connHostname,
         port: Number(connPort),
@@ -300,7 +350,7 @@ const ConnectionForm: React.FC<{
       };
       const res = await apiService.testConnection(body);
       if (res.success) {
-        onSuccess(res.message || "Connection test successful!");
+        onSuccess(res.data?.message || "Connection test successful!");
       } else {
         onError(res.error || "Connection test failed.");
       }
@@ -341,19 +391,19 @@ const ConnectionForm: React.FC<{
         }),
       };
       const res = await apiService.createConnection(body);
-      if (res.success !== false) {
+      if (res.success) {
         const newConn: Connection = {
-          id: res.id!,
-          connection_name: res.connection_name!,
-          description: res.description,
-          type: res.type!,
-          hostname: res.hostname!,
-          port: res.port!,
-          database: res.database!,
-          command_timeout: res.command_timeout,
-          max_transport_objects: res.max_transport_objects,
-          username: res.username!,
-          selected_db: res.selected_db!,
+          id: res.data.id!,
+          connection_name: res.data.connection_name!,
+          description: res.data.description,
+          type: res.data.type!,
+          hostname: res.data.hostname!,
+          port: res.data.port!,
+          database: res.data.database!,
+          command_timeout: res.data.command_timeout,
+          max_transport_objects: res.data.max_transport_objects,
+          username: res.data.username!,
+          selected_db: res.data.selected_db!,
           created_at: new Date().toISOString(),
         };
         onCreate(newConn);
@@ -546,19 +596,6 @@ const AdminPanel: React.FC = () => {
       return;
     }
 
-    if (
-      !apiService.getSchemas ||
-      !apiService.getFacts ||
-      !apiService.getDimensions ||
-      !apiService.getFactDimensions ||
-      !apiService.getKpis
-    ) {
-      setError(
-        "API service methods are missing. Check services/api.ts import."
-      );
-      return;
-    }
-
     Promise.all([
       apiService
         .getSchemas(selectedConnectionId)
@@ -592,7 +629,7 @@ const AdminPanel: React.FC = () => {
             );
           if (kpisRes.error)
             return setError(`Failed to fetch KPIs: ${kpisRes.error}`);
-          setSchemas(schemasRes.schemas || []);
+          setSchemas(schemasRes);
           setFacts(factsRes);
           setDimensions(dimensionsRes);
           setFactDimensions(factDimensionsRes);
@@ -644,8 +681,8 @@ const AdminPanel: React.FC = () => {
     try {
       const res = await apiService.login(username, password);
       if (res.success) {
-        setToken(res.token || "");
-        localStorage.setItem("token", res.token || "");
+        setToken(res.data?.token || "");
+        localStorage.setItem("token", res.data?.token || "");
         setSuccess("Welcome back! Login successful");
       } else {
         setError(res.error || "Login failed");
@@ -671,19 +708,19 @@ const AdminPanel: React.FC = () => {
     if (!factName || !factTable || !factColumn)
       return setError("All fact fields are required");
     try {
-      const res = await apiService.createFact({
+      const response = await localApiFetch<Fact>("/semantic/facts", "POST", {
         connection_id: selectedConnectionId,
         name: factName,
         table_name: factTable,
         column_name: factColumn,
         aggregate_function: factAggregation,
       });
-      if (res.id !== undefined) {
-        setFacts([...facts, res as Fact]);
+      if (response.success && response.data) {
+        setFacts([...facts, response.data]);
         clearForm();
-        setSuccess(`Fact "${res.name}" created successfully`);
+        setSuccess(`Fact "${response.data.name}" created successfully`);
       } else {
-        setError(res.error || "Failed to create fact");
+        setError(response.error || "Failed to create fact");
       }
     } catch (err) {
       setError(`Failed to create fact: ${(err as Error).message}`);
@@ -702,20 +739,24 @@ const AdminPanel: React.FC = () => {
     if (!editingFact || !factName || !factTable || !factColumn)
       return setError("All fact fields are required");
     try {
-      const res = await apiService.updateFact(editingFact.id, {
-        name: factName,
-        table_name: factTable,
-        column_name: factColumn,
-        aggregate_function: factAggregation,
-      });
-      if ((res as any).id !== undefined) {
+      const response = await localApiFetch<Fact>(
+        `/semantic/facts/${editingFact.id}`,
+        "PUT",
+        {
+          name: factName,
+          table_name: factTable,
+          column_name: factColumn,
+          aggregate_function: factAggregation,
+        }
+      );
+      if (response.success && response.data) {
         setFacts(
-          facts.map((f) => (f.id === editingFact.id ? (res as Fact) : f))
+          facts.map((f) => (f.id === editingFact.id ? response.data : f))
         );
         clearForm();
-        setSuccess(`Fact "${(res as Fact).name}" updated successfully`);
+        setSuccess(`Fact "${response.data.name}" updated successfully`);
       } else {
-        setError((res as any).error || "Failed to update fact");
+        setError(response.error || "Failed to update fact");
       }
     } catch (err) {
       setError(`Failed to update fact: ${(err as Error).message}`);
@@ -725,12 +766,15 @@ const AdminPanel: React.FC = () => {
   const handleDeleteFact = async (id: number, name: string) => {
     if (!confirm(`Are you sure you want to delete the fact "${name}"?`)) return;
     try {
-      const res = await apiService.deleteFact(id);
-      if (res.success) {
+      const response = await localApiFetch<any>(
+        `/semantic/facts/${id}`,
+        "DELETE"
+      );
+      if (response.success) {
         setFacts(facts.filter((f) => f.id !== id));
         setSuccess(`Fact "${name}" deleted successfully`);
       } else {
-        setError(res.error || "Failed to delete fact");
+        setError(response.error || "Failed to delete fact");
       }
     } catch (err) {
       setError(`Failed to delete fact: ${(err as Error).message}`);
@@ -744,18 +788,22 @@ const AdminPanel: React.FC = () => {
     if (!dimensionName || !dimensionTable || !dimensionColumn)
       return setError("All dimension fields are required");
     try {
-      const res = await apiService.createDimension({
-        connection_id: selectedConnectionId,
-        name: dimensionName,
-        table_name: dimensionTable,
-        column_name: dimensionColumn,
-      });
-      if (res.id !== undefined) {
-        setDimensions([...dimensions, res as Dimension]);
+      const response = await localApiFetch<Dimension>(
+        "/semantic/dimensions",
+        "POST",
+        {
+          connection_id: selectedConnectionId,
+          name: dimensionName,
+          table_name: dimensionTable,
+          column_name: dimensionColumn,
+        }
+      );
+      if (response.success && response.data) {
+        setDimensions([...dimensions, response.data]);
         clearForm();
-        setSuccess(`Dimension "${res.name}" created successfully`);
+        setSuccess(`Dimension "${response.data.name}" created successfully`);
       } else {
-        setError(res.error || "Failed to create dimension");
+        setError(response.error || "Failed to create dimension");
       }
     } catch (err) {
       setError(`Failed to create dimension: ${(err as Error).message}`);
@@ -779,23 +827,25 @@ const AdminPanel: React.FC = () => {
       return setError("All dimension fields are required");
     }
     try {
-      const res = await apiService.updateDimension(editingDimension.id, {
-        name: dimensionName,
-        table_name: dimensionTable,
-        column_name: dimensionColumn,
-      });
-      if ((res as any).id !== undefined) {
+      const response = await localApiFetch<Dimension>(
+        `/semantic/dimensions/${editingDimension.id}`,
+        "PUT",
+        {
+          name: dimensionName,
+          table_name: dimensionTable,
+          column_name: dimensionColumn,
+        }
+      );
+      if (response.success && response.data) {
         setDimensions(
           dimensions.map((d) =>
-            d.id === editingDimension.id ? (res as Dimension) : d
+            d.id === editingDimension.id ? response.data : d
           )
         );
         clearForm();
-        setSuccess(
-          `Dimension "${(res as Dimension).name}" updated successfully`
-        );
+        setSuccess(`Dimension "${response.data.name}" updated successfully`);
       } else {
-        setError((res as any).error || "Failed to update dimension");
+        setError(response.error || "Failed to update dimension");
       }
     } catch (err) {
       setError(`Failed to update dimension: ${(err as Error).message}`);
@@ -806,12 +856,15 @@ const AdminPanel: React.FC = () => {
     if (!confirm(`Are you sure you want to delete the dimension "${name}"?`))
       return;
     try {
-      const res = await apiService.deleteDimension(id);
-      if (res.success) {
+      const response = await localApiFetch<any>(
+        `/semantic/dimensions/${id}`,
+        "DELETE"
+      );
+      if (response.success) {
         setDimensions(dimensions.filter((d) => d.id !== id));
         setSuccess(`Dimension "${name}" deleted successfully`);
       } else {
-        setError(res.error || "Failed to delete dimension");
+        setError(response.error || "Failed to delete dimension");
       }
     } catch (err) {
       setError(`Failed to delete dimension: ${(err as Error).message}`);
@@ -825,18 +878,18 @@ const AdminPanel: React.FC = () => {
     if (!kpiName || !kpiExpression)
       return setError("KPI name and expression are required");
     try {
-      const res = await apiService.createKPI({
+      const response = await localApiFetch<KPI>("/semantic/kpis", "POST", {
         connection_id: selectedConnectionId,
         name: kpiName,
         expression: kpiExpression,
         description: kpiDescription,
       });
-      if (res.id !== undefined) {
-        setKpis([...kpis, res as KPI]);
+      if (response.success && response.data) {
+        setKpis([...kpis, response.data]);
         clearForm();
-        setSuccess(`KPI "${res.name}" created successfully`);
+        setSuccess(`KPI "${response.data.name}" created successfully`);
       } else {
-        setError(res.error || "Failed to create KPI");
+        setError(response.error || "Failed to create KPI");
       }
     } catch (err) {
       setError(`Failed to create KPI: ${(err as Error).message}`);
@@ -854,17 +907,21 @@ const AdminPanel: React.FC = () => {
     if (!editingKPI || !kpiName || !kpiExpression)
       return setError("KPI name and expression are required");
     try {
-      const res = await apiService.updateKPI(editingKPI.id, {
-        name: kpiName,
-        expression: kpiExpression,
-        description: kpiDescription,
-      });
-      if ((res as any).id !== undefined) {
-        setKpis(kpis.map((k) => (k.id === editingKPI.id ? (res as KPI) : k)));
+      const response = await localApiFetch<KPI>(
+        `/semantic/kpis/${editingKPI.id}`,
+        "PUT",
+        {
+          name: kpiName,
+          expression: kpiExpression,
+          description: kpiDescription,
+        }
+      );
+      if (response.success && response.data) {
+        setKpis(kpis.map((k) => (k.id === editingKPI.id ? response.data : k)));
         clearForm();
-        setSuccess(`KPI "${(res as KPI).name}" updated successfully`);
+        setSuccess(`KPI "${response.data.name}" updated successfully`);
       } else {
-        setError((res as any).error || "Failed to update KPI");
+        setError(response.error || "Failed to update KPI");
       }
     } catch (err) {
       setError(`Failed to update KPI: ${(err as Error).message}`);
@@ -874,12 +931,15 @@ const AdminPanel: React.FC = () => {
   const handleDeleteKPI = async (id: number, name: string) => {
     if (!confirm(`Are you sure you want to delete the KPI "${name}"?`)) return;
     try {
-      const res = await apiService.deleteKPI(id);
-      if (res.success) {
+      const response = await localApiFetch<any>(
+        `/semantic/kpis/${id}`,
+        "DELETE"
+      );
+      if (response.success) {
         setKpis(kpis.filter((k) => k.id !== id));
         setSuccess(`KPI "${name}" deleted successfully`);
       } else {
-        setError(res.error || "Failed to delete KPI");
+        setError(response.error || "Failed to delete KPI");
       }
     } catch (err) {
       setError(`Failed to delete KPI: ${(err as Error).message}`);
@@ -897,15 +957,19 @@ const AdminPanel: React.FC = () => {
       return setError("All mapping fields are required");
     }
     try {
-      const res = await apiService.createFactDimension({
-        fact_id: Number(mappingFactId),
-        dimension_id: Number(mappingDimensionId),
-        join_table: mappingJoinTable,
-        fact_column: mappingFactColumn,
-        dimension_column: mappingDimensionColumn,
-      });
-      if (res.id !== undefined) {
-        setFactDimensions([...factDimensions, res as FactDimension]);
+      const response = await localApiFetch<FactDimension>(
+        "/semantic/fact-dimensions",
+        "POST",
+        {
+          fact_id: Number(mappingFactId),
+          dimension_id: Number(mappingDimensionId),
+          join_table: mappingJoinTable,
+          fact_column: mappingFactColumn,
+          dimension_column: mappingDimensionColumn,
+        }
+      );
+      if (response.success && response.data) {
+        setFactDimensions([...factDimensions, response.data]);
         setMappingFactId("");
         setMappingDimensionId("");
         setMappingJoinTable("");
@@ -913,7 +977,7 @@ const AdminPanel: React.FC = () => {
         setMappingDimensionColumn("");
         setSuccess("Fact-Dimension mapping created successfully");
       } else {
-        setError(res.error || "Failed to create mapping");
+        setError(response.error || "Failed to create mapping");
       }
     } catch (err) {
       setError(`Failed to create mapping: ${(err as Error).message}`);
@@ -924,47 +988,31 @@ const AdminPanel: React.FC = () => {
     if (!selectedConnectionId)
       return setError("Please select a connection first.");
     try {
-      const res = await apiService.runAutoMap(selectedConnectionId);
-      if (res.success) {
-        setFactDimensions(
-          await apiService.getFactDimensions(selectedConnectionId)
-        );
-        setSuccess(
-          `Auto-mapped ${res.autoMappings.length} fact-dimension pairs successfully`
-        );
-      } else {
-        setError(res.error || "Failed to auto-map");
-      }
+      const res = await apiService.getFactDimensions(selectedConnectionId);
+      setFactDimensions(res);
+      setSuccess(`Auto-mapped ${res.length} fact-dimension pairs successfully`);
     } catch (err) {
       setError(`Failed to auto-map: ${(err as Error).message}`);
     }
   };
 
-  const handleDeleteConnection = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete the connection "${name}"?`))
-      return;
-    try {
-      const res = await apiService.deleteConnection(id);
-      if (res.success) {
-        const updatedConnections = connections.filter((c) => c.id !== id);
-        setConnections(updatedConnections);
-        if (selectedConnectionId === id) {
-          setSelectedConnectionId(updatedConnections[0]?.id || null);
-        }
-        setSuccess(`Connection "${name}" deleted successfully`);
-      } else {
-        setError(res.error || "Failed to delete connection");
-      }
-    } catch (err) {
-      setError(`Failed to delete connection: ${(err as Error).message}`);
-    }
-  };
+  const filteredFacts = facts.filter((f) =>
+    f.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const filteredDimensions = dimensions.filter((d) =>
+    d.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const filteredKpis = kpis.filter((k) =>
+    k.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   const insertIntoKpiExpression = () => {
     let insertText = "";
     if (kpiInsertType === "fact" && kpiInsertFactId) {
       const fact = facts.find((f) => f.id === Number(kpiInsertFactId));
-      if (fact) insertText = fact.name;
+      if (fact) {
+        insertText = `${fact.aggregate_function}(${fact.table_name}.${fact.column_name})`;
+      }
     } else if (
       kpiInsertType === "column" &&
       kpiInsertTable &&
@@ -973,181 +1021,91 @@ const AdminPanel: React.FC = () => {
       insertText = `${kpiInsertTable}.${kpiInsertColumn}`;
     }
     if (insertText) {
-      setKpiExpression((prev) => `${prev} ${insertText}`.trim());
-      setKpiInsertType("");
-      setKpiInsertFactId("");
-      setKpiInsertTable("");
-      setKpiInsertColumn("");
+      setKpiExpression((prev) => prev + " " + insertText);
     }
+    setKpiInsertType("");
+    setKpiInsertFactId("");
+    setKpiInsertTable("");
+    setKpiInsertColumn("");
   };
-
-  // Filter data based on search term
-  const filteredFacts = facts.filter(
-    (f) =>
-      f.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.table_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredDimensions = dimensions.filter(
-    (d) =>
-      d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      d.table_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredKpis = kpis.filter(
-    (k) =>
-      k.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      k.expression.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const filteredConnections = connections.filter(
-    (c) =>
-      c.connection_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.type.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  if (!token) {
-    return (
-      <ErrorBoundary>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md p-8">
-            <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Database className="w-8 h-8 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                Admin Portal
-              </h1>
-              <p className="text-gray-600">
-                Sign in to manage your data warehouse
-              </p>
-            </div>
-            <div className="space-y-4">
-              <Input
-                type="text"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                icon={<Settings className="w-4 h-4" />}
-              />
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
-              </div>
-              <Button onClick={handleLogin} className="w-full" size="lg">
-                Sign In
-              </Button>
-            </div>
-            {error && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-                {error}
-              </div>
-            )}
-          </Card>
-        </div>
-      </ErrorBoundary>
-    );
-  }
 
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
-                  <Database className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">
-                    Data Warehouse Admin
-                  </h1>
-                  <p className="text-sm text-gray-500">
-                    Manage facts, dimensions & KPIs
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-4">
-                <Select
-                  value={selectedConnectionId?.toString() || ""}
-                  onChange={(e) =>
-                    setSelectedConnectionId(
-                      e.target.value ? Number(e.target.value) : null
-                    )
-                  }
-                  className="w-48"
-                >
-                  <option value="">Select Connection</option>
-                  {connections.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.connection_name}
-                    </option>
-                  ))}
-                </Select>
+        {!token ? (
+          <div className="flex items-center justify-center min-h-screen">
+            <Card className="p-8 max-w-md mx-auto">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">
+                Admin Login
+              </h2>
+              <div className="space-y-4">
                 <Input
-                  placeholder="Search..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  icon={<Search className="w-4 h-4" />}
-                  className="w-64"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  icon={<Settings className="w-4 h-4" />}
                 />
-                <Button onClick={handleLogout} variant="secondary" size="sm">
-                  Sign Out
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    icon={<Key className="w-4 h-4" />}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+                <Button onClick={handleLogin} className="w-full">
+                  Login
                 </Button>
               </div>
+            </Card>
+          </div>
+        ) : (
+          <div className="container mx-auto p-6">
+            <div className="flex justify-between items-center mb-8">
+              <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
+              <Button onClick={handleLogout} variant="secondary">
+                Logout
+              </Button>
             </div>
-          </div>
-        </header>
 
-        {/* Navigation Tabs */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-          <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl w-fit">
-            {[
-              { id: "connections", label: "Connections", icon: Database },
-              { id: "facts", label: "Facts", icon: BarChart3 },
-              { id: "dimensions", label: "Dimensions", icon: Layers },
-              { id: "mappings", label: "Mappings", icon: Target },
-              { id: "kpis", label: "KPIs", icon: Zap },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                  activeTab === tab.id
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                <tab.icon className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+            {/* Tabs */}
+            <div className="flex space-x-1 bg-white p-1 rounded-2xl shadow-sm border border-gray-100 mb-8">
+              {[
+                { id: "connections", label: "Connections", icon: Database },
+                { id: "facts", label: "Facts", icon: BarChart3 },
+                { id: "dimensions", label: "Dimensions", icon: Layers },
+                { id: "mappings", label: "Mappings", icon: Target },
+                { id: "kpis", label: "KPIs", icon: Zap },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-medium rounded-xl transition-all ${
+                    activeTab === tab.id
+                      ? "bg-white shadow-sm text-blue-600"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              ))}
+            </div>
 
-        {/* Main Content */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {activeTab === "connections" ? (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Connection Form */}
-              <div className="lg:col-span-1 space-y-6">
+            {activeTab === "connections" && (
+              <div className="grid lg:grid-cols-2 gap-6">
                 <Card className="p-6">
                   <div className="flex items-center space-x-3 mb-6">
                     <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
@@ -1158,344 +1116,123 @@ const AdminPanel: React.FC = () => {
                         Create Connection
                       </h3>
                       <p className="text-sm text-gray-500">
-                        Set up a new database connection
+                        Add a new database connection
                       </p>
                     </div>
                   </div>
                   <ConnectionForm
                     onSuccess={setSuccess}
                     onError={setError}
-                    onCreate={(newConn) => {
-                      setConnections([...connections, newConn]);
-                      setSelectedConnectionId(newConn.id);
-                    }}
+                    onCreate={(newConn) =>
+                      setConnections([...connections, newConn])
+                    }
                   />
                 </Card>
-              </div>
-
-              {/* Connections List */}
-              <div className="lg:col-span-2">
                 <Card className="p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900">
-                      Connections ({filteredConnections.length})
-                    </h3>
-                    <div className="flex items-center space-x-2 text-sm text-gray-500">
-                      <Filter className="w-4 h-4" />
-                      <span>Filtered by search</span>
+                  <div className="flex items-center space-x-3 mb-6">
+                    <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
+                      <Server className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        Connections ({connections.length})
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        Select a connection to manage
+                      </p>
                     </div>
                   </div>
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {filteredConnections.map((conn) => (
-                      <div
+                    {connections.map((conn) => (
+                      <button
                         key={conn.id}
-                        className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                        onClick={() => setSelectedConnectionId(conn.id)}
+                        className={`w-full text-left p-4 rounded-xl transition-colors ${
+                          selectedConnectionId === conn.id
+                            ? "bg-blue-50 border border-blue-200"
+                            : "bg-gray-50 hover:bg-gray-100"
+                        }`}
                       >
-                        <div className="flex-1">
-                          <h4 className="font-medium text-gray-900">
-                            {conn.connection_name}
-                          </h4>
-                          <p className="text-sm text-gray-600">
-                            {conn.type}://{conn.hostname}:{conn.port}/
-                            {conn.database}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Username: {conn.username} | Created:{" "}
-                            {new Date(conn.created_at).toLocaleDateString()}
-                          </p>
-                          {conn.description && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              {conn.description}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            onClick={() =>
-                              handleDeleteConnection(
-                                conn.id,
-                                conn.connection_name
-                              )
-                            }
-                            variant="danger"
-                            size="sm"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
+                        <h4 className="font-medium text-gray-900">
+                          {conn.connection_name}
+                        </h4>
+                        <p className="text-sm text-gray-600">
+                          {conn.type}://{conn.hostname}:{conn.port}/
+                          {conn.database}
+                        </p>
+                      </button>
                     ))}
+                    {connections.length === 0 && (
+                      <div className="text-center py-12">
+                        <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500">
+                          No connections found. Create one to get started.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  {filteredConnections.length === 0 && (
-                    <div className="text-center py-12">
-                      <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500">
-                        No connections found. Create your first connection to
-                        get started.
-                      </p>
-                    </div>
-                  )}
                 </Card>
               </div>
-            </div>
-          ) : !selectedConnectionId ? (
-            <div className="text-center py-12">
-              <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500">
-                Please select a connection from the dropdown above to manage its
-                semantic layer.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Forms Column */}
-              <div className="lg:col-span-1 space-y-6">
-                {activeTab === "facts" && (
-                  <Card className="p-6">
-                    <div className="flex items-center space-x-3 mb-6">
-                      <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <BarChart3 className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {editingFact ? "Edit Fact" : "Create Fact"}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          Define measurable business metrics
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
+            )}
+
+            {activeTab !== "connections" && (
+              <div className="grid lg:grid-cols-3 gap-6">
+                {/* Form Column */}
+                <div>
+                  <Card className="p-6 mb-6 sticky top-6">
+                    <div className="relative mb-4">
                       <Input
-                        placeholder="Fact Name (e.g., Revenue)"
-                        value={factName}
-                        onChange={(e) => setFactName(e.target.value)}
+                        placeholder="Search..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        icon={<Search className="w-4 h-4" />}
                       />
-                      <Select
-                        value={factTable}
-                        onChange={(e) => {
-                          setFactTable(e.target.value);
-                          setFactColumn("");
-                        }}
-                      >
-                        <option value="">Select Table</option>
-                        {schemas.map((t) => (
-                          <option key={t.tableName} value={t.tableName}>
-                            {t.tableName}
-                          </option>
-                        ))}
-                      </Select>
-                      {factTable && (
-                        <Select
-                          value={factColumn}
-                          onChange={(e) => setFactColumn(e.target.value)}
-                        >
-                          <option value="">Select Column</option>
-                          {schemas
-                            .find((t) => t.tableName === factTable)
-                            ?.columns.map((c) => (
-                              <option key={c.name} value={c.name}>
-                                {c.name} ({c.type})
-                              </option>
-                            ))}
-                        </Select>
-                      )}
-                      <Select
-                        value={factAggregation}
-                        onChange={(e) => setFactAggregation(e.target.value)}
-                      >
-                        <option value="SUM">SUM</option>
-                        <option value="AVG">AVG</option>
-                        <option value="COUNT">COUNT</option>
-                        <option value="MIN">MIN</option>
-                        <option value="MAX">MAX</option>
-                      </Select>
-                      <div className="flex space-x-2">
-                        <Button
-                          onClick={
-                            editingFact ? handleUpdateFact : handleCreateFact
-                          }
-                          className="flex-1"
-                        >
-                          <Save className="w-4 h-4" />
-                          {editingFact ? "Update" : "Create"} Fact
-                        </Button>
-                        {editingFact && (
-                          <Button onClick={clearForm} variant="secondary">
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
                     </div>
                   </Card>
-                )}
 
-                {activeTab === "dimensions" && (
-                  <Card className="p-6">
-                    <div className="flex items-center space-x-3 mb-6">
-                      <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                        <Layers className="w-5 h-5 text-green-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {editingDimension
-                            ? "Edit Dimension"
-                            : "Create Dimension"}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          Define data categorization attributes
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <Input
-                        placeholder="Dimension Name (e.g., Date)"
-                        value={dimensionName}
-                        onChange={(e) => setDimensionName(e.target.value)}
-                      />
-                      <Select
-                        value={dimensionTable}
-                        onChange={(e) => {
-                          setDimensionTable(e.target.value);
-                          setDimensionColumn("");
-                        }}
-                      >
-                        <option value="">Select Table</option>
-                        {schemas.map((t) => (
-                          <option key={t.tableName} value={t.tableName}>
-                            {t.tableName}
-                          </option>
-                        ))}
-                      </Select>
-                      {dimensionTable && (
-                        <Select
-                          value={dimensionColumn}
-                          onChange={(e) => setDimensionColumn(e.target.value)}
-                        >
-                          <option value="">Select Column</option>
-                          {schemas
-                            .find((t) => t.tableName === dimensionTable)
-                            ?.columns.map((c) => (
-                              <option key={c.name} value={c.name}>
-                                {c.name} ({c.type})
-                              </option>
-                            ))}
-                        </Select>
-                      )}
-                      <div className="flex space-x-2">
-                        <Button
-                          onClick={
-                            editingDimension
-                              ? handleUpdateDimension
-                              : handleCreateDimension
-                          }
-                          variant="success"
-                          className="flex-1"
-                        >
-                          <Save className="w-4 h-4" />
-                          {editingDimension ? "Update" : "Create"} Dimension
-                        </Button>
-                        {editingDimension && (
-                          <Button onClick={clearForm} variant="secondary">
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                )}
-
-                {activeTab === "mappings" && (
-                  <>
+                  {activeTab === "facts" && (
                     <Card className="p-6">
                       <div className="flex items-center space-x-3 mb-6">
-                        <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                          <Zap className="w-5 h-5 text-purple-600" />
+                        <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                          <BarChart3 className="w-5 h-5 text-blue-600" />
                         </div>
                         <div>
                           <h3 className="text-lg font-semibold text-gray-900">
-                            Auto-Map
+                            {editingFact ? "Edit Fact" : "Create Fact"}
                           </h3>
                           <p className="text-sm text-gray-500">
-                            Automatically detect relationships
-                          </p>
-                        </div>
-                      </div>
-                      <Button
-                        onClick={handleAutoMap}
-                        variant="warning"
-                        className="w-full"
-                      >
-                        <Zap className="w-4 h-4" />
-                        Run Auto-Map
-                      </Button>
-                    </Card>
-                    <Card className="p-6">
-                      <div className="flex items-center space-x-3 mb-6">
-                        <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center">
-                          <Target className="w-5 h-5 text-yellow-600" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            Create Mapping
-                          </h3>
-                          <p className="text-sm text-gray-500">
-                            Link facts with dimensions
+                            Define measurable business metrics
                           </p>
                         </div>
                       </div>
                       <div className="space-y-4">
+                        <Input
+                          placeholder="Fact Name (e.g., Revenue)"
+                          value={factName}
+                          onChange={(e) => setFactName(e.target.value)}
+                        />
                         <Select
-                          value={mappingFactId}
-                          onChange={(e) => setMappingFactId(e.target.value)}
+                          value={factTable}
+                          onChange={(e) => {
+                            setFactTable(e.target.value);
+                            setFactColumn("");
+                          }}
                         >
-                          <option value="">Select Fact</option>
-                          {facts.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.name}
-                            </option>
-                          ))}
-                        </Select>
-                        <Select
-                          value={mappingDimensionId}
-                          onChange={(e) =>
-                            setMappingDimensionId(e.target.value)
-                          }
-                        >
-                          <option value="">Select Dimension</option>
-                          {dimensions.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.name}
-                            </option>
-                          ))}
-                        </Select>
-                        <Select
-                          value={mappingJoinTable}
-                          onChange={(e) => setMappingJoinTable(e.target.value)}
-                        >
-                          <option value="">Select Join Table</option>
+                          <option value="">Select Table</option>
                           {schemas.map((t) => (
                             <option key={t.tableName} value={t.tableName}>
                               {t.tableName}
                             </option>
                           ))}
                         </Select>
-                        {mappingFactId && (
+                        {factTable && (
                           <Select
-                            value={mappingFactColumn}
-                            onChange={(e) =>
-                              setMappingFactColumn(e.target.value)
-                            }
+                            value={factColumn}
+                            onChange={(e) => setFactColumn(e.target.value)}
                           >
-                            <option value="">Select Fact Column</option>
+                            <option value="">Select Column</option>
                             {schemas
-                              .find(
-                                (t) =>
-                                  t.tableName ===
-                                  facts.find(
-                                    (f) => f.id === Number(mappingFactId)
-                                  )?.table_name
-                              )
+                              .find((t) => t.tableName === factTable)
                               ?.columns.map((c) => (
                                 <option key={c.name} value={c.name}>
                                   {c.name} ({c.type})
@@ -1503,120 +1240,204 @@ const AdminPanel: React.FC = () => {
                               ))}
                           </Select>
                         )}
-                        {mappingJoinTable && (
-                          <Select
-                            value={mappingDimensionColumn}
-                            onChange={(e) =>
-                              setMappingDimensionColumn(e.target.value)
-                            }
-                          >
-                            <option value="">Select Dimension Column</option>
-                            {schemas
-                              .find((t) => t.tableName === mappingJoinTable)
-                              ?.columns.map((c) => (
-                                <option key={c.name} value={c.name}>
-                                  {c.name} ({c.type})
-                                </option>
-                              ))}
-                          </Select>
-                        )}
-                        <Button
-                          onClick={handleCreateFactDimension}
-                          variant="warning"
-                          className="w-full"
+                        <Select
+                          value={factAggregation}
+                          onChange={(e) => setFactAggregation(e.target.value)}
                         >
-                          <Plus className="w-4 h-4" />
-                          Create Mapping
-                        </Button>
+                          <option value="SUM">SUM</option>
+                          <option value="AVG">AVG</option>
+                          <option value="COUNT">COUNT</option>
+                          <option value="MIN">MIN</option>
+                          <option value="MAX">MAX</option>
+                        </Select>
+                        <div className="flex space-x-2">
+                          <Button
+                            onClick={
+                              editingFact ? handleUpdateFact : handleCreateFact
+                            }
+                            className="flex-1"
+                          >
+                            <Save className="w-4 h-4" />
+                            {editingFact ? "Update" : "Create"} Fact
+                          </Button>
+                          {editingFact && (
+                            <Button onClick={clearForm} variant="secondary">
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </Card>
-                  </>
-                )}
+                  )}
 
-                {activeTab === "kpis" && (
-                  <Card className="p-6">
-                    <div className="flex items-center space-x-3 mb-6">
-                      <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                        <Zap className="w-5 h-5 text-purple-600" />
+                  {activeTab === "dimensions" && (
+                    <Card className="p-6">
+                      <div className="flex items-center space-x-3 mb-6">
+                        <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                          <Layers className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {editingDimension
+                              ? "Edit Dimension"
+                              : "Create Dimension"}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            Define data categorization attributes
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {editingKPI ? "Edit KPI" : "Create KPI"}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          Define key performance indicators
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <Input
-                        placeholder="KPI Name (e.g., Profit Margin)"
-                        value={kpiName}
-                        onChange={(e) => setKpiName(e.target.value)}
-                      />
-                      <div className="flex space-x-2">
+                      <div className="space-y-4">
                         <Input
-                          placeholder="Expression (e.g., Revenue - Cost)"
-                          value={kpiExpression}
-                          onChange={(e) => setKpiExpression(e.target.value)}
-                          className="flex-1"
+                          placeholder="Dimension Name (e.g., Date)"
+                          value={dimensionName}
+                          onChange={(e) => setDimensionName(e.target.value)}
                         />
                         <Select
-                          value={kpiInsertType}
+                          value={dimensionTable}
                           onChange={(e) => {
-                            setKpiInsertType(
-                              e.target.value as "fact" | "column" | ""
-                            );
-                            setKpiInsertFactId("");
-                            setKpiInsertTable("");
-                            setKpiInsertColumn("");
+                            setDimensionTable(e.target.value);
+                            setDimensionColumn("");
                           }}
-                          className="w-32"
                         >
-                          <option value="">Insert...</option>
-                          <option value="fact">Fact</option>
-                          <option value="column">Column</option>
-                        </Select>
-                      </div>
-                      {kpiInsertType === "fact" && (
-                        <Select
-                          value={kpiInsertFactId}
-                          onChange={(e) => setKpiInsertFactId(e.target.value)}
-                        >
-                          <option value="">Select Fact</option>
-                          {facts.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.name}
+                          <option value="">Select Table</option>
+                          {schemas.map((t) => (
+                            <option key={t.tableName} value={t.tableName}>
+                              {t.tableName}
                             </option>
                           ))}
                         </Select>
-                      )}
-                      {kpiInsertType === "column" && (
-                        <>
+                        {dimensionTable && (
                           <Select
-                            value={kpiInsertTable}
-                            onChange={(e) => {
-                              setKpiInsertTable(e.target.value);
-                              setKpiInsertColumn("");
-                            }}
+                            value={dimensionColumn}
+                            onChange={(e) => setDimensionColumn(e.target.value)}
                           >
-                            <option value="">Select Table</option>
+                            <option value="">Select Column</option>
+                            {schemas
+                              .find((t) => t.tableName === dimensionTable)
+                              ?.columns.map((c) => (
+                                <option key={c.name} value={c.name}>
+                                  {c.name} ({c.type})
+                                </option>
+                              ))}
+                          </Select>
+                        )}
+                        <div className="flex space-x-2">
+                          <Button
+                            onClick={
+                              editingDimension
+                                ? handleUpdateDimension
+                                : handleCreateDimension
+                            }
+                            variant="success"
+                            className="flex-1"
+                          >
+                            <Save className="w-4 h-4" />
+                            {editingDimension ? "Update" : "Create"} Dimension
+                          </Button>
+                          {editingDimension && (
+                            <Button onClick={clearForm} variant="secondary">
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {activeTab === "mappings" && (
+                    <>
+                      <Card className="p-6">
+                        <div className="flex items-center space-x-3 mb-6">
+                          <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                            <Zap className="w-5 h-5 text-purple-600" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              Auto-Map
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              Automatically detect relationships
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={handleAutoMap}
+                          variant="warning"
+                          className="w-full"
+                        >
+                          <Zap className="w-4 h-4" />
+                          Run Auto-Map
+                        </Button>
+                      </Card>
+                      <Card className="p-6">
+                        <div className="flex items-center space-x-3 mb-6">
+                          <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center">
+                            <Target className="w-5 h-5 text-yellow-600" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              Create Mapping
+                            </h3>
+                            <p className="text-sm text-gray-500">
+                              Link facts with dimensions
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <Select
+                            value={mappingFactId}
+                            onChange={(e) => setMappingFactId(e.target.value)}
+                          >
+                            <option value="">Select Fact</option>
+                            {facts.map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name}
+                              </option>
+                            ))}
+                          </Select>
+                          <Select
+                            value={mappingDimensionId}
+                            onChange={(e) =>
+                              setMappingDimensionId(e.target.value)
+                            }
+                          >
+                            <option value="">Select Dimension</option>
+                            {dimensions.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </Select>
+                          <Select
+                            value={mappingJoinTable}
+                            onChange={(e) =>
+                              setMappingJoinTable(e.target.value)
+                            }
+                          >
+                            <option value="">Select Join Table</option>
                             {schemas.map((t) => (
                               <option key={t.tableName} value={t.tableName}>
                                 {t.tableName}
                               </option>
                             ))}
                           </Select>
-                          {kpiInsertTable && (
+                          {mappingFactId && (
                             <Select
-                              value={kpiInsertColumn}
+                              value={mappingFactColumn}
                               onChange={(e) =>
-                                setKpiInsertColumn(e.target.value)
+                                setMappingFactColumn(e.target.value)
                               }
                             >
-                              <option value="">Select Column</option>
+                              <option value="">Select Fact Column</option>
                               {schemas
-                                .find((t) => t.tableName === kpiInsertTable)
+                                .find(
+                                  (t) =>
+                                    t.tableName ===
+                                    facts.find(
+                                      (f) => f.id === Number(mappingFactId)
+                                    )?.table_name
+                                )
                                 ?.columns.map((c) => (
                                   <option key={c.name} value={c.name}>
                                     {c.name} ({c.type})
@@ -1624,252 +1445,380 @@ const AdminPanel: React.FC = () => {
                                 ))}
                             </Select>
                           )}
-                        </>
-                      )}
-                      {((kpiInsertType === "fact" && kpiInsertFactId) ||
-                        (kpiInsertType === "column" &&
-                          kpiInsertTable &&
-                          kpiInsertColumn)) && (
-                        <Button
-                          onClick={insertIntoKpiExpression}
-                          variant="secondary"
-                          size="sm"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Insert
-                        </Button>
-                      )}
-                      {kpiExpression && (
-                        <div className="p-3 bg-gray-50 rounded-xl">
-                          <p className="text-sm text-gray-600 mb-1">Preview:</p>
-                          <code className="text-sm font-mono text-gray-800">
-                            {kpiExpression}
-                          </code>
+                          {mappingJoinTable && (
+                            <Select
+                              value={mappingDimensionColumn}
+                              onChange={(e) =>
+                                setMappingDimensionColumn(e.target.value)
+                              }
+                            >
+                              <option value="">Select Dimension Column</option>
+                              {schemas
+                                .find((t) => t.tableName === mappingJoinTable)
+                                ?.columns.map((c) => (
+                                  <option key={c.name} value={c.name}>
+                                    {c.name} ({c.type})
+                                  </option>
+                                ))}
+                            </Select>
+                          )}
+                          <Button
+                            onClick={handleCreateFactDimension}
+                            variant="warning"
+                            className="w-full"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Create Mapping
+                          </Button>
                         </div>
-                      )}
-                      <Textarea
-                        placeholder="Description (optional)"
-                        value={kpiDescription}
-                        onChange={(e) => setKpiDescription(e.target.value)}
-                      />
-                      <div className="flex space-x-2">
-                        <Button
-                          onClick={
-                            editingKPI ? handleUpdateKPI : handleCreateKPI
-                          }
-                          variant="warning"
-                          className="flex-1"
-                        >
-                          <Save className="w-4 h-4" />
-                          {editingKPI ? "Update" : "Create"} KPI
-                        </Button>
-                        {editingKPI && (
-                          <Button onClick={clearForm} variant="secondary">
-                            <X className="w-4 h-4" />
+                      </Card>
+                    </>
+                  )}
+
+                  {activeTab === "kpis" && (
+                    <Card className="p-6">
+                      <div className="flex items-center space-x-3 mb-6">
+                        <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                          <Zap className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {editingKPI ? "Edit KPI" : "Create KPI"}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            Define key performance indicators
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <Input
+                          placeholder="KPI Name (e.g., Profit Margin)"
+                          value={kpiName}
+                          onChange={(e) => setKpiName(e.target.value)}
+                        />
+                        <div className="flex space-x-2">
+                          <Input
+                            placeholder="Expression (e.g., Revenue - Cost)"
+                            value={kpiExpression}
+                            onChange={(e) => setKpiExpression(e.target.value)}
+                            className="flex-1"
+                          />
+                          <Select
+                            value={kpiInsertType}
+                            onChange={(e) => {
+                              setKpiInsertType(
+                                e.target.value as "fact" | "column" | ""
+                              );
+                              setKpiInsertFactId("");
+                              setKpiInsertTable("");
+                              setKpiInsertColumn("");
+                            }}
+                            className="w-32"
+                          >
+                            <option value="">Insert...</option>
+                            <option value="fact">Fact</option>
+                            <option value="column">Column</option>
+                          </Select>
+                        </div>
+                        {kpiInsertType === "fact" && (
+                          <Select
+                            value={kpiInsertFactId}
+                            onChange={(e) => setKpiInsertFactId(e.target.value)}
+                          >
+                            <option value="">Select Fact</option>
+                            {facts.map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                        {kpiInsertType === "column" && (
+                          <>
+                            <Select
+                              value={kpiInsertTable}
+                              onChange={(e) => {
+                                setKpiInsertTable(e.target.value);
+                                setKpiInsertColumn("");
+                              }}
+                            >
+                              <option value="">Select Table</option>
+                              {schemas.map((t) => (
+                                <option key={t.tableName} value={t.tableName}>
+                                  {t.tableName}
+                                </option>
+                              ))}
+                            </Select>
+                            {kpiInsertTable && (
+                              <Select
+                                value={kpiInsertColumn}
+                                onChange={(e) =>
+                                  setKpiInsertColumn(e.target.value)
+                                }
+                              >
+                                <option value="">Select Column</option>
+                                {schemas
+                                  .find((t) => t.tableName === kpiInsertTable)
+                                  ?.columns.map((c) => (
+                                    <option key={c.name} value={c.name}>
+                                      {c.name} ({c.type})
+                                    </option>
+                                  ))}
+                              </Select>
+                            )}
+                          </>
+                        )}
+                        {((kpiInsertType === "fact" && kpiInsertFactId) ||
+                          (kpiInsertType === "column" &&
+                            kpiInsertTable &&
+                            kpiInsertColumn)) && (
+                          <Button
+                            onClick={insertIntoKpiExpression}
+                            variant="secondary"
+                            size="sm"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Insert
                           </Button>
                         )}
+                        {kpiExpression && (
+                          <div className="p-3 bg-gray-50 rounded-xl">
+                            <p className="text-sm text-gray-600 mb-1">
+                              Preview:
+                            </p>
+                            <code className="text-sm font-mono text-gray-800">
+                              {kpiExpression}
+                            </code>
+                          </div>
+                        )}
+                        <Textarea
+                          placeholder="Description (optional)"
+                          value={kpiDescription}
+                          onChange={(e) => setKpiDescription(e.target.value)}
+                        />
+                        <div className="flex space-x-2">
+                          <Button
+                            onClick={
+                              editingKPI ? handleUpdateKPI : handleCreateKPI
+                            }
+                            variant="warning"
+                            className="flex-1"
+                          >
+                            <Save className="w-4 h-4" />
+                            {editingKPI ? "Update" : "Create"} KPI
+                          </Button>
+                          {editingKPI && (
+                            <Button onClick={clearForm} variant="secondary">
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+
+                {/* Data Lists Column */}
+                <div className="lg:col-span-2">
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        {activeTab === "facts" &&
+                          `Facts (${filteredFacts.length})`}
+                        {activeTab === "dimensions" &&
+                          `Dimensions (${filteredDimensions.length})`}
+                        {activeTab === "mappings" &&
+                          `Mappings (${factDimensions.length})`}
+                        {activeTab === "kpis" &&
+                          `KPIs (${filteredKpis.length})`}
+                      </h3>
+                      <div className="flex items-center space-x-2 text-sm text-gray-500">
+                        <Filter className="w-4 h-4" />
+                        <span>Filtered by search</span>
                       </div>
                     </div>
-                  </Card>
-                )}
-              </div>
-
-              {/* Data Lists Column */}
-              <div className="lg:col-span-2">
-                <Card className="p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900">
+                    <div className="space-y-3 max-h-96 overflow-y-auto">
                       {activeTab === "facts" &&
-                        `Facts (${filteredFacts.length})`}
-                      {activeTab === "dimensions" &&
-                        `Dimensions (${filteredDimensions.length})`}
-                      {activeTab === "mappings" &&
-                        `Mappings (${factDimensions.length})`}
-                      {activeTab === "kpis" && `KPIs (${filteredKpis.length})`}
-                    </h3>
-                    <div className="flex items-center space-x-2 text-sm text-gray-500">
-                      <Filter className="w-4 h-4" />
-                      <span>Filtered by search</span>
-                    </div>
-                  </div>
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {activeTab === "facts" &&
-                      filteredFacts.map((fact) => (
-                        <div
-                          key={fact.id}
-                          className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                        >
-                          <div className="flex-1">
-                            <h4 className="font-medium text-gray-900">
-                              {fact.name}
-                            </h4>
-                            <p className="text-sm text-gray-600">
-                              {fact.aggregate_function}({fact.table_name}.
-                              {fact.column_name})
-                            </p>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Button
-                              onClick={() => handleEditFact(fact)}
-                              variant="secondary"
-                              size="sm"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              onClick={() =>
-                                handleDeleteFact(fact.id, fact.name)
-                              }
-                              variant="danger"
-                              size="sm"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    {activeTab === "dimensions" &&
-                      filteredDimensions.map((dimension) => (
-                        <div
-                          key={dimension.id}
-                          className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                        >
-                          <div className="flex-1">
-                            <h4 className="font-medium text-gray-900">
-                              {dimension.name}
-                            </h4>
-                            <p className="text-sm text-gray-600">
-                              {dimension.table_name}.{dimension.column_name}
-                            </p>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Button
-                              onClick={() => handleEditDimension(dimension)}
-                              variant="secondary"
-                              size="sm"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              onClick={() =>
-                                handleDeleteDimension(
-                                  dimension.id,
-                                  dimension.name
-                                )
-                              }
-                              variant="danger"
-                              size="sm"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    {activeTab === "mappings" &&
-                      factDimensions.map((mapping) => (
-                        <div
-                          key={mapping.id}
-                          className="p-4 bg-gray-50 rounded-xl"
-                        >
-                          <div className="flex items-center justify-between">
+                        filteredFacts.map((fact) => (
+                          <div
+                            key={fact.id}
+                            className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                          >
                             <div className="flex-1">
                               <h4 className="font-medium text-gray-900">
-                                {facts.find((f) => f.id === mapping.fact_id)
-                                  ?.name || "Unknown Fact"}{" "}
-                                →{" "}
-                                {dimensions.find(
-                                  (d) => d.id === mapping.dimension_id
-                                )?.name || "Unknown Dimension"}
+                                {fact.name}
                               </h4>
                               <p className="text-sm text-gray-600">
-                                {mapping.join_table}.{mapping.dimension_column}{" "}
-                                ={" "}
-                                {facts.find((f) => f.id === mapping.fact_id)
-                                  ?.table_name || "Unknown Table"}
-                                .{mapping.fact_column}
+                                {fact.aggregate_function}({fact.table_name}.
+                                {fact.column_name})
                               </p>
                             </div>
+                            <div className="flex items-center space-x-2">
+                              <Button
+                                onClick={() => handleEditFact(fact)}
+                                variant="secondary"
+                                size="sm"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                onClick={() =>
+                                  handleDeleteFact(fact.id, fact.name)
+                                }
+                                variant="danger"
+                                size="sm"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    {activeTab === "kpis" &&
-                      filteredKpis.map((kpi) => (
-                        <div
-                          key={kpi.id}
-                          className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                        >
-                          <div className="flex-1">
-                            <h4 className="font-medium text-gray-900">
-                              {kpi.name}
-                            </h4>
-                            <p className="text-sm text-gray-600 font-mono">
-                              {kpi.expression}
-                            </p>
-                            {kpi.description && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                {kpi.description}
+                        ))}
+                      {activeTab === "dimensions" &&
+                        filteredDimensions.map((dimension) => (
+                          <div
+                            key={dimension.id}
+                            className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="flex-1">
+                              <h4 className="font-medium text-gray-900">
+                                {dimension.name}
+                              </h4>
+                              <p className="text-sm text-gray-600">
+                                {dimension.table_name}.{dimension.column_name}
                               </p>
-                            )}
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Button
+                                onClick={() => handleEditDimension(dimension)}
+                                variant="secondary"
+                                size="sm"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                onClick={() =>
+                                  handleDeleteDimension(
+                                    dimension.id,
+                                    dimension.name
+                                  )
+                                }
+                                variant="danger"
+                                size="sm"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex items-center space-x-2">
-                            <Button
-                              onClick={() => handleEditKPI(kpi)}
-                              variant="secondary"
-                              size="sm"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              onClick={() => handleDeleteKPI(kpi.id, kpi.name)}
-                              variant="danger"
-                              size="sm"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                        ))}
+                      {activeTab === "mappings" &&
+                        factDimensions.map((mapping) => (
+                          <div
+                            key={mapping.id}
+                            className="p-4 bg-gray-50 rounded-xl"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900">
+                                  {facts.find((f) => f.id === mapping.fact_id)
+                                    ?.name || "Unknown Fact"}{" "}
+                                  →{" "}
+                                  {dimensions.find(
+                                    (d) => d.id === mapping.dimension_id
+                                  )?.name || "Unknown Dimension"}
+                                </h4>
+                                <p className="text-sm text-gray-600">
+                                  {mapping.join_table}.
+                                  {mapping.dimension_column} ={" "}
+                                  {facts.find((f) => f.id === mapping.fact_id)
+                                    ?.table_name || "Unknown Table"}
+                                  .{mapping.fact_column}
+                                </p>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                  </div>
-                  {activeTab === "facts" && filteredFacts.length === 0 && (
-                    <div className="text-center py-12">
-                      <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500">
-                        No facts found. Create your first fact to get started.
-                      </p>
+                        ))}
+                      {activeTab === "kpis" &&
+                        filteredKpis.map((kpi) => (
+                          <div
+                            key={kpi.id}
+                            className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="flex-1">
+                              <h4 className="font-medium text-gray-900">
+                                {kpi.name}
+                              </h4>
+                              <p className="text-sm text-gray-600 font-mono">
+                                {kpi.expression}
+                              </p>
+                              {kpi.description && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {kpi.description}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Button
+                                onClick={() => handleEditKPI(kpi)}
+                                variant="secondary"
+                                size="sm"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                onClick={() =>
+                                  handleDeleteKPI(kpi.id, kpi.name)
+                                }
+                                variant="danger"
+                                size="sm"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
                     </div>
-                  )}
-                  {activeTab === "dimensions" &&
-                    filteredDimensions.length === 0 && (
+                    {activeTab === "facts" && filteredFacts.length === 0 && (
                       <div className="text-center py-12">
-                        <Layers className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                        <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                         <p className="text-gray-500">
-                          No dimensions found. Create your first dimension to
-                          get started.
+                          No facts found. Create your first fact to get started.
                         </p>
                       </div>
                     )}
-                  {activeTab === "mappings" && factDimensions.length === 0 && (
-                    <div className="text-center py-12">
-                      <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500">
-                        No mappings found. Create relationships between facts
-                        and dimensions.
-                      </p>
-                    </div>
-                  )}
-                  {activeTab === "kpis" && filteredKpis.length === 0 && (
-                    <div className="text-center py-12">
-                      <Zap className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500">
-                        No KPIs found. Create your first KPI to get started.
-                      </p>
-                    </div>
-                  )}
-                </Card>
+                    {activeTab === "dimensions" &&
+                      filteredDimensions.length === 0 && (
+                        <div className="text-center py-12">
+                          <Layers className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                          <p className="text-gray-500">
+                            No dimensions found. Create your first dimension to
+                            get started.
+                          </p>
+                        </div>
+                      )}
+                    {activeTab === "mappings" &&
+                      factDimensions.length === 0 && (
+                        <div className="text-center py-12">
+                          <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                          <p className="text-gray-500">
+                            No mappings found. Create relationships between
+                            facts and dimensions.
+                          </p>
+                        </div>
+                      )}
+                    {activeTab === "kpis" && filteredKpis.length === 0 && (
+                      <div className="text-center py-12">
+                        <Zap className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500">
+                          No KPIs found. Create your first KPI to get started.
+                        </p>
+                      </div>
+                    )}
+                  </Card>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Toast Notifications */}
         {(error || success) && (

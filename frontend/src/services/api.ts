@@ -1,23 +1,17 @@
-const API_BASE = "http://192.168.29.66:3001/api";
+const API_BASE = "http://localhost:3001/api"; // Adjust to your backend URL
 
-async function apiFetch(path: string, method = "GET", body?: any) {
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+interface Fact {
+  id: number;
+  name: string;
+  table_name: string;
+  column_name: string;
+  aggregate_function: string;
+}
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  try {
-    return await res.json();
-  } catch (e) {
-    return { success: false, error: "Invalid server response" };
-  }
+interface Dimension {
+  id: number;
+  name: string;
+  column_name: string;
 }
 
 interface Connection {
@@ -35,70 +29,36 @@ interface Connection {
   created_at: string;
 }
 
-interface Fact {
-  id: number;
-  connection_id: number;
-  name: string;
-  table_name: string;
-  column_name: string;
-  aggregate_function: string;
-}
-
-interface Dimension {
-  id: number;
-  connection_id: number;
-  name: string;
-  table_name: string;
-  column_name: string;
-}
-
-interface FactDimension {
-  id: number;
-  fact_id: number;
-  fact_name: string;
-  fact_table: string;
-  fact_column: string;
-  dimension_id: number;
-  dimension_name: string;
-  dimension_table: string;
-  dimension_column: string;
-  join_table: string;
-}
-
-interface KPI {
-  id: number;
-  connection_id: number;
-  name: string;
-  expression: string;
+interface ChartConfig {
+  id?: string;
+  xAxisDimension: Dimension | null;
+  yAxisFacts: Fact[];
+  groupByDimension: Dimension | null;
+  chartType: "bar" | "line" | "pie";
+  aggregationType: "SUM" | "AVG" | "COUNT" | "MAX" | "MIN";
+  stacked: boolean;
+  title?: string;
   description?: string;
-  created_by?: number;
-  created_at: string;
+  createdAt?: string;
+  lastModified?: string;
+}
+
+interface DashboardData {
+  id: string;
+  name: string;
+  description?: string;
+  connectionId: number;
+  charts: ChartConfig[];
+  layout: any[];
+  isPublic?: boolean;
+  createdAt?: string;
+  lastModified?: string;
 }
 
 interface AggregationResponse {
   sql?: string;
   rows?: { [key: string]: number | string }[];
   error?: string;
-}
-
-interface AutoMapResponse {
-  success: boolean;
-  autoMappings: {
-    id: number;
-    fact_id: number;
-    fact_name: string;
-    dimension_id: number;
-    dimension_name: string;
-    join_table: string;
-    fact_column: string;
-    dimension_column: string;
-  }[];
-}
-
-interface User {
-  id: number;
-  username: string;
-  role: string;
 }
 
 interface Schema {
@@ -111,237 +71,205 @@ interface Schema {
   }[];
 }
 
+interface FactDimension {
+  id: number;
+  fact_id: number;
+  fact_name: string;
+  dimension_id: number;
+  dimension_name: string;
+  join_table: string;
+  fact_column: string;
+  dimension_column: string;
+}
+
+interface Kpi {
+  id: number;
+  connection_id: number;
+  name: string;
+  expression: string;
+  description?: string;
+  created_by?: number;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+async function apiFetch<T>(
+  endpoint: string,
+  method: string = "GET",
+  body?: any,
+  requiresAuth: boolean = true
+): Promise<ApiResponse<T>> {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+
+  if (requiresAuth) {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      return { success: false, error: "No authentication token found" };
+    }
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return { success: false, error: data.error || "Request failed" };
+    }
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
 export const apiService = {
-  /**
-   * AUTH
-   */
-  login: (
+  // User Authentication
+  async login(
     username: string,
     password: string
-  ): Promise<{
-    success: boolean;
-    token?: string;
-    user?: { role: string };
-    error?: string;
-  }> => apiFetch("/semantic/login", "POST", { username, password }),
+  ): Promise<
+    ApiResponse<{ token: string; user: { id: number; role: string } }>
+  > {
+    return apiFetch("/auth/login", "POST", { username, password }, false);
+  },
 
-  validateToken: (): Promise<{
-    success: boolean;
-    user?: User;
-    error?: string;
-  }> => apiFetch("/semantic/validate"),
+  async validateToken(): Promise<
+    ApiResponse<{ user: { id: number; role: string } }>
+  > {
+    return apiFetch("/auth/validate", "GET");
+  },
 
-  /**
-   * USER MANAGEMENT
-   */
-  createUser: (
+  // User Management
+  async createUser(
     username: string,
     password: string,
     role: string
-  ): Promise<{ success: boolean; user?: User; error?: string }> =>
-    apiFetch("/semantic/users", "POST", { username, password, role }),
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch("/semantic/users", "POST", { username, password, role });
+  },
 
-  /**
-   * CONNECTION MANAGEMENT
-   */
-  getConnections: (): Promise<Connection[]> =>
-    apiFetch("/semantic/connections"),
+  // Connection Management
+  async getConnections(): Promise<Connection[]> {
+    const response = await apiFetch<Connection[]>(
+      "/semantic/connections",
+      "GET"
+    );
+    return response.success ? response.data || [] : [];
+  },
 
-  testConnection: (body: {
-    type: string;
-    hostname: string;
-    port: number;
-    database: string;
-    username: string;
-    password: string;
-    command_timeout?: number;
-    max_transport_objects?: number;
-    selected_db: string;
-  }): Promise<{ success: boolean; message?: string; error?: string }> =>
-    apiFetch("/semantic/connections/test", "POST", body),
+  async createConnection(
+    connection: Omit<Connection, "id" | "created_at">
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch("/semantic/connections", "POST", connection);
+  },
 
-  createConnection: (body: {
-    connection_name: string;
-    description?: string;
-    type: string;
-    hostname: string;
-    port: number;
-    database: string;
-    command_timeout?: number;
-    max_transport_objects?: number;
-    username: string;
-    password: string;
-    selected_db: string;
-  }): Promise<{
-    success: boolean;
-    id?: number;
-    connection_name?: string;
-    description?: string;
-    type?: string;
-    hostname?: string;
-    port?: number;
-    database?: string;
-    command_timeout?: number;
-    max_transport_objects?: number;
-    username?: string;
-    selected_db?: string;
-    error?: string;
-  }> => apiFetch("/semantic/connections", "POST", body),
+  async testConnection(
+    connection: Omit<Connection, "id" | "created_at">
+  ): Promise<ApiResponse<{ success: boolean; message?: string }>> {
+    return apiFetch("/semantic/connections/test", "POST", connection);
+  },
 
-  deleteConnection: (
-    id: number
-  ): Promise<{ success: boolean; error?: string }> =>
-    apiFetch(`/semantic/connections/${id}`, "DELETE"),
+  // Schema Management
+  async getSchemas(connectionId: number): Promise<Schema[]> {
+    const response = await apiFetch<Schema[]>(
+      `/database/schemas?connection_id=${connectionId}`,
+      "GET"
+    );
+    return response.success ? response.data || [] : [];
+  },
 
-  /**
-   * SCHEMA MANAGEMENT
-   */
-  getSchemas: (
-    connection_id: number
-  ): Promise<{ success: boolean; schemas?: Schema[]; error?: string }> =>
-    apiFetch(`/semantic/schemas?connection_id=${connection_id}`),
+  // Facts and Dimensions
+  async getFacts(connectionId: number): Promise<Fact[]> {
+    const response = await apiFetch<Fact[]>(
+      `/semantic/facts?connection_id=${connectionId}`,
+      "GET"
+    );
+    return response.success ? response.data || [] : [];
+  },
 
-  /**
-   * FACT MANAGEMENT
-   */
-  getFacts: (connection_id: number): Promise<Fact[]> =>
-    apiFetch(`/semantic/facts?connection_id=${connection_id}`),
+  async getDimensions(connectionId: number): Promise<Dimension[]> {
+    const response = await apiFetch<Dimension[]>(
+      `/semantic/dimensions?connection_id=${connectionId}`,
+      "GET"
+    );
+    return response.success ? response.data || [] : [];
+  },
 
-  createFact: (body: {
-    connection_id: number;
-    name: string;
-    table_name: string;
-    column_name: string;
-    aggregate_function: string;
-  }): Promise<{
-    id?: number;
-    connection_id?: number;
-    name?: string;
-    table_name?: string;
-    column_name?: string;
-    aggregate_function?: string;
-    error?: string;
-  }> => apiFetch("/semantic/facts", "POST", body),
+  async getFactDimensions(connectionId: number): Promise<FactDimension[]> {
+    const response = await apiFetch<FactDimension[]>(
+      `/semantic/auto-map`,
+      "POST",
+      { connection_id: connectionId }
+    );
+    return response.success ? response.data || [] : [];
+  },
 
-  updateFact: (
-    id: number,
-    body: {
-      name: string;
-      table_name: string;
-      column_name: string;
-      aggregate_function: string;
-    }
-  ): Promise<Fact | { error: string }> =>
-    apiFetch(`/semantic/facts/${id}`, "PUT", body),
+  async getKpis(connectionId: number): Promise<Kpi[]> {
+    const response = await apiFetch<Kpi[]>(
+      `/semantic/kpis?connection_id=${connectionId}`,
+      "GET"
+    );
+    return response.success ? response.data || [] : [];
+  },
 
-  deleteFact: (id: number): Promise<{ success: boolean; error?: string }> =>
-    apiFetch(`/semantic/facts/${id}`, "DELETE"),
-
-  /**
-   * DIMENSION MANAGEMENT
-   */
-  getDimensions: (connection_id: number): Promise<Dimension[]> =>
-    apiFetch(`/semantic/dimensions?connection_id=${connection_id}`),
-
-  createDimension: (body: {
-    connection_id: number;
-    name: string;
-    table_name: string;
-    column_name: string;
-  }): Promise<{
-    id?: number;
-    connection_id?: number;
-    name?: string;
-    table_name?: string;
-    column_name?: string;
-    error?: string;
-  }> => apiFetch("/semantic/dimensions", "POST", body),
-
-  updateDimension: (
-    id: number,
-    body: {
-      name: string;
-      table_name: string;
-      column_name: string;
-    }
-  ): Promise<Dimension | { error: string }> =>
-    apiFetch(`/semantic/dimensions/${id}`, "PUT", body),
-
-  deleteDimension: (
-    id: number
-  ): Promise<{ success: boolean; error?: string }> =>
-    apiFetch(`/semantic/dimensions/${id}`, "DELETE"),
-
-  /**
-   * FACT-DIMENSION MAPPING
-   */
-  getFactDimensions: (connection_id: number): Promise<FactDimension[]> =>
-    apiFetch(`/semantic/fact-dimensions?connection_id=${connection_id}`),
-
-  createFactDimension: (body: {
-    fact_id: number;
-    dimension_id: number;
-    join_table: string;
-    fact_column: string;
-    dimension_column: string;
-  }): Promise<{
-    id?: number;
-    fact_id?: number;
-    dimension_id?: number;
-    join_table?: string;
-    fact_column?: string;
-    dimension_column?: string;
-    error?: string;
-  }> => apiFetch("/semantic/fact-dimensions", "POST", body),
-
-  /**
-   * KPI MANAGEMENT
-   */
-  getKpis: (connection_id: number): Promise<KPI[]> =>
-    apiFetch(`/semantic/kpis?connection_id=${connection_id}`),
-
-  createKPI: (body: {
-    connection_id: number;
-    name: string;
-    expression: string;
-    description?: string;
-  }): Promise<{
-    id?: number;
-    connection_id?: number;
-    name?: string;
-    expression?: string;
-    description?: string;
-    error?: string;
-  }> => apiFetch("/semantic/kpis", "POST", body),
-
-  updateKPI: (
-    id: number,
-    body: {
-      name: string;
-      expression: string;
-      description?: string;
-    }
-  ): Promise<KPI | { error: string }> =>
-    apiFetch(`/semantic/kpis/${id}`, "PUT", body),
-
-  deleteKPI: (id: number): Promise<{ success: boolean; error?: string }> =>
-    apiFetch(`/semantic/kpis/${id}`, "DELETE"),
-
-  /**
-   * QUERY EXECUTION
-   */
-  runQuery: (body: {
+  // Query Execution
+  async runQuery(body: {
     connection_id: number;
     factIds: number[];
     dimensionIds: number[];
     aggregation: string;
-    kpiId?: number;
-  }): Promise<AggregationResponse> =>
-    apiFetch("/analytics/query", "POST", body),
+  }): Promise<AggregationResponse> {
+    const response = await apiFetch<AggregationResponse>(
+      "/analytics/query",
+      "POST",
+      body
+    );
+    return response.success
+      ? response.data || {}
+      : { error: response.error || "Failed to run query" };
+  },
 
-  /**
-   * AUTO-MAPPING
-   */
-  runAutoMap: (connection_id: number): Promise<AutoMapResponse> =>
-    apiFetch("/semantic/auto-map", "POST", { connection_id }),
+  // Dashboard Management
+  async saveDashboard(dashboard: {
+    name: string;
+    description?: string;
+    connection_id: number;
+    charts: ChartConfig[];
+    layout: any[];
+  }): Promise<ApiResponse<{ dashboardId: string }>> {
+    return apiFetch("/dashboard/save", "POST", dashboard);
+  },
+
+  async getDashboards(): Promise<DashboardData[]> {
+    const response = await apiFetch<DashboardData[]>("/dashboard/list", "GET");
+    return response.success ? response.data || [] : [];
+  },
+
+  async updateDashboard(
+    id: string,
+    dashboard: {
+      name: string;
+      description?: string;
+      charts: ChartConfig[];
+      layout: any[];
+    }
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/dashboard/${id}`, "PUT", dashboard);
+  },
+
+  async deleteDashboard(id: string): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/dashboard/${id}`, "DELETE");
+  },
 };
+
+export default apiService;

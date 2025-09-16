@@ -4,7 +4,6 @@ import DraggableFact from "./DraggableFact";
 import DraggableDimension from "./DraggableDimension";
 import { Search, Database, ChevronDown, ChevronUp } from "lucide-react";
 
-// Types
 interface Fact {
   id: number;
   name: string;
@@ -12,25 +11,56 @@ interface Fact {
   column_name: string;
   aggregate_function: string;
 }
+
 interface Dimension {
   id: number;
   name: string;
   column_name: string;
 }
 
-const DynamicSemanticPanel: React.FC = () => {
+interface Connection {
+  id: number;
+  connection_name: string;
+  description?: string;
+  type: string;
+  hostname: string;
+  port: number;
+  database: string;
+  command_timeout?: number;
+  max_transport_objects?: number;
+  username: string;
+  selected_db: string;
+  created_at: string;
+}
+
+interface DynamicSemanticPanelProps {
+  connections: Connection[];
+  selectedConnectionId: number | null;
+  setSelectedConnectionId: (id: number | null) => void;
+}
+
+const DynamicSemanticPanel: React.FC<DynamicSemanticPanelProps> = ({
+  connections,
+  selectedConnectionId,
+  setSelectedConnectionId,
+}) => {
   const [facts, setFacts] = useState<Fact[]>([]);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isExpanded, setIsExpanded] = useState(true);
 
-  // Fetch facts and dimensions
   useEffect(() => {
     const fetchData = async () => {
+      if (!selectedConnectionId) {
+        setFacts([]);
+        setDimensions([]);
+        return;
+      }
+
       try {
         const [factsRes, dimensionsRes] = await Promise.all([
-          apiService.getFacts(),
-          apiService.getDimensions(),
+          apiService.getFacts(selectedConnectionId),
+          apiService.getDimensions(selectedConnectionId),
         ]);
         setFacts(factsRes);
         setDimensions(dimensionsRes);
@@ -38,10 +68,10 @@ const DynamicSemanticPanel: React.FC = () => {
         console.error("Failed to fetch facts and dimensions:", err);
       }
     };
-    fetchData();
-  }, []);
 
-  // Memoize filtered and sorted facts
+    fetchData();
+  }, [selectedConnectionId]);
+
   const sortedAndFilteredFacts = useMemo(() => {
     return facts
       .filter(
@@ -53,7 +83,6 @@ const DynamicSemanticPanel: React.FC = () => {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [facts, searchTerm]);
 
-  // Memoize filtered and sorted dimensions
   const sortedAndFilteredDimensions = useMemo(() => {
     return dimensions
       .filter(
@@ -65,9 +94,9 @@ const DynamicSemanticPanel: React.FC = () => {
   }, [dimensions, searchTerm]);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div
-        className="flex items-center justify-between p-4 border-b border-slate-200 cursor-pointer"
+        className="flex cursor-pointer items-center justify-between border-b border-slate-200 p-4"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <h2 className="text-lg font-medium text-slate-700">
@@ -81,26 +110,52 @@ const DynamicSemanticPanel: React.FC = () => {
       </div>
       {isExpanded && (
         <>
-          <div className="p-4 border-b border-slate-200">
+          <div className="border-b border-slate-200 p-4">
+            {connections.length > 0 ? (
+              <div className="mb-4">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Select Connection
+                </label>
+                <select
+                  value={selectedConnectionId || ""}
+                  onChange={(e) =>
+                    setSelectedConnectionId(parseInt(e.target.value) || null)
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm shadow-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="" disabled>
+                    Select a connection
+                  </option>
+                  {connections.map((conn) => (
+                    <option key={conn.id} value={conn.id}>
+                      {conn.connection_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="py-4 text-center text-sm text-slate-500">
+                No connections available. Create one in the Admin Panel.
+              </div>
+            )}
             <div className="relative">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="mb-2 block text-sm font-medium text-slate-700">
                 Search Facts & Dimensions
               </label>
               <input
                 type="text"
                 placeholder="Search..."
-                className="w-full border border-slate-300 rounded-xl px-4 py-2.5 pl-10 text-sm bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 pl-10 text-sm shadow-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
-              <Search className="h-4 w-4 text-slate-400 absolute left-3 top-9" />
+              <Search className="absolute left-3 top-9 h-4 w-4 text-slate-400" />
             </div>
           </div>
-          <div className="overflow-y-auto max-h-[calc(100vh-350px)] p-2">
+          <div className="max-h-[calc(100vh-350px)] overflow-y-auto p-2">
             {facts.length > 0 || dimensions.length > 0 ? (
               <>
-                {/* Facts Section */}
-                <h3 className="text-md font-semibold text-slate-800 px-2 py-1 bg-slate-100 rounded-md sticky top-0 z-10">
+                <h3 className="sticky top-0 z-10 rounded-md bg-slate-100 px-2 py-1 text-md font-semibold text-slate-800">
                   Facts
                 </h3>
                 {sortedAndFilteredFacts.length > 0 ? (
@@ -110,12 +165,11 @@ const DynamicSemanticPanel: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-4 text-slate-500 text-sm">
+                  <div className="py-4 text-center text-sm text-slate-500">
                     No facts found matching search.
                   </div>
                 )}
-                {/* Dimensions Section */}
-                <h3 className="text-md font-semibold text-slate-800 px-2 py-1 bg-slate-100 rounded-md sticky top-0 z-10 mt-4">
+                <h3 className="sticky top-0 z-10 mt-4 rounded-md bg-slate-100 px-2 py-1 text-md font-semibold text-slate-800">
                   Dimensions
                 </h3>
                 {sortedAndFilteredDimensions.length > 0 ? (
@@ -128,18 +182,18 @@ const DynamicSemanticPanel: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-4 text-slate-500 text-sm">
+                  <div className="py-4 text-center text-sm text-slate-500">
                     No dimensions found matching search.
                   </div>
                 )}
               </>
             ) : (
-              <div className="text-center py-8 text-slate-500">
-                <div className="bg-gradient-to-r from-blue-100 to-indigo-100 p-4 rounded-full w-16 h-16 mx-auto flex items-center justify-center mb-4">
+              <div className="py-8 text-center text-slate-500">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-r from-blue-100 to-indigo-100">
                   <Database className="h-8 w-8 text-blue-500" />
                 </div>
                 <p>No facts or dimensions available</p>
-                <p className="text-sm mt-1">Create some in the Admin Panel</p>
+                <p className="mt-1 text-sm">Create some in the Admin Panel</p>
               </div>
             )}
           </div>
