@@ -625,13 +625,31 @@ const AdminPanel: React.FC = () => {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
-        <div className="container mx-auto p-6">
-          <div className="flex justify-between items-center mb-8">
+        <div className="container mx-auto p-2">
+          <div className="flex justify-between items-center mb-2">
             <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
+            <div className="w-64">
+              <select
+                value={selectedConnectionId || ""}
+                onChange={(e) =>
+                  setSelectedConnectionId(Number(e.target.value) || null)
+                }
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+              >
+                <option value="" disabled>
+                  Select a connection
+                </option>
+                {connections.map((conn) => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.connection_name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Tabs */}
-          <div className="flex space-x-1 bg-white p-1 rounded-2xl shadow-sm border border-gray-100 mb-8">
+          <div className="flex space-x-2 bg-white p-2 rounded-xl shadow-md border border-gray-100 mb-2">
             {[
               { id: "connections", label: "Connections", icon: Database },
               { id: "facts", label: "Facts", icon: BarChart3 },
@@ -642,20 +660,20 @@ const AdminPanel: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-medium rounded-xl transition-all ${
+                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300 ${
                   activeTab === tab.id
-                    ? "bg-white shadow-sm text-blue-600"
-                    : "text-gray-500 hover:text-gray-700"
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-blue-600"
                 }`}
               >
-                <tab.icon className="w-4 h-4" />
+                <tab.icon className="w-5 h-5" />
                 <span>{tab.label}</span>
               </button>
             ))}
           </div>
 
           {activeTab === "connections" && (
-            <div className="grid lg:grid-cols-2 gap-6">
+            <div className="grid lg:grid-cols-2 gap-2">
               <ConnectionForm
                 onSuccess={setSuccess}
                 onError={setError}
@@ -696,9 +714,9 @@ const AdminPanel: React.FC = () => {
           )}
 
           {activeTab !== "connections" && (
-            <div className="grid lg:grid-cols-3 gap-6">
+            <div className="grid lg:grid-cols-3 gap-2">
               <div>
-                <div className="p-6 mb-6 sticky top-6 bg-white rounded-2xl shadow-sm border border-gray-100">
+                {/* <div className="p-6 mb-6 sticky top-6 bg-white rounded-2xl shadow-sm border border-gray-100">
                   <div className="relative mb-4">
                     <input
                       placeholder="Search..."
@@ -707,7 +725,7 @@ const AdminPanel: React.FC = () => {
                       className="w-full px-4 py-3 pl-10 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                     />
                   </div>
-                </div>
+                </div> */}
 
                 {activeTab === "facts" && (
                   <FactForm
