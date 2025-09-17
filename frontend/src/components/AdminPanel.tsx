@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Database, BarChart3, Layers, Target, Zap } from "lucide-react";
+import { Database, BarChart3, Layers, Target, Zap, Table } from "lucide-react";
 import { apiService } from "../services/api";
 import ConnectionForm from "./ConnectionForm";
 import ConnectionsList from "./ConnectionsList";
@@ -8,6 +8,7 @@ import DimensionForm from "./DimensionForm";
 import MappingForm from "./MappingForm";
 import KPIForm from "./KPIForm";
 import DataList from "./DataList";
+import SchemaVisualizer from "./SchemaVisualizer";
 import ErrorBoundary from "./ErrorBoundary";
 import Button from "./ui/Button";
 
@@ -627,6 +628,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
     setKpiInsertColumn("");
   };
 
+  const selectedConnection = connections.find(
+    (c) => c.id === selectedConnectionId
+  );
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
@@ -657,6 +662,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
           <div className="flex space-x-2 bg-white p-2 rounded-xl shadow-md border border-gray-100 mb-2">
             {[
               { id: "connections", label: "Connections", icon: Database },
+              { id: "schema", label: "Schema", icon: Table },
               { id: "facts", label: "Facts", icon: BarChart3 },
               { id: "dimensions", label: "Dimensions", icon: Layers },
               { id: "mappings", label: "Mappings", icon: Target },
@@ -724,7 +730,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
             </div>
           )}
 
-          {activeTab !== "connections" && (
+          {activeTab === "schema" && (
+            <SchemaVisualizer
+              schemas={schemas}
+              connectionName={selectedConnection?.connection_name}
+            />
+          )}
+
+          {activeTab !== "connections" && activeTab !== "schema" && (
             <div className="grid lg:grid-cols-3 gap-2">
               <div>
                 {activeTab === "facts" && (
