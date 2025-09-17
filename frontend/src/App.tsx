@@ -209,6 +209,13 @@ const App: React.FC = () => {
     [selectedConnectionId]
   );
 
+  const handleDashboardsUpdate = useCallback(
+    (updatedDashboards: DashboardData[]) => {
+      setDashboards(updatedDashboards);
+    },
+    []
+  );
+
   const handleLogout = () => {
     console.log("Logging out user");
     localStorage.removeItem("token");
@@ -270,6 +277,7 @@ const App: React.FC = () => {
                 setDashboards={setDashboards}
                 addNewDashboard={addNewDashboard}
                 selectedConnectionId={selectedConnectionId}
+                onDashboardsUpdate={handleDashboardsUpdate}
               />
             )}
           </div>

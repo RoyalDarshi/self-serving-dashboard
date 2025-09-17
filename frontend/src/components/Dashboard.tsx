@@ -79,6 +79,7 @@ interface DashboardProps {
   setDashboards: React.Dispatch<React.SetStateAction<DashboardData[]>>;
   addNewDashboard: (name: string, description?: string) => Promise<string>;
   selectedConnectionId: number | null;
+  onDashboardsUpdate: (dashboards: DashboardData[]) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -86,6 +87,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   setDashboards,
   addNewDashboard,
   selectedConnectionId,
+  onDashboardsUpdate,
 }) => {
   const [selectedDashboard, setSelectedDashboard] = useState<string | null>(
     null
@@ -131,7 +133,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleCreateDashboard = useCallback(async () => {
     if (newDashboardName.trim() && selectedConnectionId) {
       try {
-        await addNewDashboard(newDashboardName.trim(), newDashboardDescription);
+        const dashboardId = await addNewDashboard(
+          newDashboardName.trim(),
+          newDashboardDescription
+        );
+        const updatedDashboards = await apiService.getDashboards();
+        setDashboards(updatedDashboards);
+        onDashboardsUpdate(updatedDashboards); // Notify App.tsx
         setNewDashboardName("");
         setNewDashboardDescription("");
         setShowCreateModal(false);
@@ -144,6 +152,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     newDashboardDescription,
     selectedConnectionId,
     addNewDashboard,
+    setDashboards,
+    onDashboardsUpdate,
   ]);
 
   // Generate default layout for charts
@@ -186,6 +196,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               d.id === selectedDashboard ? { ...d, layout } : d
             );
             setDashboards(updatedDashboards);
+            onDashboardsUpdate(updatedDashboards); // Notify App.tsx
             currentLayoutRef.current = layout;
           } else {
             console.error("Failed to update dashboard layout:", response.error);
@@ -199,7 +210,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         setIsSavingLayout(false);
       }
     }, 1000),
-    [dashboards, selectedDashboard, setDashboards]
+    [dashboards, selectedDashboard, setDashboards, onDashboardsUpdate]
   );
 
   // Handle stop events for drag and resize
@@ -223,6 +234,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           const updatedDashboards = await apiService.getDashboards();
           console.log("Updated dashboards after delete:", updatedDashboards);
           setDashboards(updatedDashboards);
+          onDashboardsUpdate(updatedDashboards); // Notify App.tsx
           if (selectedDashboard === dashboardId) {
             setSelectedDashboard(null);
           }
@@ -231,7 +243,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         console.error("Error deleting dashboard:", error);
       }
     },
-    [selectedDashboard, setDashboards]
+    [selectedDashboard, setDashboards, onDashboardsUpdate]
   );
 
   const handleDeleteChart = useCallback(
@@ -263,6 +275,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 updatedDashboards
               );
               setDashboards(updatedDashboards);
+              onDashboardsUpdate(updatedDashboards); // Notify App.tsx
             }
           }
         }
@@ -270,7 +283,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         console.error("Error deleting chart:", error);
       }
     },
-    [dashboards, selectedDashboard, setDashboards]
+    [dashboards, selectedDashboard, setDashboards, onDashboardsUpdate]
   );
 
   const selectedDashboardData = dashboards.find(
