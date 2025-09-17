@@ -59,12 +59,10 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
     const newNodes = filteredSchemas.map((schema, index) => ({
       id: schema.tableName,
       type: "default",
-      position: { x: (index % 3) * 450, y: Math.floor(index / 3) * 300 }, // Adjusted spacing for wider tables
+      position: { x: (index % 3) * 450, y: Math.floor(index / 3) * 300 },
       data: {
         label: (
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg shadow-lg border border-indigo-100 w-80">
-            {" "}
-            {/* Increased width */}
             <h3 className="text-lg font-bold text-indigo-800 mb-3">
               {schema.tableName}
             </h3>
@@ -81,7 +79,7 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
                       ? "text-green-600 bg-green-50"
                       : "text-gray-600"
                   }`}
-                  data-column-id={`${schema.tableName}.${col.name}`} // For column connections
+                  data-column-id={`${schema.tableName}.${col.name}`}
                 >
                   {col.name} ({col.type})
                   {col.pk
@@ -123,7 +121,10 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
         // FK-based connections
         if (col.fk) {
           const [targetTable, targetColumn] = col.fk.split(".");
-          if (filteredSchemas.some((s) => s.tableName === targetTable)) {
+          if (
+            filteredSchemas.some((s) => s.tableName === targetTable) &&
+            source.tableName !== targetTable
+          ) {
             newEdges.push({
               id: `${source.tableName}.${col.name}-${targetTable}.${targetColumn}`,
               source: source.tableName,
@@ -180,23 +181,7 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
   }, [schemas, searchTerm, setNodes, setEdges]);
 
   return (
-    <div className="lg:col-span-2 h-[600px] bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-2xl shadow-xl border border-gray-200">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-indigo-900">
-          Schema Visualization
-        </h2>
-        <div className="relative w-72">
-          <input
-            type="text"
-            placeholder="Search tables..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
-          />
-          <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-        </div>
-      </div>
-
+    <div className=" bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl shadow-xl border border-gray-200">
       <ReactFlow
         nodes={nodes}
         edges={edges}
