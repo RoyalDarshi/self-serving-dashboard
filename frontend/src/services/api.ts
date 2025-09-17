@@ -1,7 +1,7 @@
 // api.ts
 const API_BASE = "http://localhost:3001/api"; // Adjust to your backend URL
 
-interface Fact {
+export interface Fact {
   id: number;
   name: string;
   table_name: string;
@@ -9,14 +9,14 @@ interface Fact {
   aggregate_function: string;
 }
 
-interface Dimension {
+export interface Dimension {
   id: number;
   name: string;
   table_name: string;
   column_name: string;
 }
 
-interface Connection {
+export interface Connection {
   id: number;
   connection_name: string;
   description?: string;
@@ -31,7 +31,7 @@ interface Connection {
   created_at: string;
 }
 
-interface ChartConfig {
+export interface ChartConfig {
   id?: string;
   xAxisDimension: Dimension | null;
   yAxisFacts: Fact[];
@@ -45,7 +45,7 @@ interface ChartConfig {
   lastModified?: string;
 }
 
-interface DashboardData {
+export interface DashboardData {
   id: string;
   name: string;
   description?: string;
@@ -57,13 +57,13 @@ interface DashboardData {
   lastModified?: string;
 }
 
-interface AggregationResponse {
+export interface AggregationResponse {
   sql?: string;
   rows?: { [key: string]: number | string }[];
   error?: string;
 }
 
-interface Schema {
+export interface Schema {
   tableName: string;
   columns: {
     name: string;
@@ -73,7 +73,7 @@ interface Schema {
   }[];
 }
 
-interface FactDimension {
+export interface FactDimension {
   id: number;
   fact_id: number;
   fact_name: string;
@@ -84,7 +84,7 @@ interface FactDimension {
   dimension_column: string;
 }
 
-interface Kpi {
+export interface Kpi {
   id: number;
   connection_id: number;
   name: string;
@@ -93,7 +93,7 @@ interface Kpi {
   created_by?: number;
 }
 
-interface User {
+export interface User {
   id: number;
   username: string;
   role: "admin" | "user" | "designer";
@@ -108,7 +108,7 @@ interface User {
   created_at: string;
 }
 
-interface ApiResponse<T> {
+export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
@@ -396,6 +396,10 @@ export const apiService = {
 
   async deleteDashboard(id: string): Promise<ApiResponse<unknown>> {
     return apiFetch(`/dashboard/${id}`, "DELETE");
+  },
+
+  async deleteChart(chartId: string): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/dashboard/chart/${chartId}`, "DELETE");
   },
 };
 

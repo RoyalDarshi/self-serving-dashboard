@@ -1,3 +1,4 @@
+// dashboard.js
 import { Router } from "express";
 import { dbPromise } from "../database/sqliteConnection.js";
 
@@ -10,18 +11,17 @@ router.post("/save", async (req, res) => {
   const { name, description, connection_id, charts, layout } = req.body;
 
   if (!name || !connection_id) {
-    return res.status(400).json({
-      error: "Dashboard name and connection_id are required",
-    });
+    return res
+      .status(400)
+      .json({ error: "Dashboard name and connection_id are required" });
   }
 
   try {
     await db.run("BEGIN TRANSACTION");
 
     const dashboardResult = await db.run(
-      `INSERT INTO dashboards (
-        user_id, connection_id, name, description, layout, created_at, last_modified
-      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      `INSERT INTO dashboards (user_id, connection_id, name, description, layout, created_at, last_modified) 
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
       [
         user.userId,
         connection_id,
@@ -35,10 +35,9 @@ router.post("/save", async (req, res) => {
     for (const chart of charts || []) {
       const yAxisFacts = chart.yAxisFacts || [];
       await db.run(
-        `INSERT INTO charts (
-          dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id,
-          chart_type, aggregation_type, stacked, title, description, created_at, last_modified
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        `INSERT INTO charts (dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
+                             chart_type, aggregation_type, stacked, title, description, created_at, last_modified) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           dashboardId,
           chart.xAxisDimension?.id || null,
@@ -54,15 +53,13 @@ router.post("/save", async (req, res) => {
     }
 
     await db.run("COMMIT");
-    res.json({
-      dashboardId,
-    });
+    res.json({ dashboardId });
   } catch (error) {
     await db.run("ROLLBACK");
     console.error("Error saving dashboard:", error.message);
-    res.status(500).json({
-      error: `Failed to save dashboard: ${error.message}`,
-    });
+    res
+      .status(500)
+      .json({ error: `Failed to save dashboard: ${error.message}` });
   }
 });
 
@@ -106,8 +103,8 @@ router.get("/list", async (req, res) => {
             const yAxisFacts =
               yAxisFactIds.length > 0
                 ? await db.all(
-                    `SELECT id, name, table_name, column_name, aggregate_function
-                   FROM facts
+                    `SELECT id, name, table_name, column_name, aggregate_function 
+                   FROM facts 
                    WHERE id IN (${yAxisFactIds.map(() => "?").join(",")})`,
                     yAxisFactIds
                   )
@@ -121,7 +118,7 @@ router.get("/list", async (req, res) => {
               : null;
 
             return {
-              id: chart.id,
+              id: chart.id.toString(), // Ensure string ID for frontend
               xAxisDimension,
               yAxisFacts,
               groupByDimension,
@@ -137,7 +134,7 @@ router.get("/list", async (req, res) => {
         );
 
         return {
-          id: dashboard.id,
+          id: dashboard.id.toString(),
           name: dashboard.name,
           description: dashboard.description,
           connectionId: dashboard.connection_id,
@@ -154,9 +151,9 @@ router.get("/list", async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("Error fetching dashboards:", error.message);
-    res.status(500).json({
-      error: `Failed to fetch dashboards: ${error.message}`,
-    });
+    res
+      .status(500)
+      .json({ error: `Failed to fetch dashboards: ${error.message}` });
   }
 });
 
@@ -171,21 +168,21 @@ router.put("/:id", async (req, res) => {
     await db.run("BEGIN TRANSACTION");
 
     await db.run(
-      `UPDATE dashboards
-       SET name = ?, description = ?, layout = ?, last_modified = CURRENT_TIMESTAMP
+      `UPDATE dashboards 
+       SET name = ?, description = ?, layout = ?, last_modified = CURRENT_TIMESTAMP 
        WHERE id = ? AND user_id = ?`,
       [name, description || null, JSON.stringify(layout || []), id, user.userId]
     );
 
+    // Delete existing charts and re-insert
     await db.run(`DELETE FROM charts WHERE dashboard_id = ?`, [id]);
 
     for (const chart of charts || []) {
       const yAxisFacts = chart.yAxisFacts || [];
       await db.run(
-        `INSERT INTO charts (
-          dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id,
-          chart_type, aggregation_type, stacked, title, description, created_at, last_modified
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        `INSERT INTO charts (dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
+                             chart_type, aggregation_type, stacked, title, description, created_at, last_modified) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           id,
           chart.xAxisDimension?.id || null,
@@ -205,9 +202,9 @@ router.put("/:id", async (req, res) => {
   } catch (error) {
     await db.run("ROLLBACK");
     console.error("Error updating dashboard:", error.message);
-    res.status(500).json({
-      error: `Failed to update dashboard: ${error.message}`,
-    });
+    res
+      .status(500)
+      .json({ error: `Failed to update dashboard: ${error.message}` });
   }
 });
 
@@ -229,9 +226,35 @@ router.delete("/:id", async (req, res) => {
   } catch (error) {
     await db.run("ROLLBACK");
     console.error("Error deleting dashboard:", error.message);
-    res.status(500).json({
-      error: `Failed to delete dashboard: ${error.message}`,
-    });
+    res
+      .status(500)
+      .json({ error: `Failed to delete dashboard: ${error.message}` });
+  }
+});
+
+// New: Delete individual chart
+router.delete("/chart/:chartId", async (req, res) => {
+  const db = await dbPromise;
+  const { user } = req;
+  const { chartId } = req.params;
+
+  try {
+    // Verify user owns the dashboard
+    const chart = await db.get(
+      `SELECT c.id FROM charts c JOIN dashboards d ON c.dashboard_id = d.id WHERE c.id = ? AND d.user_id = ?`,
+      [chartId, user.userId]
+    );
+    if (!chart) {
+      return res
+        .status(404)
+        .json({ error: "Chart not found or access denied" });
+    }
+
+    await db.run(`DELETE FROM charts WHERE id = ?`, [chartId]);
+    res.json({ message: "Chart deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting chart:", error.message);
+    res.status(500).json({ error: `Failed to delete chart: ${error.message}` });
   }
 });
 

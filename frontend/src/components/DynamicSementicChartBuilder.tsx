@@ -9,7 +9,6 @@ import ChartControls from "./ChartControls";
 import ChartDisplay from "./ChartDisplay";
 import { Download, Plus } from "lucide-react";
 
-// Types
 interface Fact {
   id: number;
   name: string;
@@ -47,6 +46,10 @@ interface ChartConfig {
   chartType: "bar" | "line" | "pie";
   aggregationType: AggregationType;
   stacked: boolean;
+  title?: string;
+  description?: string;
+  createdAt?: string;
+  lastModified?: string;
 }
 
 interface DynamicSemanticChartBuilderProps {
@@ -71,7 +74,6 @@ const DynamicSemanticChartBuilder: React.FC<
   addChartToDashboard,
   selectedConnectionId,
 }) => {
-  // State
   const [xAxisDimension, setXAxisDimension] = useState<Dimension | null>(null);
   const [yAxisFacts, setYAxisFacts] = useState<Fact[]>([]);
   const [groupByDimension, setGroupByDimension] = useState<Dimension | null>(
@@ -95,7 +97,6 @@ const DynamicSemanticChartBuilder: React.FC<
   const [newDashboardName, setNewDashboardName] = useState("");
   const [newDashboardDescription, setNewDashboardDescription] = useState("");
 
-  // Reset chart data when selections change
   useEffect(() => {
     setChartData([]);
     setYAxisColumns([]);
@@ -103,7 +104,6 @@ const DynamicSemanticChartBuilder: React.FC<
     setError(null);
   }, [xAxisDimension, yAxisFacts, groupByDimension]);
 
-  // Automatically generate chart when selections change
   useEffect(() => {
     if (xAxisDimension && yAxisFacts.length > 0) {
       generateChartData();
@@ -116,7 +116,6 @@ const DynamicSemanticChartBuilder: React.FC<
     chartType,
   ]);
 
-  // Generate chart data
   const generateChartData = useCallback(async () => {
     if (!selectedConnectionId) {
       setError("No connection selected");
@@ -156,7 +155,6 @@ const DynamicSemanticChartBuilder: React.FC<
 
         res.rows.forEach((row) => {
           const xValue = (row[xKey] || "").toString().trim();
-          // Skip rows where x-axis dimension is null or empty
           if (!xValue) return;
 
           const gValue = gKey ? (row[gKey] || "").toString().trim() : null;
@@ -191,14 +189,12 @@ const DynamicSemanticChartBuilder: React.FC<
           }
         });
 
-        // Filter out rows where all y-axis values are missing
         let normalizedData = Array.from(dataMap.values()).filter((item) => {
           return Object.keys(item).some(
             (key) => key !== "name" && item[key] != null
           );
         });
 
-        // Sort data by total y-axis values (high to low)
         normalizedData.sort((a, b) => {
           const aTotal = Object.entries(a)
             .filter(([key]) => key !== "name")
@@ -212,7 +208,7 @@ const DynamicSemanticChartBuilder: React.FC<
               (sum, [, value]) => sum + (typeof value === "number" ? value : 0),
               0
             );
-          return bTotal - aTotal; // Descending order
+          return bTotal - aTotal;
         });
 
         const newYAxisColumns: Column[] = groupByDimension
@@ -244,226 +240,134 @@ const DynamicSemanticChartBuilder: React.FC<
         setYAxisColumns([]);
         setGeneratedQuery("");
       }
-    } catch (err) {
-      setError(
-        "Failed to generate chart data: " +
-          (err as Error).message +
-          ". Ensure fact-dimension mappings are valid or run auto-mapping."
-      );
-      setChartData([]);
-      setYAxisColumns([]);
-      setGeneratedQuery("");
+    } catch (error) {
+      setError("Error generating chart: " + error.message);
     } finally {
       setLoading(false);
     }
   }, [
     selectedConnectionId,
-    yAxisFacts,
     xAxisDimension,
+    yAxisFacts,
     groupByDimension,
     aggregationType,
     chartType,
   ]);
 
-  // Handle drop for dimensions (X-axis or Group By) and facts (Y-axis)
-  const handleDrop = (
-    axis: "x" | "y" | "group",
-    item: { dimension?: Dimension; fact?: Fact }
-  ) => {
-    if (axis === "x" && item.dimension) {
-      setXAxisDimension(item.dimension);
-    } else if (axis === "group" && item.dimension) {
-      setGroupByDimension(item.dimension);
-    } else if (axis === "y" && item.fact) {
-      setYAxisFacts((prev) => {
-        if (prev.some((f) => f.id === item.fact!.id)) {
-          return prev; // Prevent duplicates
-        }
-        return [...prev, item.fact!];
+  const handleDownloadGraph = () => {
+    if (chartContainerRef.current) {
+      html2canvas(chartContainerRef.current).then((canvas) => {
+        const link = document.createElement("a");
+        link.download = "chart.png";
+        link.href = canvas.toDataURL();
+        link.click();
       });
     }
   };
 
-  // Handle remove from drop zone
-  const handleRemove = (axis: "x" | "y" | "group", factId?: number) => {
-    if (axis === "x") setXAxisDimension(null);
-    if (axis === "group") setGroupByDimension(null);
-    if (axis === "y" && factId) {
-      setYAxisFacts((prev) => prev.filter((f) => f.id !== factId));
-    }
-  };
-
-  // Download graph as PNG
-  const handleDownloadGraph = async () => {
-    if (chartContainerRef.current) {
-      const canvas = await html2canvas(chartContainerRef.current);
-      const link = document.createElement("a");
-      link.download = `chart-${uuidv4()}.png`;
-      link.href = canvas.toDataURL();
-      link.click();
-    }
-  };
-
-  // Download table as CSV
   const handleDownloadTable = () => {
-    if (chartData.length === 0) return;
-    const headers = ["name", ...yAxisColumns.map((col) => col.key)];
-    const csvRows = [headers.join(",")];
-    chartData.forEach((row) => {
-      const values = [
-        row.name,
-        ...yAxisColumns.map((col) =>
-          row[col.key] != null ? row[col.key] : ""
-        ),
-      ];
-      csvRows.push(values.join(","));
-    });
-    const csv = csvRows.join("\n");
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      encodeURIComponent(
+        ["name," + yAxisColumns.map((c) => c.label).join(",")].join("\n") +
+          "\n" +
+          chartData
+            .map((row) =>
+              [row.name, ...yAxisColumns.map((c) => row[c.key] || "")].join(",")
+            )
+            .join("\n")
+      );
     const link = document.createElement("a");
-    link.download = `chart-data-${uuidv4()}.csv`;
-    link.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+    link.href = csvContent;
+    link.download = "chart_data.csv";
     link.click();
   };
 
-  // Open the modal for adding to dashboard
+  const valueFormatter = (value: number | string) => {
+    if (typeof value === "number") {
+      return value.toLocaleString();
+    }
+    return value;
+  };
+
   const handleAddToDashboard = () => {
     setShowDashboardModal(true);
   };
 
-  // Save chart to selected dashboard
+  const handleCreateNewDashboard = async () => {
+    if (newDashboardName.trim() && selectedConnectionId) {
+      try {
+        const dashboardId = await addNewDashboard(
+          newDashboardName.trim(),
+          newDashboardDescription
+        );
+        await handleSaveToDashboard(dashboardId);
+      } catch (error) {
+        console.error("Error creating and adding to dashboard:", error);
+      }
+    }
+  };
+
   const handleSaveToDashboard = async (dashboardId: string) => {
-    if (!selectedConnectionId) {
-      setError("No connection selected");
+    if (!xAxisDimension || yAxisFacts.length === 0) {
+      setError("Incomplete chart configuration");
       return;
     }
-    const config: ChartConfig = {
+
+    const chartConfig: ChartConfig = {
+      id: uuidv4(),
       xAxisDimension,
       yAxisFacts,
       groupByDimension,
       chartType,
       aggregationType,
       stacked,
+      title: "New Chart",
+      description: "",
     };
-    await addChartToDashboard(config, dashboardId);
-    setShowDashboardModal(false);
-    setSelectedDashboard("");
-  };
 
-  // Create new dashboard and save chart
-  const handleCreateNewDashboard = async () => {
-    if (!newDashboardName.trim() || !selectedConnectionId) {
-      setError("Dashboard name and connection are required");
-      return;
-    }
-    try {
-      const dashboardId = await addNewDashboard(
-        newDashboardName,
-        newDashboardDescription
-      );
-      const config: ChartConfig = {
-        xAxisDimension,
-        yAxisFacts,
-        groupByDimension,
-        chartType,
-        aggregationType,
-        stacked,
-      };
-      await addChartToDashboard(config, dashboardId);
+    const dashboard = dashboards.find((d) => d.id === dashboardId);
+    console.log("Selected Dashboard:", dashboard);
+    console.log("Selected Connection ID:", selectedConnectionId);
+    if (dashboard && dashboard.connectionId === selectedConnectionId) {
+      const updatedCharts = [...dashboard.charts, chartConfig];
+      const updatedLayout = [
+        ...dashboard.layout,
+        {
+          i: chartConfig.id,
+          x: 0,
+          y: Infinity,
+          w: 4,
+          h: 4,
+          minW: 3,
+          minH: 3,
+        },
+      ];
+
+      await apiService.updateDashboard(dashboardId, {
+        name: dashboard.name,
+        description: dashboard.description,
+        charts: updatedCharts,
+        layout: updatedLayout,
+      });
+
       setShowDashboardModal(false);
-      setSelectedDashboard("");
-      setNewDashboardName("");
-      setNewDashboardDescription("");
-    } catch (error) {
-      console.error("Error creating new dashboard:", error);
+    } else {
+      setError("Connection mismatch or dashboard not found");
     }
-  };
-
-  // Value formatter for ChartDataTable
-  const valueFormatter = (value: number | string) => {
-    if (typeof value === "number") {
-      return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
-    }
-    return value;
   };
 
   return (
-    <div className="p-6 bg-white rounded-xl shadow-sm border border-slate-200">
-      {/* Drop Zones */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border p-2">
-          <label className="flex items-center mb-2 text-sm font-medium text-slate-700">
-            <span className="w-2 h-2 rounded-full mr-2 bg-blue-500" />
-            X-Axis (Dimension)
-          </label>
-          <ChartDropZone
-            axis="x"
-            onDrop={(item) => handleDrop("x", item)}
-            onRemove={() => handleRemove("x")}
-            selectedColumns={
-              xAxisDimension
-                ? [
-                    {
-                      ...xAxisDimension,
-                      key: xAxisDimension.name,
-                      label: xAxisDimension.name,
-                      type: "string",
-                    },
-                  ]
-                : []
-            }
-            label="Drag dimension for categories"
-            accept={["dimension"]}
-          />
-        </div>
-        <div className="bg-gradient-to-r from-indigo-50 to-indigo-100 rounded-lg border p-2">
-          <label className="flex items-center mb-2 text-sm font-medium text-slate-700">
-            <span className="w-2 h-2 rounded-full mr-2 bg-indigo-500" />
-            Y-Axis (Facts)
-          </label>
-          <ChartDropZone
-            axis="y"
-            onDrop={(item) => handleDrop("y", item)}
-            onRemove={(factId) => handleRemove("y", factId)}
-            selectedColumns={yAxisFacts.map((fact) => ({
-              ...fact,
-              key: fact.name,
-              label: fact.name,
-              type: "number",
-              id: fact.id, // Include id for removal
-            }))}
-            label="Drag facts for values"
-            accept={["fact"]}
-            allowMultiple
-          />
-        </div>
-        <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border p-2">
-          <label className="flex items-center mb-2 text-sm font-medium text-slate-700">
-            <span className="w-2 h-2 rounded-full mr-2 bg-purple-500" />
-            Group By (Optional Dimension)
-          </label>
-          <ChartDropZone
-            axis="group"
-            onDrop={(item) => handleDrop("group", item)}
-            onRemove={() => handleRemove("group")}
-            selectedColumns={
-              groupByDimension
-                ? [
-                    {
-                      ...groupByDimension,
-                      key: groupByDimension.name,
-                      label: groupByDimension.name,
-                      type: "string",
-                    },
-                  ]
-                : []
-            }
-            label="Drag dimension to group"
-            accept={["dimension"]}
-          />
-        </div>
-      </div>
+    <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+      <ChartDropZone
+        setXAxisDimension={setXAxisDimension}
+        setYAxisFacts={setYAxisFacts}
+        setGroupByDimension={setGroupByDimension}
+        xAxisDimension={xAxisDimension}
+        yAxisFacts={yAxisFacts}
+        groupByDimension={groupByDimension}
+      />
 
-      {/* Controls */}
       <ChartControls
         chartType={chartType}
         setChartType={setChartType}
@@ -486,10 +390,8 @@ const DynamicSemanticChartBuilder: React.FC<
         }
       />
 
-      {/* Error Display */}
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
-      {/* Download Buttons */}
       {chartData.length > 0 && (
         <div className="flex items-center space-x-2 ml-auto mb-2">
           {activeView === "graph" && (
@@ -520,7 +422,6 @@ const DynamicSemanticChartBuilder: React.FC<
         </div>
       )}
 
-      {/* Views */}
       {activeView === "graph" && (
         <ChartDisplay
           chartContainerRef={chartContainerRef}
@@ -589,85 +490,80 @@ const DynamicSemanticChartBuilder: React.FC<
         </div>
       )}
 
-      {/* Dashboard Modal */}
       {showDashboardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-96">
-            <h2 className="text-xl font-bold mb-4">Add Chart to Dashboard</h2>
-            <div className="mb-4">
-              <label
-                htmlFor="dashboard-select"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Select a Dashboard:
-              </label>
-              <select
-                id="dashboard-select"
-                value={selectedDashboard}
-                onChange={(e) => setSelectedDashboard(e.target.value)}
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-              >
-                <option value="" disabled>
-                  Select a dashboard
-                </option>
-                {dashboards
-                  .filter((d) => d.connectionId === selectedConnectionId)
-                  .map((dashboard) => (
-                    <option key={dashboard.id} value={dashboard.id}>
-                      {dashboard.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="mb-4">
-              <label
-                htmlFor="new-dashboard-name"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Or Create New Dashboard:
-              </label>
-              <input
-                id="new-dashboard-name"
-                type="text"
-                value={newDashboardName}
-                onChange={(e) => setNewDashboardName(e.target.value)}
-                placeholder="New dashboard name..."
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-              />
-              <textarea
-                value={newDashboardDescription}
-                onChange={(e) => setNewDashboardDescription(e.target.value)}
-                placeholder="Description (optional)"
-                rows={3}
-                className="mt-2 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-              />
-            </div>
-            <div className="flex justify-end space-x-2">
-              <button
-                onClick={() => {
-                  setShowDashboardModal(false);
-                  setSelectedDashboard("");
-                  setNewDashboardName("");
-                  setNewDashboardDescription("");
-                }}
-                className="px-4 py-2 text-gray-500 border rounded-md hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSaveToDashboard(selectedDashboard)}
-                disabled={!selectedDashboard}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md disabled:bg-blue-300"
-              >
-                Add to Existing
-              </button>
-              <button
-                onClick={handleCreateNewDashboard}
-                disabled={!newDashboardName.trim()}
-                className="px-4 py-2 bg-green-600 text-white rounded-md disabled:bg-green-300"
-              >
-                Create & Add
-              </button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h2 className="text-xl font-semibold text-slate-900 mb-4">
+                Add Chart to Dashboard
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Select Dashboard
+                  </label>
+                  <select
+                    value={selectedDashboard}
+                    onChange={(e) => setSelectedDashboard(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select a dashboard</option>
+                    {dashboards
+                      .filter((d) => d.connectionId === selectedConnectionId)
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Or New Dashboard Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newDashboardName}
+                    onChange={(e) => setNewDashboardName(e.target.value)}
+                    placeholder="Enter new dashboard name..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Description (Optional)
+                  </label>
+                  <textarea
+                    value={newDashboardDescription}
+                    onChange={(e) => setNewDashboardDescription(e.target.value)}
+                    placeholder="Describe the dashboard..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-end space-x-3 mt-6">
+                <button
+                  onClick={() => setShowDashboardModal(false)}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSaveToDashboard(selectedDashboard)}
+                  disabled={!selectedDashboard}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Add to Selected
+                </button>
+                <button
+                  onClick={handleCreateNewDashboard}
+                  disabled={!newDashboardName.trim()}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Create New
+                </button>
+              </div>
             </div>
           </div>
         </div>

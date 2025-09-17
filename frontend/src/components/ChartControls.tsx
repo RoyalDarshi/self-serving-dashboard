@@ -13,7 +13,7 @@ import {
   Terminal,
   Check,
 } from "lucide-react";
-import { AggregationType, ChartType } from "./types";
+import { AggregationType, ChartType } from "./type";
 
 interface ChartControlsProps {
   chartType: ChartType;

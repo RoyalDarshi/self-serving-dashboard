@@ -2,32 +2,48 @@ import React from "react";
 import { useDrop } from "react-dnd";
 import { X } from "lucide-react";
 
-// Types
+// Types (copied/adapted from DynamicSemanticChartBuilder for completeness)
 interface Column {
   key: string;
   label: string;
   type: string;
-  id?: number; // Add id to Column interface
+  id?: number;
 }
 
-interface ChartDropZoneProps {
-  axis: "x" | "y" | "group";
-  onDrop: (item: { column?: Column; fact?: any; dimension?: any }) => void;
-  onRemove: (id?: number) => void; // Update to accept id
+interface Dimension {
+  id: number;
+  name: string;
+  column_name: string;
+}
+
+interface Fact {
+  id: number;
+  name: string;
+  table_name: string;
+  column_name: string;
+  aggregate_function: string;
+}
+
+interface SingleDropZoneProps {
+  onDrop: (item: {
+    column?: Column;
+    fact?: Fact;
+    dimension?: Dimension;
+  }) => void;
+  onRemove: (id?: number) => void;
   selectedColumns: Column[];
   label: string;
-  accept?: string[];
-  allowMultiple?: boolean;
+  accept: string[];
+  allowMultiple: boolean;
 }
 
-const ChartDropZone: React.FC<ChartDropZoneProps> = ({
-  axis,
+const SingleDropZone: React.FC<SingleDropZoneProps> = ({
   onDrop,
   onRemove,
   selectedColumns,
   label,
-  accept = ["column", "fact", "dimension"],
-  allowMultiple = false,
+  accept,
+  allowMultiple,
 }) => {
   const [{ isOver }, drop] = useDrop(() => ({
     accept,
@@ -57,7 +73,7 @@ const ChartDropZone: React.FC<ChartDropZoneProps> = ({
             </span>
             {(allowMultiple || index === 0) && (
               <button
-                onClick={() => onRemove(col.id)} // Pass col.id to onRemove
+                onClick={() => onRemove(col.id)}
                 className="text-red-500 hover:text-red-700"
               >
                 <X className="h-4 w-4" />
@@ -66,6 +82,123 @@ const ChartDropZone: React.FC<ChartDropZoneProps> = ({
           </div>
         ))
       )}
+    </div>
+  );
+};
+
+interface ChartDropZoneProps {
+  setXAxisDimension: React.Dispatch<React.SetStateAction<Dimension | null>>;
+  setYAxisFacts: React.Dispatch<React.SetStateAction<Fact[]>>;
+  setGroupByDimension: React.Dispatch<React.SetStateAction<Dimension | null>>;
+  xAxisDimension: Dimension | null;
+  yAxisFacts: Fact[];
+  groupByDimension: Dimension | null;
+}
+
+const ChartDropZone: React.FC<ChartDropZoneProps> = ({
+  setXAxisDimension,
+  setYAxisFacts,
+  setGroupByDimension,
+  xAxisDimension,
+  yAxisFacts,
+  groupByDimension,
+}) => {
+  const handleDropX = (item: { dimension?: Dimension }) => {
+    if (item.dimension) {
+      setXAxisDimension(item.dimension);
+    }
+  };
+
+  const handleRemoveX = () => setXAxisDimension(null);
+
+  const handleDropY = (item: { fact?: Fact }) => {
+    if (item.fact && !yAxisFacts.some((f) => f.id === item.fact!.id)) {
+      setYAxisFacts([...yAxisFacts, item.fact]);
+    }
+  };
+
+  const handleRemoveY = (id?: number) => {
+    if (id !== undefined) {
+      setYAxisFacts(yAxisFacts.filter((f) => f.id !== id));
+    }
+  };
+
+  const handleDropGroup = (item: { dimension?: Dimension }) => {
+    if (item.dimension) {
+      setGroupByDimension(item.dimension);
+    }
+  };
+
+  const handleRemoveGroup = () => setGroupByDimension(null);
+
+  return (
+    <div className="grid grid-cols-3 gap-4 mb-6">
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          X-Axis (Dimension)
+        </label>
+        <SingleDropZone
+          onDrop={handleDropX}
+          onRemove={handleRemoveX}
+          selectedColumns={
+            xAxisDimension
+              ? [
+                  {
+                    id: xAxisDimension.id,
+                    key: xAxisDimension.name,
+                    label: xAxisDimension.name,
+                    type: "string",
+                  },
+                ]
+              : []
+          }
+          label="Drop dimension here"
+          accept={["dimension"]}
+          allowMultiple={false}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          Y-Axis (Facts)
+        </label>
+        <SingleDropZone
+          onDrop={handleDropY}
+          onRemove={handleRemoveY}
+          selectedColumns={yAxisFacts.map((f) => ({
+            id: f.id,
+            key: f.name,
+            label: f.name,
+            type: "number",
+          }))}
+          label="Drop facts here"
+          accept={["fact"]}
+          allowMultiple={true}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          Group By (Optional Dimension)
+        </label>
+        <SingleDropZone
+          onDrop={handleDropGroup}
+          onRemove={handleRemoveGroup}
+          selectedColumns={
+            groupByDimension
+              ? [
+                  {
+                    id: groupByDimension.id,
+                    key: groupByDimension.name,
+                    label: groupByDimension.name,
+                    type: "string",
+                  },
+                ]
+              : []
+          }
+          label="Drop dimension here"
+          accept={["dimension"]}
+          allowMultiple={false}
+        />
+      </div>
     </div>
   );
 };

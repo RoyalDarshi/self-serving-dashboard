@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+// Dashboard.tsx
+import React, { useState, useEffect } from "react";
 import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -27,6 +28,7 @@ import {
   Unlock,
 } from "lucide-react";
 import SavedChart from "./SavedChart";
+import apiService from "../services/api"; // Updated import
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
@@ -92,6 +94,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [newDashboardDescription, setNewDashboardDescription] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
   const [layouts, setLayouts] = useState<any>({});
+  const [currentDashboards, setCurrentDashboards] = useState(dashboards);
+
+  useEffect(() => {
+    setCurrentDashboards(dashboards);
+  }, [dashboards]);
 
   // Get chart type icon
   const getChartIcon = (chartType: string) => {
@@ -117,7 +124,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleCreateDashboard = async () => {
     if (newDashboardName.trim() && selectedConnectionId) {
       try {
-        await addNewDashboard(newDashboardName.trim(), newDashboardDescription);
+        const dashboardId = await addNewDashboard(
+          newDashboardName.trim(),
+          newDashboardDescription
+        );
+        // Refresh dashboards
+        const updatedDashboards = await apiService.getDashboards();
+        setCurrentDashboards(updatedDashboards);
         setNewDashboardName("");
         setNewDashboardDescription("");
         setShowCreateModal(false);
@@ -141,24 +154,20 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   // Handle layout change
-  const handleLayoutChange = async (layout: any, layouts: any) => {
-    setLayouts(layouts);
-    const dashboard = dashboards.find((d) => d.id === selectedDashboard);
+  const handleLayoutChange = async (layout: any) => {
+    setLayouts({ lg: layout });
+    const dashboard = currentDashboards.find((d) => d.id === selectedDashboard);
     if (dashboard && selectedDashboard) {
       try {
-        await fetch(`${API_BASE}/dashboard/${selectedDashboard}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-          body: JSON.stringify({
-            name: dashboard.name,
-            description: dashboard.description,
-            charts: dashboard.charts,
-            layout,
-          }),
+        await apiService.updateDashboard(selectedDashboard, {
+          name: dashboard.name,
+          description: dashboard.description,
+          charts: dashboard.charts,
+          layout,
         });
+        // Refresh
+        const updatedDashboards = await apiService.getDashboards();
+        setCurrentDashboards(updatedDashboards);
       } catch (error) {
         console.error("Error saving layout:", error);
       }
@@ -168,18 +177,46 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleDeleteDashboard = async (dashboardId: string) => {
     const response = await apiService.deleteDashboard(dashboardId);
     if (response.success) {
-      setDashboards(dashboards.filter((d) => d.id !== dashboardId));
+      const updated = currentDashboards.filter((d) => d.id !== dashboardId);
+      setCurrentDashboards(updated);
       if (selectedDashboard === dashboardId) {
         setSelectedDashboard(null);
       }
     }
   };
 
-  const selectedDashboardData = dashboards.find(
+  const handleDeleteChart = async (chartId: string) => {
+    const response = await apiService.deleteChart(chartId);
+    if (response.success) {
+      const dashboard = currentDashboards.find(
+        (d) => d.id === selectedDashboard
+      );
+      if (dashboard) {
+        const updatedCharts = dashboard.charts.filter((c) => c.id !== chartId);
+        const updatedLayout = dashboard.layout.filter((l) => l.i !== chartId);
+        await apiService.updateDashboard(dashboard.id, {
+          name: dashboard.name,
+          description: dashboard.description,
+          charts: updatedCharts,
+          layout: updatedLayout,
+        });
+        // Refresh
+        const updatedDashboards = await apiService.getDashboards();
+        setCurrentDashboards(updatedDashboards);
+      }
+    }
+  };
+
+  const selectedDashboardData = currentDashboards.find(
     (d) => d.id === selectedDashboard
   );
 
   if (selectedDashboard && selectedDashboardData) {
+    const currentLayout =
+      layouts.lg ||
+      selectedDashboardData.layout ||
+      generateLayout(selectedDashboardData.charts);
+
     return (
       <div className="min-h-screen bg-slate-50">
         {/* Dashboard Header */}
@@ -243,28 +280,16 @@ const Dashboard: React.FC<DashboardProps> = ({
         {/* Dashboard Content */}
         <div className="p-6">
           {isEditMode && (
-            <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-              <div className="flex items-center space-x-2 text-orange-700">
-                <Move className="h-5 w-5" />
-                <span>Drag and resize charts to adjust the layout</span>
-              </div>
-            </div>
+            <p className="text-orange-600 mb-4">
+              Drag and resize charts to adjust layout.
+            </p>
           )}
           <ResponsiveGridLayout
             className="layout"
-            layouts={
-              layouts.lg
-                ? { lg: layouts.lg }
-                : {
-                    lg:
-                      selectedDashboardData.layout ||
-                      generateLayout(selectedDashboardData.charts),
-                  }
-            }
+            layouts={{ lg: currentLayout }}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
             cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-            rowHeight={100}
-            width={1200}
+            rowHeight={30}
             isDraggable={isEditMode}
             isResizable={isEditMode}
             onLayoutChange={handleLayoutChange}
@@ -272,12 +297,20 @@ const Dashboard: React.FC<DashboardProps> = ({
             {selectedDashboardData.charts.map((chart) => (
               <div
                 key={chart.id}
-                className="bg-white rounded-lg shadow-sm border border-slate-200 p-4"
+                className="bg-white border rounded-lg p-4 relative"
               >
                 <SavedChart
-                  chart={chart}
+                  config={chart}
                   connectionId={selectedDashboardData.connectionId}
                 />
+                {isEditMode && (
+                  <button
+                    onClick={() => handleDeleteChart(chart.id)}
+                    className="absolute top-2 right-2 text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             ))}
           </ResponsiveGridLayout>
@@ -286,120 +319,119 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   }
 
+  // Dashboard List View (existing, with minor updates for currentDashboards)
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">My Dashboards</h1>
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search dashboards..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <Search className="h-5 w-5 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-            </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Create Dashboard</span>
-            </button>
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">My Dashboards</h1>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search dashboards..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <Search className="h-5 w-5 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+          </div>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Create Dashboard</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Dashboard List */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+        <div className="px-6 py-4 border-b border-slate-200">
+          <div className="grid grid-cols-12 gap-4 text-sm font-medium text-slate-600">
+            <div className="col-span-4">Name</div>
+            <div className="col-span-2">Charts</div>
+            <div className="col-span-2">Last Modified</div>
+            <div className="col-span-2">Status</div>
+            <div className="col-span-2">Actions</div>
           </div>
         </div>
-
-        {/* Dashboard List */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <div className="grid grid-cols-12 gap-4 text-sm font-medium text-slate-600">
-              <div className="col-span-4">Name</div>
-              <div className="col-span-2">Charts</div>
-              <div className="col-span-2">Last Modified</div>
-              <div className="col-span-2">Status</div>
-              <div className="col-span-2">Actions</div>
-            </div>
-          </div>
-          <div className="divide-y divide-slate-200">
-            {filteredDashboards.map((dashboard) => (
-              <div
-                key={dashboard.id}
-                className="px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer"
-                onClick={() => setSelectedDashboard(dashboard.id)}
-              >
-                <div className="grid grid-cols-12 gap-4 items-center">
-                  <div className="col-span-4 flex items-center space-x-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <LayoutDashboard className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-slate-900">
-                        {dashboard.name}
-                      </h3>
-                      {dashboard.description && (
-                        <p className="text-sm text-slate-500 truncate">
-                          {dashboard.description}
-                        </p>
-                      )}
-                    </div>
+        <div className="divide-y divide-slate-200">
+          {filteredDashboards.map((dashboard) => (
+            <div
+              key={dashboard.id}
+              className="px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer"
+              onClick={() => setSelectedDashboard(dashboard.id)}
+            >
+              <div className="grid grid-cols-12 gap-4 items-center">
+                <div className="col-span-4 flex items-center space-x-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <LayoutDashboard className="h-5 w-5 text-blue-600" />
                   </div>
-                  <div className="col-span-2 text-sm text-slate-600">
-                    {dashboard.charts.length} chart
-                    {dashboard.charts.length !== 1 ? "s" : ""}
-                  </div>
-                  <div className="col-span-2 text-sm text-slate-600">
-                    {dashboard.lastModified || "Recently"}
-                  </div>
-                  <div className="col-span-2">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        dashboard.isPublic
-                          ? "bg-green-100 text-green-800"
-                          : "bg-slate-100 text-slate-800"
-                      }`}
-                    >
-                      {dashboard.isPublic ? "Shared" : "Private"}
-                    </span>
-                  </div>
-                  <div className="col-span-2 flex items-center space-x-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedDashboard(dashboard.id);
-                      }}
-                      className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
-                      title="View"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Handle edit
-                      }}
-                      className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                      title="Edit"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteDashboard(dashboard.id);
-                      }}
-                      className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                  <div>
+                    <h3 className="font-medium text-slate-900">
+                      {dashboard.name}
+                    </h3>
+                    {dashboard.description && (
+                      <p className="text-sm text-slate-500 truncate">
+                        {dashboard.description}
+                      </p>
+                    )}
                   </div>
                 </div>
+                <div className="col-span-2 text-sm text-slate-600">
+                  {dashboard.charts.length} chart
+                  {dashboard.charts.length !== 1 ? "s" : ""}
+                </div>
+                <div className="col-span-2 text-sm text-slate-600">
+                  {dashboard.lastModified || "Recently"}
+                </div>
+                <div className="col-span-2">
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      dashboard.isPublic
+                        ? "bg-green-100 text-green-800"
+                        : "bg-slate-100 text-slate-800"
+                    }`}
+                  >
+                    {dashboard.isPublic ? "Shared" : "Private"}
+                  </span>
+                </div>
+                <div className="col-span-2 flex items-center space-x-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedDashboard(dashboard.id);
+                    }}
+                    className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                    title="View"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Handle edit
+                    }}
+                    className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                    title="Edit"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteDashboard(dashboard.id);
+                    }}
+                    className="p-1 text-slate-400 hover:text-red-600 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
 
