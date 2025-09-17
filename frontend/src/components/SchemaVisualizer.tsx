@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import ReactFlow, {
   addEdge,
   MiniMap,
@@ -35,6 +35,7 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = React.useState<string | null>(null);
+  const [flowHeight, setFlowHeight] = useState("500px");
 
   const onConnect = useCallback(
     (params: any) =>
@@ -49,6 +50,19 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
       ),
     []
   );
+
+  // Set height based on screen height
+  useEffect(() => {
+    const updateHeight = () => {
+      const screenHeight = window.innerHeight || 500; // Fallback to 500px
+      const calculatedHeight = Math.max(screenHeight * 0.7, 400); // 70% of screen height, min 400px
+      setFlowHeight(`${calculatedHeight}px`);
+    };
+
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    return () => window.removeEventListener("resize", updateHeight);
+  }, []);
 
   // Transform schemas into nodes and edges
   React.useEffect(() => {
@@ -181,7 +195,7 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
   }, [schemas, searchTerm, setNodes, setEdges]);
 
   return (
-    <div className=" bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl shadow-xl border border-gray-200">
+    <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl shadow-xl border border-gray-200">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -189,7 +203,11 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         fitView
-        style={{ background: "#f1f5f9", height: "500px", borderRadius: "1rem" }}
+        style={{
+          background: "#f1f5f9",
+          height: flowHeight,
+          borderRadius: "1rem",
+        }}
       >
         <MiniMap
           nodeColor={(node) => "#4f46e5"}
