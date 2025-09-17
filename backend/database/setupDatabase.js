@@ -118,7 +118,7 @@ export async function initializeDatabase() {
   // Charts table
   await db.run(`
     CREATE TABLE IF NOT EXISTS charts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT PRIMARY KEY,
       dashboard_id INTEGER NOT NULL,
       x_axis_dimension_id INTEGER,
       y_axis_facts TEXT NOT NULL,

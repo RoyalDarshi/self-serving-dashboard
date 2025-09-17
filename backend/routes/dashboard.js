@@ -34,13 +34,16 @@ router.post("/save", async (req, res) => {
     );
     const dashboardId = dashboardResult.lastID;
 
+    const chartIds = [];
     for (const chart of charts || []) {
       const yAxisFacts = chart.yAxisFacts || [];
+      const chartId = chart.id || null;
       await db.run(
-        `INSERT INTO charts (dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
+        `INSERT INTO charts (id, dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
                              chart_type, aggregation_type, stacked, title, description, created_at, last_modified) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
+          chartId,
           dashboardId,
           chart.xAxisDimension?.id || null,
           JSON.stringify(yAxisFacts.map((fact) => fact.id)),
@@ -52,11 +55,12 @@ router.post("/save", async (req, res) => {
           chart.description || null,
         ]
       );
+      chartIds.push(chartId);
     }
 
     await db.run("COMMIT");
     transactionActive = false;
-    res.json({ success: true, data: { dashboardId } });
+    res.json({ success: true, data: { dashboardId, chartIds } });
   } catch (error) {
     if (transactionActive) {
       await db.run("ROLLBACK");
@@ -65,6 +69,70 @@ router.post("/save", async (req, res) => {
     res.status(500).json({
       success: false,
       error: `Failed to save dashboard: ${error.message}`,
+    });
+  }
+});
+
+// Update an existing dashboard
+router.put("/:id", async (req, res) => {
+  const db = await dbPromise;
+  const { user } = req;
+  const { id } = req.params;
+  const { name, description, charts, layout } = req.body;
+
+  let transactionActive = false;
+  try {
+    await db.run("BEGIN TRANSACTION");
+    transactionActive = true;
+
+    await db.run(
+      `UPDATE dashboards 
+       SET name = ?, description = ?, layout = ?, last_modified = CURRENT_TIMESTAMP 
+       WHERE id = ? AND user_id = ?`,
+      [name, description || null, JSON.stringify(layout || []), id, user.userId]
+    );
+
+    await db.run(`DELETE FROM charts WHERE dashboard_id = ?`, [id]);
+
+    const chartIds = [];
+    for (const chart of charts || []) {
+      const yAxisFacts = chart.yAxisFacts || [];
+      const chartId = chart.id || null;
+      await db.run(
+        `INSERT INTO charts (id, dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
+                             chart_type, aggregation_type, stacked, title, description, created_at, last_modified) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          chartId,
+          id,
+          chart.xAxisDimension?.id || null,
+          JSON.stringify(yAxisFacts.map((fact) => fact.id)),
+          chart.groupByDimension?.id || null,
+          chart.chartType,
+          chart.aggregationType,
+          chart.stacked ? 1 : 0,
+          chart.title || null,
+          chart.description || null,
+        ]
+      );
+      chartIds.push(chartId);
+    }
+
+    await db.run("COMMIT");
+    transactionActive = false;
+    res.json({
+      success: true,
+      message: "Dashboard updated successfully",
+      data: { chartIds },
+    });
+  } catch (error) {
+    if (transactionActive) {
+      await db.run("ROLLBACK");
+    }
+    console.error("Error updating dashboard:", error.message);
+    res.status(500).json({
+      success: false,
+      error: `Failed to update dashboard: ${error.message}`,
     });
   }
 });
@@ -164,63 +232,6 @@ router.get("/list", async (req, res) => {
   }
 });
 
-// Update an existing dashboard
-router.put("/:id", async (req, res) => {
-  const db = await dbPromise;
-  const { user } = req;
-  const { id } = req.params;
-  const { name, description, charts, layout } = req.body;
-
-  let transactionActive = false;
-  try {
-    await db.run("BEGIN TRANSACTION");
-    transactionActive = true;
-
-    await db.run(
-      `UPDATE dashboards 
-       SET name = ?, description = ?, layout = ?, last_modified = CURRENT_TIMESTAMP 
-       WHERE id = ? AND user_id = ?`,
-      [name, description || null, JSON.stringify(layout || []), id, user.userId]
-    );
-
-    // Delete existing charts and re-insert
-    await db.run(`DELETE FROM charts WHERE dashboard_id = ?`, [id]);
-
-    for (const chart of charts || []) {
-      const yAxisFacts = chart.yAxisFacts || [];
-      await db.run(
-        `INSERT INTO charts (dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
-                             chart_type, aggregation_type, stacked, title, description, created_at, last_modified) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-        [
-          id,
-          chart.xAxisDimension?.id || null,
-          JSON.stringify(yAxisFacts.map((fact) => fact.id)),
-          chart.groupByDimension?.id || null,
-          chart.chartType,
-          chart.aggregationType,
-          chart.stacked ? 1 : 0,
-          chart.title || null,
-          chart.description || null,
-        ]
-      );
-    }
-
-    await db.run("COMMIT");
-    transactionActive = false;
-    res.json({ success: true, message: "Dashboard updated successfully" });
-  } catch (error) {
-    if (transactionActive) {
-      await db.run("ROLLBACK");
-    }
-    console.error("Error updating dashboard:", error.message);
-    res.status(500).json({
-      success: false,
-      error: `Failed to update dashboard: ${error.message}`,
-    });
-  }
-});
-
 // Delete a dashboard
 router.delete("/:id", async (req, res) => {
   const db = await dbPromise;
@@ -259,7 +270,6 @@ router.delete("/chart/:chartId", async (req, res) => {
 
   let transactionActive = false;
   try {
-    // Verify user owns the dashboard
     const chart = await db.get(
       `SELECT c.id FROM charts c JOIN dashboards d ON c.dashboard_id = d.id WHERE c.id = ? AND d.user_id = ?`,
       [chartId, user.userId]
