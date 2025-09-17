@@ -199,6 +199,16 @@ const App: React.FC = () => {
     [dashboards, fetchDashboards]
   );
 
+  const handleConnectionsUpdate = useCallback(
+    (updatedConnections: Connection[]) => {
+      setConnections(updatedConnections);
+      if (updatedConnections.length > 0 && selectedConnectionId === null) {
+        setSelectedConnectionId(updatedConnections[0].id);
+      }
+    },
+    [selectedConnectionId]
+  );
+
   const handleLogout = () => {
     console.log("Logging out user");
     localStorage.removeItem("token");
@@ -231,7 +241,7 @@ const App: React.FC = () => {
               <UserManagement />
             )}
             {activeTab === "admin-panel" && user.role === "admin" && (
-              <AdminPanel />
+              <AdminPanel onConnectionsUpdate={handleConnectionsUpdate} />
             )}
             {activeTab === "dashboard" && (
               <DragDropProvider>

@@ -70,7 +70,11 @@ interface Connection {
   created_at: string;
 }
 
-const AdminPanel: React.FC = () => {
+interface AdminPanelProps {
+  onConnectionsUpdate: (connections: Connection[]) => void;
+}
+
+const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<
@@ -128,6 +132,7 @@ const AdminPanel: React.FC = () => {
         .getConnections()
         .then((conns) => {
           setConnections(conns);
+          onConnectionsUpdate(conns); // Update App.tsx connections
           if (conns.length > 0 && selectedConnectionId === null) {
             setSelectedConnectionId(conns[0].id);
           }
@@ -136,7 +141,7 @@ const AdminPanel: React.FC = () => {
           setError(`Failed to fetch connections: ${err.message}`)
         );
     }
-  }, [token]);
+  }, [token, onConnectionsUpdate]);
 
   // Fetch data when selectedConnectionId changes
   useEffect(() => {
@@ -677,16 +682,18 @@ const AdminPanel: React.FC = () => {
               <ConnectionForm
                 onSuccess={setSuccess}
                 onError={setError}
-                onCreate={(newConn) =>
-                  setConnections([...connections, newConn])
-                }
-                onUpdate={(updatedConn) =>
-                  setConnections(
-                    connections.map((c) =>
-                      c.id === updatedConn.id ? updatedConn : c
-                    )
-                  )
-                }
+                onCreate={(newConn) => {
+                  const updatedConnections = [...connections, newConn];
+                  setConnections(updatedConnections);
+                  onConnectionsUpdate(updatedConnections); // Notify App.tsx
+                }}
+                onUpdate={(updatedConn) => {
+                  const updatedConnections = connections.map((c) =>
+                    c.id === updatedConn.id ? updatedConn : c
+                  );
+                  setConnections(updatedConnections);
+                  onConnectionsUpdate(updatedConnections); // Notify App.tsx
+                }}
               />
               <ConnectionsList
                 connections={connections}
@@ -695,7 +702,11 @@ const AdminPanel: React.FC = () => {
                 onDelete={(id, name) =>
                   apiService.deleteConnection(id).then((response) => {
                     if (response.success) {
-                      setConnections(connections.filter((c) => c.id !== id));
+                      const updatedConnections = connections.filter(
+                        (c) => c.id !== id
+                      );
+                      setConnections(updatedConnections);
+                      onConnectionsUpdate(updatedConnections); // Notify App.tsx
                       setSuccess(`Connection "${name}" deleted successfully`);
                       if (selectedConnectionId === id) {
                         setSelectedConnectionId(
@@ -716,17 +727,6 @@ const AdminPanel: React.FC = () => {
           {activeTab !== "connections" && (
             <div className="grid lg:grid-cols-3 gap-2">
               <div>
-                {/* <div className="p-6 mb-6 sticky top-6 bg-white rounded-2xl shadow-sm border border-gray-100">
-                  <div className="relative mb-4">
-                    <input
-                      placeholder="Search..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full px-4 py-3 pl-10 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                    />
-                  </div>
-                </div> */}
-
                 {activeTab === "facts" && (
                   <FactForm
                     schemas={schemas}
