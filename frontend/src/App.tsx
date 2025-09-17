@@ -61,7 +61,7 @@ interface DashboardData {
 
 const App: React.FC = () => {
   const [user, setUser] = useState<{ role: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const [activeTab, setActiveTab] = useState<string>("chart-builder");
   const [loading, setLoading] = useState<boolean>(true);
   const [dashboards, setDashboards] = useState<DashboardData[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -99,6 +99,13 @@ const App: React.FC = () => {
         setConnections(connections);
       });
       fetchDashboards();
+      if (user.role === "admin") {
+        setActiveTab("create-user");
+      } else if (user.role === "designer") {
+        setActiveTab("chart-builder");
+      } else {
+        setActiveTab("my-dashboards");
+      }
     }
   }, [user]);
 
@@ -250,7 +257,7 @@ const App: React.FC = () => {
             {activeTab === "admin-panel" && user.role === "admin" && (
               <AdminPanel onConnectionsUpdate={handleConnectionsUpdate} />
             )}
-            {activeTab === "dashboard" && (
+            {activeTab === "chart-builder" && user.role === "designer" && (
               <DragDropProvider>
                 <div className="flex gap-4 p-4 h-screen">
                   <div className="w-1/4">
@@ -271,17 +278,18 @@ const App: React.FC = () => {
                 </div>
               </DragDropProvider>
             )}
-            {activeTab === "my-dashboards" && (
-              <Dashboard
-                dashboards={dashboards}
-                setDashboards={setDashboards}
-                addNewDashboard={addNewDashboard}
-                selectedConnectionId={selectedConnectionId}
-                setSelectedConnectionId={setSelectedConnectionId}
-                connections={connections}
-                onDashboardsUpdate={handleDashboardsUpdate}
-              />
-            )}
+            {(activeTab === "my-dashboards" && user.role === "designer") ||
+              (user.role === "user" && (
+                <Dashboard
+                  dashboards={dashboards}
+                  setDashboards={setDashboards}
+                  addNewDashboard={addNewDashboard}
+                  selectedConnectionId={selectedConnectionId}
+                  setSelectedConnectionId={setSelectedConnectionId}
+                  connections={connections}
+                  onDashboardsUpdate={handleDashboardsUpdate}
+                />
+              ))}
           </div>
         </div>
       ) : (

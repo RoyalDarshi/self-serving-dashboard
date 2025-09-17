@@ -45,24 +45,28 @@ const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </>
       )}
-      <button
-        onClick={() => setActiveTab("dashboard")}
-        className={`p-2 rounded-md ${
-          activeTab === "dashboard" ? "bg-blue-600" : "hover:bg-gray-700"
-        }`}
-        title="Chart Builder"
-      >
-        <BarChart3 className="h-6 w-6" />
-      </button>
-      <button
-        onClick={() => setActiveTab("my-dashboards")}
-        className={`p-2 rounded-md ${
-          activeTab === "my-dashboards" ? "bg-blue-600" : "hover:bg-gray-700"
-        }`}
-        title="My Dashboards"
-      >
-        <LayoutDashboard className="h-6 w-6" />
-      </button>
+      {user?.role === "designer" && (
+        <button
+          onClick={() => setActiveTab("chart-builder")}
+          className={`p-2 rounded-md ${
+            activeTab === "chart-builder" ? "bg-blue-600" : "hover:bg-gray-700"
+          }`}
+          title="Chart Builder"
+        >
+          <BarChart3 className="h-6 w-6" />
+        </button>
+      )}
+      {(user?.role === "designer" || user?.role === "user") && (
+        <button
+          onClick={() => setActiveTab("my-dashboards")}
+          className={`p-2 rounded-md ${
+            activeTab === "my-dashboards" ? "bg-blue-600" : "hover:bg-gray-700"
+          }`}
+          title="My Dashboards"
+        >
+          <LayoutDashboard className="h-6 w-6" />
+        </button>
+      )}
       <button
         onClick={onLogout}
         className="p-2 rounded-md hover:bg-gray-700 mt-auto"
