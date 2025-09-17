@@ -150,7 +150,7 @@ const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
   }, [config, connectionId]);
 
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full min-h-[350px] min-w-[300px]">
       <h3 className="text-lg font-semibold mb-2">{config.title || "Chart"}</h3>
       <p className="text-sm text-slate-600 mb-4">{config.description}</p>
       <ChartDisplay

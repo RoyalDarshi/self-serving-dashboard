@@ -150,10 +150,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   const generateLayout = useCallback((charts: ChartConfig[]) => {
     return charts.map((chart, index) => ({
       i: chart.id || `chart-${index}`,
-      x: (index % 3) * 4,
-      y: Math.floor(index / 3) * 4,
-      w: 4,
-      h: 4,
+      x: (index % 2) * 6,
+      y: Math.floor(index / 2) * 8,
+      w: 6,
+      h: 8,
       minW: 3,
       minH: 3,
     }));
@@ -180,11 +180,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             charts: dashboard.charts,
             layout,
           });
+          console.log("Backend update response:", response);
           if (response.success) {
-            const updatedDashboards = await apiService.getDashboards();
-            console.log(
-              "Updated dashboards after layout save:",
-              updatedDashboards
+            const updatedDashboards = dashboards.map((d) =>
+              d.id === selectedDashboard ? { ...d, layout } : d
             );
             setDashboards(updatedDashboards);
             currentLayoutRef.current = layout;
@@ -281,9 +280,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   // Initialize currentLayoutRef on dashboard selection
   useEffect(() => {
     if (selectedDashboardData) {
-      const initialLayout =
-        selectedDashboardData.layout ||
-        generateLayout(selectedDashboardData.charts);
+      const initialLayout = selectedDashboardData.layout?.length
+        ? selectedDashboardData.layout
+        : generateLayout(selectedDashboardData.charts);
       setLayouts({ lg: initialLayout });
       currentLayoutRef.current = initialLayout;
       console.log(
@@ -296,13 +295,17 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   if (selectedDashboard && selectedDashboardData) {
     const currentLayout =
-      layouts.lg ||
-      selectedDashboardData.layout ||
-      generateLayout(selectedDashboardData.charts);
+      layouts.lg?.length &&
+      layouts.lg.every((item) =>
+        selectedDashboardData.charts.some((chart) => chart.id === item.i)
+      )
+        ? layouts.lg
+        : selectedDashboardData.layout?.length
+        ? selectedDashboardData.layout
+        : generateLayout(selectedDashboardData.charts);
 
     return (
       <div className="min-h-screen bg-slate-50">
-        {/* Dashboard Header */}
         <div className="bg-white border-b border-slate-200 px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -359,8 +362,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             </p>
           )}
         </div>
-
-        {/* Dashboard Content */}
         <div className="p-6">
           {isEditMode && (
             <p className="text-orange-600 mb-4">
@@ -372,12 +373,21 @@ const Dashboard: React.FC<DashboardProps> = ({
             layouts={{ lg: currentLayout }}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
             cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-            rowHeight={30}
+            rowHeight={60}
             isDraggable={isEditMode}
             isResizable={isEditMode}
-            onLayoutChange={handleLayoutChange}
-            onDragStop={handleStop}
-            onResizeStop={handleStop}
+            onLayoutChange={(layout) => {
+              console.log("Layout changed:", layout);
+              handleLayoutChange(layout);
+            }}
+            onDragStop={(layout) => {
+              console.log("Drag stopped, layout:", layout);
+              handleStop(layout);
+            }}
+            onResizeStop={(layout) => {
+              console.log("Resize stopped, layout:", layout);
+              handleStop(layout);
+            }}
           >
             {selectedDashboardData.charts.map((chart) => (
               <div

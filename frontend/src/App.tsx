@@ -114,7 +114,13 @@ const App: React.FC = () => {
       console.log("Calling fetchDashboards");
       const dashboards = await apiService.getDashboards();
       console.log("Fetched dashboards:", dashboards);
-      setDashboards(dashboards);
+      const synchronizedDashboards = dashboards.map((dashboard) => ({
+        ...dashboard,
+        layout: dashboard.layout.filter((item) =>
+          dashboard.charts.some((chart) => chart.id === item.i)
+        ),
+      }));
+      setDashboards(synchronizedDashboards);
     } catch (error) {
       console.error("Error fetching dashboards:", error);
     }
@@ -160,13 +166,15 @@ const App: React.FC = () => {
         const chartId = config.id || uuidv4();
         const updatedCharts = [...dashboard.charts, { ...config, id: chartId }];
         const updatedLayout = [
-          ...dashboard.layout,
+          ...dashboard.layout.filter((item) =>
+            updatedCharts.some((chart) => chart.id === item.i)
+          ),
           {
             i: chartId,
-            x: ((updatedCharts.length - 1) % 3) * 4,
-            y: Math.floor((updatedCharts.length - 1) / 3) * 4,
-            w: 4,
-            h: 4,
+            x: ((updatedCharts.length - 1) % 2) * 6,
+            y: Math.floor((updatedCharts.length - 1) / 2) * 7,
+            w: 6,
+            h: 7,
             minW: 3,
             minH: 3,
           },
