@@ -16,8 +16,10 @@ router.post("/save", async (req, res) => {
       .json({ error: "Dashboard name and connection_id are required" });
   }
 
+  let transactionActive = false;
   try {
     await db.run("BEGIN TRANSACTION");
+    transactionActive = true;
 
     const dashboardResult = await db.run(
       `INSERT INTO dashboards (user_id, connection_id, name, description, layout, created_at, last_modified) 
@@ -53,13 +55,17 @@ router.post("/save", async (req, res) => {
     }
 
     await db.run("COMMIT");
-    res.json({ dashboardId });
+    transactionActive = false;
+    res.json({ success: true, data: { dashboardId } });
   } catch (error) {
-    await db.run("ROLLBACK");
+    if (transactionActive) {
+      await db.run("ROLLBACK");
+    }
     console.error("Error saving dashboard:", error.message);
-    res
-      .status(500)
-      .json({ error: `Failed to save dashboard: ${error.message}` });
+    res.status(500).json({
+      success: false,
+      error: `Failed to save dashboard: ${error.message}`,
+    });
   }
 });
 
@@ -118,7 +124,7 @@ router.get("/list", async (req, res) => {
               : null;
 
             return {
-              id: chart.id.toString(), // Ensure string ID for frontend
+              id: chart.id.toString(),
               xAxisDimension,
               yAxisFacts,
               groupByDimension,
@@ -151,9 +157,10 @@ router.get("/list", async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("Error fetching dashboards:", error.message);
-    res
-      .status(500)
-      .json({ error: `Failed to fetch dashboards: ${error.message}` });
+    res.status(500).json({
+      success: false,
+      error: `Failed to fetch dashboards: ${error.message}`,
+    });
   }
 });
 
@@ -164,8 +171,10 @@ router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const { name, description, charts, layout } = req.body;
 
+  let transactionActive = false;
   try {
     await db.run("BEGIN TRANSACTION");
+    transactionActive = true;
 
     await db.run(
       `UPDATE dashboards 
@@ -198,13 +207,17 @@ router.put("/:id", async (req, res) => {
     }
 
     await db.run("COMMIT");
-    res.json({ message: "Dashboard updated successfully" });
+    transactionActive = false;
+    res.json({ success: true, message: "Dashboard updated successfully" });
   } catch (error) {
-    await db.run("ROLLBACK");
+    if (transactionActive) {
+      await db.run("ROLLBACK");
+    }
     console.error("Error updating dashboard:", error.message);
-    res
-      .status(500)
-      .json({ error: `Failed to update dashboard: ${error.message}` });
+    res.status(500).json({
+      success: false,
+      error: `Failed to update dashboard: ${error.message}`,
+    });
   }
 });
 
@@ -214,30 +227,37 @@ router.delete("/:id", async (req, res) => {
   const { user } = req;
   const { id } = req.params;
 
+  let transactionActive = false;
   try {
     await db.run("BEGIN TRANSACTION");
+    transactionActive = true;
     await db.run(`DELETE FROM charts WHERE dashboard_id = ?`, [id]);
     await db.run(`DELETE FROM dashboards WHERE id = ? AND user_id = ?`, [
       id,
       user.userId,
     ]);
     await db.run("COMMIT");
-    res.json({ message: "Dashboard deleted successfully" });
+    transactionActive = false;
+    res.json({ success: true, message: "Dashboard deleted successfully" });
   } catch (error) {
-    await db.run("ROLLBACK");
+    if (transactionActive) {
+      await db.run("ROLLBACK");
+    }
     console.error("Error deleting dashboard:", error.message);
-    res
-      .status(500)
-      .json({ error: `Failed to delete dashboard: ${error.message}` });
+    res.status(500).json({
+      success: false,
+      error: `Failed to delete dashboard: ${error.message}`,
+    });
   }
 });
 
-// New: Delete individual chart
+// Delete individual chart
 router.delete("/chart/:chartId", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
   const { chartId } = req.params;
 
+  let transactionActive = false;
   try {
     // Verify user owns the dashboard
     const chart = await db.get(
@@ -247,14 +267,24 @@ router.delete("/chart/:chartId", async (req, res) => {
     if (!chart) {
       return res
         .status(404)
-        .json({ error: "Chart not found or access denied" });
+        .json({ success: false, error: "Chart not found or access denied" });
     }
 
+    await db.run("BEGIN TRANSACTION");
+    transactionActive = true;
     await db.run(`DELETE FROM charts WHERE id = ?`, [chartId]);
-    res.json({ message: "Chart deleted successfully" });
+    await db.run("COMMIT");
+    transactionActive = false;
+    res.json({ success: true, message: "Chart deleted successfully" });
   } catch (error) {
+    if (transactionActive) {
+      await db.run("ROLLBACK");
+    }
     console.error("Error deleting chart:", error.message);
-    res.status(500).json({ error: `Failed to delete chart: ${error.message}` });
+    res.status(500).json({
+      success: false,
+      error: `Failed to delete chart: ${error.message}`,
+    });
   }
 });
 

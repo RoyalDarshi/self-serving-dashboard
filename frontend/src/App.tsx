@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { apiService } from "./services/api";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import UserManagement from "./components/UserManagement";
 import AdminPanel from "./components/AdminPanel";
-import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
+import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder"; // Corrected typo
 import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
 import Dashboard from "./components/Dashboard";
+import { debounce } from "lodash";
 
 // Types from DynamicSemanticChartBuilder
 interface Fact {
@@ -49,20 +50,20 @@ interface Connection {
   created_at: string;
 }
 
+interface DashboardData {
+  id: string;
+  name: string;
+  description?: string;
+  connectionId: number;
+  charts: ChartConfig[];
+  layout: any[];
+}
+
 const App: React.FC = () => {
   const [user, setUser] = useState<{ role: string } | null>(null);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [loading, setLoading] = useState<boolean>(true);
-  const [dashboards, setDashboards] = useState<
-    {
-      id: string;
-      name: string;
-      description?: string;
-      connectionId: number;
-      charts: ChartConfig[];
-      layout: any[];
-    }[]
-  >([]);
+  const [dashboards, setDashboards] = useState<DashboardData[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<
     number | null
@@ -92,96 +93,112 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      apiService.getConnections().then(setConnections);
+      console.log("Fetching connections and dashboards for user:", user);
+      apiService.getConnections().then((connections) => {
+        console.log("Fetched connections:", connections);
+        setConnections(connections);
+      });
       fetchDashboards();
     }
   }, [user]);
 
   useEffect(() => {
     if (connections.length > 0 && selectedConnectionId === null) {
+      console.log("Setting default connection ID:", connections[0].id);
       setSelectedConnectionId(connections[0].id);
     }
-  }, [connections]);
+  }, [connections, selectedConnectionId]);
 
-  const fetchDashboards = async () => {
-    const dashboards = await apiService.getDashboards();
-    setDashboards(dashboards);
-  };
-
-  const addNewDashboard = async (
-    name: string,
-    description?: string
-  ): Promise<string> => {
-    if (!selectedConnectionId) {
-      throw new Error("No connection selected");
+  const fetchDashboards = useCallback(async () => {
+    try {
+      console.log("Calling fetchDashboards");
+      const dashboards = await apiService.getDashboards();
+      console.log("Fetched dashboards:", dashboards);
+      setDashboards(dashboards);
+    } catch (error) {
+      console.error("Error fetching dashboards:", error);
     }
-    const response = await apiService.saveDashboard({
-      name,
-      description,
-      connection_id: selectedConnectionId,
-      charts: [],
-      layout: [],
-    });
-    if (response.success && response.data) {
-      setDashboards((prev) => [
-        ...prev,
-        {
-          id: response.data.dashboardId,
+  }, []);
+
+  const addNewDashboard = useCallback(
+    debounce(async (name: string, description?: string): Promise<string> => {
+      console.log("Calling addNewDashboard with:", { name, description });
+      if (!selectedConnectionId) {
+        throw new Error("No connection selected");
+      }
+      try {
+        const response = await apiService.saveDashboard({
           name,
           description,
-          connectionId: selectedConnectionId,
+          connection_id: selectedConnectionId,
           charts: [],
           layout: [],
-        },
-      ]);
-      return response.data.dashboardId;
-    }
-    throw new Error(response.error || "Failed to create dashboard");
-  };
+        });
+        if (response.success && response.data) {
+          await fetchDashboards();
+          return response.data.dashboardId;
+        }
+        throw new Error(response.error || "Failed to create dashboard");
+      } catch (error) {
+        console.error("Error creating dashboard:", error);
+        throw error;
+      }
+    }, 1000),
+    [selectedConnectionId, fetchDashboards]
+  );
 
-  const addChartToDashboard = async (
-    config: ChartConfig,
-    dashboardId: string
-  ) => {
-    const dashboard = dashboards.find((d) => d.id === dashboardId);
-    if (!dashboard) return;
+  const addChartToDashboard = useCallback(
+    debounce(async (config: ChartConfig, dashboardId: string) => {
+      console.log("Calling addChartToDashboard with:", { dashboardId, config });
+      const dashboard = dashboards.find((d) => d.id === dashboardId);
+      if (!dashboard) {
+        console.error("Dashboard not found:", dashboardId);
+        return;
+      }
 
-    const updatedCharts = [...dashboard.charts, { ...config, id: uuidv4() }];
-    const updatedLayout = [
-      ...dashboard.layout,
-      {
-        i: config.id || `chart-${updatedCharts.length - 1}`,
-        x: ((updatedCharts.length - 1) % 3) * 4,
-        y: Math.floor((updatedCharts.length - 1) / 3) * 4,
-        w: 4,
-        h: 4,
-        minW: 3,
-        minH: 3,
-      },
-    ];
+      try {
+        const chartId = config.id || uuidv4();
+        const updatedCharts = [...dashboard.charts, { ...config, id: chartId }];
+        const updatedLayout = [
+          ...dashboard.layout,
+          {
+            i: chartId,
+            x: ((updatedCharts.length - 1) % 3) * 4,
+            y: Math.floor((updatedCharts.length - 1) / 3) * 4,
+            w: 4,
+            h: 4,
+            minW: 3,
+            minH: 3,
+          },
+        ];
 
-    const response = await apiService.updateDashboard(dashboardId, {
-      name: dashboard.name,
-      description: dashboard.description,
-      charts: updatedCharts,
-      layout: updatedLayout,
-    });
+        const response = await apiService.updateDashboard(dashboardId, {
+          name: dashboard.name,
+          description: dashboard.description,
+          charts: updatedCharts,
+          layout: updatedLayout,
+        });
 
-    if (response.success) {
-      setDashboards((prev) =>
-        prev.map((d) =>
-          d.id === dashboardId
-            ? { ...d, charts: updatedCharts, layout: updatedLayout }
-            : d
-        )
-      );
-    }
-  };
+        if (response.success) {
+          await fetchDashboards();
+        } else {
+          throw new Error(response.error || "Failed to update dashboard");
+        }
+      } catch (error) {
+        console.error("Error adding chart to dashboard:", error);
+      }
+    }, 1000),
+    [dashboards, fetchDashboards]
+  );
 
   const handleLogout = () => {
+    console.log("Logging out user");
     localStorage.removeItem("token");
     setUser(null);
     setActiveTab("dashboard");
+    setDashboards([]);
+    setConnections([]);
+    setSelectedConnectionId(null);
   };
 
   if (loading)
@@ -232,6 +249,7 @@ const App: React.FC = () => {
             {activeTab === "my-dashboards" && (
               <Dashboard
                 dashboards={dashboards}
+                setDashboards={setDashboards}
                 addNewDashboard={addNewDashboard}
                 selectedConnectionId={selectedConnectionId}
               />

@@ -8,6 +8,7 @@ import SqlQueryDisplay from "./SqlQueryDisplay";
 import ChartControls from "./ChartControls";
 import ChartDisplay from "./ChartDisplay";
 import { Download, Plus } from "lucide-react";
+import { debounce } from "lodash";
 
 interface Fact {
   id: number;
@@ -96,6 +97,7 @@ const DynamicSemanticChartBuilder: React.FC<
   const [selectedDashboard, setSelectedDashboard] = useState<string>("");
   const [newDashboardName, setNewDashboardName] = useState("");
   const [newDashboardDescription, setNewDashboardDescription] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setChartData([]);
@@ -294,8 +296,10 @@ const DynamicSemanticChartBuilder: React.FC<
     setShowDashboardModal(true);
   };
 
-  const handleCreateNewDashboard = async () => {
+  const handleCreateNewDashboard = debounce(async () => {
     if (newDashboardName.trim() && selectedConnectionId) {
+      if (isSaving) return;
+      setIsSaving(true);
       try {
         const dashboardId = await addNewDashboard(
           newDashboardName.trim(),
@@ -304,15 +308,23 @@ const DynamicSemanticChartBuilder: React.FC<
         await handleSaveToDashboard(dashboardId);
       } catch (error) {
         console.error("Error creating and adding to dashboard:", error);
+        setError("Failed to create new dashboard: " + error.message);
+      } finally {
+        setIsSaving(false);
       }
+    } else {
+      setError("Dashboard name and connection ID are required");
     }
-  };
+  }, 1000);
 
-  const handleSaveToDashboard = async (dashboardId: string) => {
+  const handleSaveToDashboard = debounce(async (dashboardId: string) => {
     if (!xAxisDimension || yAxisFacts.length === 0) {
       setError("Incomplete chart configuration");
       return;
     }
+
+    if (isSaving) return;
+    setIsSaving(true);
 
     const chartConfig: ChartConfig = {
       id: uuidv4(),
@@ -326,10 +338,22 @@ const DynamicSemanticChartBuilder: React.FC<
       description: "",
     };
 
-    const dashboard = dashboards.find((d) => d.id === dashboardId);
-    console.log("Selected Dashboard:", dashboard);
-    console.log("Selected Connection ID:", selectedConnectionId);
-    if (dashboard && dashboard.connectionId === selectedConnectionId) {
+    try {
+      const dashboard = dashboards.find((d) => d.id === dashboardId);
+      if (!dashboard) {
+        setError("Dashboard not found");
+        return;
+      }
+
+      if (dashboard.connectionId !== selectedConnectionId) {
+        setError("Connection ID mismatch");
+        return;
+      }
+
+      // Add the chart to the dashboard
+      addChartToDashboard(chartConfig, dashboardId);
+
+      // Update the dashboard in the backend
       const updatedCharts = [...dashboard.charts, chartConfig];
       const updatedLayout = [
         ...dashboard.layout,
@@ -344,18 +368,34 @@ const DynamicSemanticChartBuilder: React.FC<
         },
       ];
 
-      await apiService.updateDashboard(dashboardId, {
+      const response = await apiService.updateDashboard(dashboardId, {
         name: dashboard.name,
         description: dashboard.description,
         charts: updatedCharts,
         layout: updatedLayout,
       });
 
+      if (!response.success) {
+        throw new Error(response.error || "Failed to update dashboard");
+      }
+
+      // Reset modal and clear error
       setShowDashboardModal(false);
-    } else {
-      setError("Connection mismatch or dashboard not found");
+      setSelectedDashboard("");
+      setNewDashboardName("");
+      setNewDashboardDescription("");
+      setError(null);
+
+      // Refresh dashboards to reflect the update
+      const updatedDashboards = await apiService.getDashboards();
+      // Assuming the parent component updates the dashboards prop
+    } catch (error) {
+      console.error("Error saving chart to dashboard:", error);
+      setError("Failed to save chart to dashboard: " + error.message);
+    } finally {
+      setIsSaving(false);
     }
-  };
+  }, 1000);
 
   return (
     <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
@@ -415,6 +455,7 @@ const DynamicSemanticChartBuilder: React.FC<
           <button
             onClick={handleAddToDashboard}
             className="flex items-center space-x-1 px-4 py-2 bg-blue-500 text-white rounded-lg"
+            disabled={isSaving}
           >
             <Plus className="h-4 w-4" />
             <span>Add to Dashboard</span>
@@ -551,14 +592,14 @@ const DynamicSemanticChartBuilder: React.FC<
                 </button>
                 <button
                   onClick={() => handleSaveToDashboard(selectedDashboard)}
-                  disabled={!selectedDashboard}
+                  disabled={!selectedDashboard || isSaving}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Add to Selected
                 </button>
                 <button
                   onClick={handleCreateNewDashboard}
-                  disabled={!newDashboardName.trim()}
+                  disabled={!newDashboardName.trim() || isSaving}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   Create New

@@ -1,5 +1,4 @@
-// Dashboard.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -27,12 +26,12 @@ import {
   Lock,
   Unlock,
 } from "lucide-react";
+import { debounce } from "lodash";
 import SavedChart from "./SavedChart";
-import apiService from "../services/api"; // Updated import
+import apiService from "../services/api";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
-// Types
 interface Fact {
   id: number;
   name: string;
@@ -40,12 +39,15 @@ interface Fact {
   column_name: string;
   aggregate_function: string;
 }
+
 interface Dimension {
   id: number;
   name: string;
   column_name: string;
 }
+
 type AggregationType = "SUM" | "AVG" | "COUNT" | "MAX" | "MIN";
+
 interface ChartConfig {
   id?: string;
   xAxisDimension: Dimension | null;
@@ -74,12 +76,14 @@ interface DashboardData {
 
 interface DashboardProps {
   dashboards: DashboardData[];
+  setDashboards: React.Dispatch<React.SetStateAction<DashboardData[]>>;
   addNewDashboard: (name: string, description?: string) => Promise<string>;
   selectedConnectionId: number | null;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
   dashboards,
+  setDashboards,
   addNewDashboard,
   selectedConnectionId,
 }) => {
@@ -94,14 +98,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [newDashboardDescription, setNewDashboardDescription] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
   const [layouts, setLayouts] = useState<any>({});
-  const [currentDashboards, setCurrentDashboards] = useState(dashboards);
-
-  useEffect(() => {
-    setCurrentDashboards(dashboards);
-  }, [dashboards]);
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
+  const currentLayoutRef = useRef<any>(null);
 
   // Get chart type icon
-  const getChartIcon = (chartType: string) => {
+  const getChartIcon = useCallback((chartType: string) => {
     switch (chartType) {
       case "bar":
         return <BarChart3 className="h-4 w-4" />;
@@ -112,25 +113,25 @@ const Dashboard: React.FC<DashboardProps> = ({
       default:
         return <BarChart3 className="h-4 w-4" />;
     }
-  };
+  }, []);
 
   // Filter dashboards based on search
-  const filteredDashboards = dashboards.filter(
-    (dashboard) =>
-      dashboard.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      dashboard.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredDashboards = useCallback(
+    () =>
+      dashboards.filter(
+        (dashboard) =>
+          dashboard.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          dashboard.description
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase())
+      ),
+    [dashboards, searchTerm]
   );
 
-  const handleCreateDashboard = async () => {
+  const handleCreateDashboard = useCallback(async () => {
     if (newDashboardName.trim() && selectedConnectionId) {
       try {
-        const dashboardId = await addNewDashboard(
-          newDashboardName.trim(),
-          newDashboardDescription
-        );
-        // Refresh dashboards
-        const updatedDashboards = await apiService.getDashboards();
-        setCurrentDashboards(updatedDashboards);
+        await addNewDashboard(newDashboardName.trim(), newDashboardDescription);
         setNewDashboardName("");
         setNewDashboardDescription("");
         setShowCreateModal(false);
@@ -138,10 +139,15 @@ const Dashboard: React.FC<DashboardProps> = ({
         console.error("Error creating dashboard:", error);
       }
     }
-  };
+  }, [
+    newDashboardName,
+    newDashboardDescription,
+    selectedConnectionId,
+    addNewDashboard,
+  ]);
 
   // Generate default layout for charts
-  const generateLayout = (charts: ChartConfig[]) => {
+  const generateLayout = useCallback((charts: ChartConfig[]) => {
     return charts.map((chart, index) => ({
       i: chart.id || `chart-${index}`,
       x: (index % 3) * 4,
@@ -151,65 +157,142 @@ const Dashboard: React.FC<DashboardProps> = ({
       minW: 3,
       minH: 3,
     }));
-  };
+  }, []);
 
-  // Handle layout change
-  const handleLayoutChange = async (layout: any) => {
+  // Update local layout
+  const handleLayoutChange = useCallback((layout: any) => {
     setLayouts({ lg: layout });
-    const dashboard = currentDashboards.find((d) => d.id === selectedDashboard);
-    if (dashboard && selectedDashboard) {
+  }, []);
+
+  // Debounced save layout to backend
+  const saveLayout = useCallback(
+    debounce(async (layout: any) => {
+      if (isSavingLayout) return;
+      setIsSavingLayout(true);
+      console.log("Saving layout to backend:", layout);
+
+      const dashboard = dashboards.find((d) => d.id === selectedDashboard);
+      if (dashboard && selectedDashboard) {
+        try {
+          const response = await apiService.updateDashboard(selectedDashboard, {
+            name: dashboard.name,
+            description: dashboard.description,
+            charts: dashboard.charts,
+            layout,
+          });
+          if (response.success) {
+            const updatedDashboards = await apiService.getDashboards();
+            console.log(
+              "Updated dashboards after layout save:",
+              updatedDashboards
+            );
+            setDashboards(updatedDashboards);
+            currentLayoutRef.current = layout;
+          } else {
+            console.error("Failed to update dashboard layout:", response.error);
+          }
+        } catch (error) {
+          console.error("Error saving layout:", error);
+        } finally {
+          setIsSavingLayout(false);
+        }
+      } else {
+        setIsSavingLayout(false);
+      }
+    }, 1000),
+    [dashboards, selectedDashboard, setDashboards]
+  );
+
+  // Handle stop events for drag and resize
+  const handleStop = useCallback(
+    (layout: any) => {
+      const currentLayout = currentLayoutRef.current;
+      if (JSON.stringify(layout) !== JSON.stringify(currentLayout)) {
+        saveLayout(layout);
+      } else {
+        console.log("Layout unchanged, skipping save");
+      }
+    },
+    [saveLayout]
+  );
+
+  const handleDeleteDashboard = useCallback(
+    async (dashboardId: string) => {
       try {
-        await apiService.updateDashboard(selectedDashboard, {
-          name: dashboard.name,
-          description: dashboard.description,
-          charts: dashboard.charts,
-          layout,
-        });
-        // Refresh
-        const updatedDashboards = await apiService.getDashboards();
-        setCurrentDashboards(updatedDashboards);
+        const response = await apiService.deleteDashboard(dashboardId);
+        if (response.success) {
+          const updatedDashboards = await apiService.getDashboards();
+          console.log("Updated dashboards after delete:", updatedDashboards);
+          setDashboards(updatedDashboards);
+          if (selectedDashboard === dashboardId) {
+            setSelectedDashboard(null);
+          }
+        }
       } catch (error) {
-        console.error("Error saving layout:", error);
+        console.error("Error deleting dashboard:", error);
       }
-    }
-  };
+    },
+    [selectedDashboard, setDashboards]
+  );
 
-  const handleDeleteDashboard = async (dashboardId: string) => {
-    const response = await apiService.deleteDashboard(dashboardId);
-    if (response.success) {
-      const updated = currentDashboards.filter((d) => d.id !== dashboardId);
-      setCurrentDashboards(updated);
-      if (selectedDashboard === dashboardId) {
-        setSelectedDashboard(null);
+  const handleDeleteChart = useCallback(
+    async (chartId: string) => {
+      try {
+        const response = await apiService.deleteChart(chartId);
+        if (response.success) {
+          const dashboard = dashboards.find((d) => d.id === selectedDashboard);
+          if (dashboard) {
+            const updatedCharts = dashboard.charts.filter(
+              (c) => c.id !== chartId
+            );
+            const updatedLayout = dashboard.layout.filter(
+              (l) => l.i !== chartId
+            );
+            const updateResponse = await apiService.updateDashboard(
+              dashboard.id,
+              {
+                name: dashboard.name,
+                description: dashboard.description,
+                charts: updatedCharts,
+                layout: updatedLayout,
+              }
+            );
+            if (updateResponse.success) {
+              const updatedDashboards = await apiService.getDashboards();
+              console.log(
+                "Updated dashboards after chart delete:",
+                updatedDashboards
+              );
+              setDashboards(updatedDashboards);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error deleting chart:", error);
       }
-    }
-  };
+    },
+    [dashboards, selectedDashboard, setDashboards]
+  );
 
-  const handleDeleteChart = async (chartId: string) => {
-    const response = await apiService.deleteChart(chartId);
-    if (response.success) {
-      const dashboard = currentDashboards.find(
-        (d) => d.id === selectedDashboard
-      );
-      if (dashboard) {
-        const updatedCharts = dashboard.charts.filter((c) => c.id !== chartId);
-        const updatedLayout = dashboard.layout.filter((l) => l.i !== chartId);
-        await apiService.updateDashboard(dashboard.id, {
-          name: dashboard.name,
-          description: dashboard.description,
-          charts: updatedCharts,
-          layout: updatedLayout,
-        });
-        // Refresh
-        const updatedDashboards = await apiService.getDashboards();
-        setCurrentDashboards(updatedDashboards);
-      }
-    }
-  };
-
-  const selectedDashboardData = currentDashboards.find(
+  const selectedDashboardData = dashboards.find(
     (d) => d.id === selectedDashboard
   );
+
+  // Initialize currentLayoutRef on dashboard selection
+  useEffect(() => {
+    if (selectedDashboardData) {
+      const initialLayout =
+        selectedDashboardData.layout ||
+        generateLayout(selectedDashboardData.charts);
+      setLayouts({ lg: initialLayout });
+      currentLayoutRef.current = initialLayout;
+      console.log(
+        "Initialized layout for dashboard:",
+        selectedDashboardData.id,
+        initialLayout
+      );
+    }
+  }, [selectedDashboardData, generateLayout]);
 
   if (selectedDashboard && selectedDashboardData) {
     const currentLayout =
@@ -293,6 +376,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             isDraggable={isEditMode}
             isResizable={isEditMode}
             onLayoutChange={handleLayoutChange}
+            onDragStop={handleStop}
+            onResizeStop={handleStop}
           >
             {selectedDashboardData.charts.map((chart) => (
               <div
@@ -319,7 +404,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   }
 
-  // Dashboard List View (existing, with minor updates for currentDashboards)
+  // Dashboard List View
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -357,7 +442,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
         <div className="divide-y divide-slate-200">
-          {filteredDashboards.map((dashboard) => (
+          {filteredDashboards().map((dashboard) => (
             <div
               key={dashboard.id}
               className="px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer"
