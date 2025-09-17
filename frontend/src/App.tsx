@@ -277,6 +277,8 @@ const App: React.FC = () => {
                 setDashboards={setDashboards}
                 addNewDashboard={addNewDashboard}
                 selectedConnectionId={selectedConnectionId}
+                setSelectedConnectionId={setSelectedConnectionId}
+                connections={connections}
                 onDashboardsUpdate={handleDashboardsUpdate}
               />
             )}

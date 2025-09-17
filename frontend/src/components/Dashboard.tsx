@@ -62,6 +62,21 @@ interface ChartConfig {
   lastModified?: string;
 }
 
+interface Connection {
+  id: number;
+  connection_name: string;
+  description?: string;
+  type: string;
+  hostname: string;
+  port: number;
+  database: string;
+  command_timeout?: number;
+  max_transport_objects?: number;
+  username: string;
+  selected_db: string;
+  created_at: string;
+}
+
 interface DashboardData {
   id: string;
   name: string;
@@ -79,6 +94,8 @@ interface DashboardProps {
   setDashboards: React.Dispatch<React.SetStateAction<DashboardData[]>>;
   addNewDashboard: (name: string, description?: string) => Promise<string>;
   selectedConnectionId: number | null;
+  setSelectedConnectionId: React.Dispatch<React.SetStateAction<number | null>>;
+  connections: Connection[];
   onDashboardsUpdate: (dashboards: DashboardData[]) => void;
 }
 
@@ -87,6 +104,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   setDashboards,
   addNewDashboard,
   selectedConnectionId,
+  setSelectedConnectionId,
+  connections,
   onDashboardsUpdate,
 }) => {
   const [selectedDashboard, setSelectedDashboard] = useState<string | null>(
@@ -117,17 +136,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, []);
 
-  // Filter dashboards based on search
+  // Filter dashboards based on search and selected connection
   const filteredDashboards = useCallback(
     () =>
       dashboards.filter(
         (dashboard) =>
-          dashboard.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          dashboard.description
-            ?.toLowerCase()
-            .includes(searchTerm.toLowerCase())
+          (selectedConnectionId === null ||
+            dashboard.connectionId === selectedConnectionId) &&
+          (dashboard.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            dashboard.description
+              ?.toLowerCase()
+              .includes(searchTerm.toLowerCase()))
       ),
-    [dashboards, searchTerm]
+    [dashboards, searchTerm, selectedConnectionId]
   );
 
   const handleCreateDashboard = useCallback(async () => {
@@ -155,6 +176,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     setDashboards,
     onDashboardsUpdate,
   ]);
+
+  // Handle connection change
+  const handleConnectionChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const connectionId = parseInt(event.target.value);
+      setSelectedConnectionId(connectionId || null);
+    },
+    [setSelectedConnectionId]
+  );
 
   // Generate default layout for charts
   const generateLayout = useCallback((charts: ChartConfig[]) => {
@@ -433,6 +463,20 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-slate-900">My Dashboards</h1>
         <div className="flex items-center space-x-4">
+          <select
+            value={selectedConnectionId || ""}
+            onChange={handleConnectionChange}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="" disabled>
+              Select Connection
+            </option>
+            {connections.map((connection) => (
+              <option key={connection.id} value={connection.id}>
+                {connection.connection_name}
+              </option>
+            ))}
+          </select>
           <div className="relative">
             <input
               type="text"
@@ -552,6 +596,25 @@ const Dashboard: React.FC<DashboardProps> = ({
                 Create New Dashboard
               </h2>
               <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Connection
+                  </label>
+                  <select
+                    value={selectedConnectionId || ""}
+                    onChange={handleConnectionChange}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="" disabled>
+                      Select Connection
+                    </option>
+                    {connections.map((connection) => (
+                      <option key={connection.id} value={connection.id}>
+                        {connection.connection_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
                     Dashboard Name
