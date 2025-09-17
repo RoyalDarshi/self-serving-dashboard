@@ -19,15 +19,11 @@ export interface Dimension {
 export interface Connection {
   id: number;
   connection_name: string;
-  description?: string;
   type: string;
   hostname: string;
   port: number;
   database: string;
-  command_timeout?: number;
-  max_transport_objects?: number;
   username: string;
-  selected_db: string;
   created_at: string;
 }
 

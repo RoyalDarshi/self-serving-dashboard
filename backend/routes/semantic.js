@@ -239,7 +239,7 @@ router.get("/connections", async (req, res) => {
   try {
     const db = await dbPromise;
     const connections = await db.all(
-      "SELECT id, connection_name, description, type, hostname, port, database, command_timeout, max_transport_objects, username, selected_db, created_at FROM connections"
+      "SELECT id, connection_name, type, hostname, port, database, username, created_at FROM connections"
     );
     res.json(connections);
   } catch (err) {
@@ -252,16 +252,12 @@ router.post("/connections", async (req, res) => {
   try {
     const {
       connection_name,
-      description,
       type,
       hostname,
       port,
       database,
-      command_timeout,
-      max_transport_objects,
       username,
       password,
-      selected_db,
     } = req.body;
     if (
       !connection_name ||
@@ -279,36 +275,28 @@ router.post("/connections", async (req, res) => {
     const db = await dbPromise;
     const result = await db.run(
       `INSERT INTO connections (
-        user_id, connection_name, description, type, hostname, port, database,
-        command_timeout, max_transport_objects, username, password, selected_db
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        user_id, connection_name,  type, hostname, port, database,
+        username, password
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.user?.userId,
         connection_name,
-        description || null,
         type,
         hostname,
         port,
         database,
-        command_timeout || null,
-        max_transport_objects || null,
         username,
         password,
-        selected_db,
       ]
     );
     res.json({
       id: result.lastID,
       connection_name,
-      description,
       type,
       hostname,
       port,
       database,
-      command_timeout,
-      max_transport_objects,
       username,
-      selected_db,
       created_at: new Date().toISOString(),
     });
   } catch (err) {
@@ -321,16 +309,12 @@ router.put("/connections/:id", async (req, res) => {
   try {
     const {
       connection_name,
-      description,
       type,
       hostname,
       port,
       database,
-      command_timeout,
-      max_transport_objects,
       username,
       password,
-      selected_db,
     } = req.body;
     if (
       !connection_name ||
@@ -348,22 +332,18 @@ router.put("/connections/:id", async (req, res) => {
     const db = await dbPromise;
     await db.run(
       `UPDATE connections SET
-        connection_name = ?, description = ?, type = ?, hostname = ?, port = ?,
-        database = ?, command_timeout = ?, max_transport_objects = ?, username = ?,
-        password = ?, selected_db = ?
+        connection_name = ?, type = ?, hostname = ?, port = ?,
+        database = ?, username = ?,
+        password = ?,
       WHERE id = ? AND user_id = ?`,
       [
         connection_name,
-        description || null,
         type,
         hostname,
         port,
         database,
-        command_timeout || null,
-        max_transport_objects || null,
         username,
         password,
-        selected_db,
         req.params.id,
         req.user?.userId,
       ]

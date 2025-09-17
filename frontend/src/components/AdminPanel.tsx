@@ -9,7 +9,7 @@ import MappingForm from "./MappingForm";
 import KPIForm from "./KPIForm";
 import DataList from "./DataList";
 import ErrorBoundary from "./ErrorBoundary";
-import Button from "../ui/Button";
+import Button from "./ui/Button";
 
 // Types
 interface Schema {
@@ -678,7 +678,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
           </div>
 
           {activeTab === "connections" && (
-            <div className="grid lg:grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 min-h-[500px]">
               <ConnectionForm
                 onSuccess={setSuccess}
                 onError={setError}

@@ -1,6 +1,6 @@
 import React from "react";
 import { Database } from "lucide-react";
-import  Card  from "../ui/Card";
+import Card from "./ui/Card";
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },

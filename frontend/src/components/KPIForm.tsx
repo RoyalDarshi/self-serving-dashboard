@@ -1,10 +1,10 @@
 import React from "react";
 import { Zap, Save, X, Plus } from "lucide-react";
-import Card from "../ui/Card";
-import Button from "../ui/Button";
-import Input from "../ui/Input";
-import Textarea from "../ui/Textarea";
-import Select from "../ui/Select";
+import Card from "./ui/Card";
+import Button from "./ui/Button";
+import Input from "./ui/Input";
+import Textarea from "./ui/Textarea";
+import Select from "./ui/Select";
 interface Schema {
   tableName: string;
   columns: {

@@ -29,16 +29,12 @@ export async function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       connection_name TEXT NOT NULL UNIQUE,
-      description TEXT,
       type TEXT NOT NULL CHECK (type IN ('postgres', 'mysql')),
       hostname TEXT NOT NULL,
       port INTEGER NOT NULL,
       database TEXT NOT NULL,
-      command_timeout INTEGER,
-      max_transport_objects INTEGER,
       username TEXT NOT NULL,
       password TEXT NOT NULL,
-      selected_db TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
