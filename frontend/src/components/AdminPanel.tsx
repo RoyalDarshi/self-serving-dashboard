@@ -628,10 +628,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
     setKpiInsertColumn("");
   };
 
-  const selectedConnection = connections.find(
-    (c) => c.id === selectedConnectionId
-  );
-
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
@@ -662,7 +658,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
           <div className="flex space-x-2 bg-white p-2 rounded-xl shadow-md border border-gray-100 mb-2">
             {[
               { id: "connections", label: "Connections", icon: Database },
-              { id: "schema", label: "Schema", icon: Table },
+              { id: "schemas", label: "Schemas", icon: Table },
               { id: "facts", label: "Facts", icon: BarChart3 },
               { id: "dimensions", label: "Dimensions", icon: Layers },
               { id: "mappings", label: "Mappings", icon: Target },
@@ -730,14 +726,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
             </div>
           )}
 
-          {activeTab === "schema" && (
-            <SchemaVisualizer
-              schemas={schemas}
-              connectionName={selectedConnection?.connection_name}
-            />
+          {activeTab === "schemas" && (
+            <SchemaVisualizer schemas={schemas} searchTerm={searchTerm} />
           )}
 
-          {activeTab !== "connections" && activeTab !== "schema" && (
+          {["facts", "dimensions", "mappings", "kpis"].includes(activeTab) && (
             <div className="grid lg:grid-cols-3 gap-2">
               <div>
                 {activeTab === "facts" && (
