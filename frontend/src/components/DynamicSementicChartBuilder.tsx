@@ -505,39 +505,35 @@ const DynamicSemanticChartBuilder: React.FC<
         />
       )}
       {activeView === "table" && (
-        <div className="bg-gradient-to-b from-white to-slate-50 rounded-xl border p-1">
-          <ChartDataTable
-            chartData={chartData}
-            xAxisColumn={
-              xAxisDimension
-                ? {
-                    ...xAxisDimension,
-                    key: xAxisDimension.name,
-                    label: xAxisDimension.name,
-                    type: "string",
-                  }
-                : null
-            }
-            yAxisColumns={yAxisColumns}
-            groupByColumn={
-              groupByDimension
-                ? {
-                    ...groupByDimension,
-                    key: groupByDimension.name,
-                    label: groupByDimension.name,
-                    type: "string",
-                  }
-                : null
-            }
-            aggregationType={aggregationType}
-            valueFormatter={valueFormatter}
-          />
-        </div>
+        <ChartDataTable
+          chartData={chartData}
+          xAxisColumn={
+            xAxisDimension
+              ? {
+                  ...xAxisDimension,
+                  key: xAxisDimension.name,
+                  label: xAxisDimension.name,
+                  type: "string",
+                }
+              : null
+          }
+          yAxisColumns={yAxisColumns}
+          groupByColumn={
+            groupByDimension
+              ? {
+                  ...groupByDimension,
+                  key: groupByDimension.name,
+                  label: groupByDimension.name,
+                  type: "string",
+                }
+              : null
+          }
+          aggregationType={aggregationType}
+          valueFormatter={valueFormatter}
+        />
       )}
       {activeView === "query" && (
-        <div className="bg-gradient-to-b from-white to-slate-50 rounded-xl border p-1">
-          <SqlQueryDisplay generatedQuery={generatedQuery} />
-        </div>
+        <SqlQueryDisplay generatedQuery={generatedQuery} />
       )}
 
       {showDashboardModal && (

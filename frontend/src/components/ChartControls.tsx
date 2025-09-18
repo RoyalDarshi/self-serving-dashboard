@@ -151,35 +151,6 @@ const ChartControls: React.FC<ChartControlsProps> = ({
                     ))}
                   </div>
                 </div>
-                {chartType === "bar" && yAxisCount >= 2 && !groupByColumn && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Bar Style
-                    </label>
-                    <div className="flex items-center">
-                      <button
-                        onClick={() => setStacked(false)}
-                        className={`flex-1 py-2 rounded-l-lg text-sm font-medium transition-colors ${
-                          !stacked
-                            ? "bg-blue-600 text-white"
-                            : "bg-slate-200 text-slate-700 hover:bg-slate-300"
-                        }`}
-                      >
-                        Side-by-side
-                      </button>
-                      <button
-                        onClick={() => setStacked(true)}
-                        className={`flex-1 py-2 rounded-r-lg text-sm font-medium transition-colors ${
-                          stacked
-                            ? "bg-blue-600 text-white"
-                            : "bg-slate-200 text-slate-700 hover:bg-slate-300"
-                        }`}
-                      >
-                        Stacked
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -229,29 +200,29 @@ const ChartControls: React.FC<ChartControlsProps> = ({
             {activeView === "graph" && (
               <button
                 onClick={handleDownloadGraph}
-                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSaving}
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Download className="h-4 w-4 mr-2 text-green-500" />
                 <span>Graph</span>
               </button>
             )}
             {activeView === "table" && (
               <button
                 onClick={handleDownloadTable}
-                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSaving}
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Download className="h-4 w-4 mr-2 text-green-500" />
                 <span>Table</span>
               </button>
             )}
             <button
               onClick={handleAddToDashboard}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isSaving}
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="h-4 w-4 mr-2 text-blue-500" />
               <span>Add to Dashboard</span>
             </button>
           </div>

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Copy } from 'lucide-react';
+import React, { useState } from "react";
+import { Copy } from "lucide-react";
 import SyntaxHighlighter from "react-syntax-highlighter";
-import { atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
+import { atomOneLight } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import { format } from "sql-formatter";
 
 interface SqlQueryDisplayProps {
@@ -44,36 +44,44 @@ const SqlQueryDisplay: React.FC<SqlQueryDisplayProps> = ({
   }
 
   return (
-    <div className="bg-gradient-to-b from-white to-slate-50 rounded-xl border border-slate-200 p-1">
-      <div className="w-full h-full bg-slate-900 rounded-lg text-white font-mono text-sm relative p-1">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <div className="w-full h-full rounded-lg text-slate-700 font-mono text-sm relative">
         <div className="p-3">
-          <h3 className="text-md font-semibold mb-2 text-gray-200">
+          <h3 className="text-lg font-semibold mb-3 text-slate-800">
             Generated SQL Query
           </h3>
           {generatedQuery ? (
-            <div className="relative rounded-lg overflow-hidden">
+            <div className="relative rounded-lg overflow-hidden border border-slate-200">
               <SyntaxHighlighter
                 language="sql"
-                style={atomOneDark}
+                style={atomOneLight}
                 showLineNumbers={true}
+                wrapLines={true}
+                customStyle={{
+                  padding: "1rem",
+                  margin: 0,
+                  backgroundColor: "#f8fafc",
+                  fontSize: "0.875rem",
+                }}
               >
                 {formattedQuery}
               </SyntaxHighlighter>
               <button
                 onClick={handleCopyQuery}
-                className="absolute top-2 right-2 p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white transition-colors"
+                className="absolute top-2 right-2 flex items-center px-3 py-1 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-100 transition-colors"
                 title="Copy to clipboard"
               >
-                <Copy className="h-4 w-4" />
+                <Copy className="h-4 w-4 mr-1 text-blue-500" />
+                <span>Copy</span>
               </button>
               {copySuccess && (
-                <span className="absolute top-2 right-10 text-xs text-green-400">
+                <span className="absolute top-2 right-20 text-xs text-green-500 font-medium">
                   {copySuccess}
                 </span>
               )}
             </div>
           ) : (
-            <p className="text-gray-400 text-center py-8">
+            <p className="text-slate-500 text-center py-8">
               Select X-axis and Y-axis columns to generate the SQL query.
             </p>
           )}
