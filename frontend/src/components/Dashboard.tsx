@@ -394,59 +394,52 @@ const Dashboard: React.FC<DashboardProps> = ({
             </p>
           )}
         </div>
-        <div className="">
-          {isEditMode && (
-            <p className="text-orange-600 mb-4">
-              Drag and resize charts to adjust layout.
-            </p>
-          )}
-          <ResponsiveGridLayout
-            className="layout"
-            layouts={{ lg: currentLayout }}
-            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-            cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-            rowHeight={50} // Reduced for smoother resizing
-            containerPadding={[10, 10]} // Added padding for better spacing
-            isDraggable={isEditMode}
-            isResizable={isEditMode}
-            onLayoutChange={(layout) => {
-              handleLayoutChange(layout);
-            }}
-            onDragStop={(layout) => {
-              handleStop(layout);
-            }}
-            onResizeStop={(layout) => {
-              handleStop(layout);
-            }}
-          >
-            {selectedDashboardData.charts.map((chart) => (
-              <div
-                key={chart.id}
-                className="bg-white border rounded-lg relative h-full"
-              >
-                <SavedChart
-                  config={chart}
-                  connectionId={selectedDashboardData.connectionId}
-                />
-                {isEditMode && user.role === "designer" && (
-                  <button
-                    onClick={() => handleDeleteChart(chart.id)}
-                    className="absolute top-2 right-2 text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </ResponsiveGridLayout>
-        </div>
+        <ResponsiveGridLayout
+          className="layout"
+          layouts={{ lg: currentLayout }}
+          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+          cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+          rowHeight={50} // Reduced for smoother resizing
+          containerPadding={[10, 10]} // Added padding for better spacing
+          isDraggable={isEditMode}
+          isResizable={isEditMode}
+          onLayoutChange={(layout) => {
+            handleLayoutChange(layout);
+          }}
+          onDragStop={(layout) => {
+            handleStop(layout);
+          }}
+          onResizeStop={(layout) => {
+            handleStop(layout);
+          }}
+        >
+          {selectedDashboardData.charts.map((chart) => (
+            <div
+              key={chart.id}
+              className="bg-white border rounded-lg relative h-full"
+            >
+              <SavedChart
+                config={chart}
+                connectionId={selectedDashboardData.connectionId}
+              />
+              {isEditMode && user.role === "designer" && (
+                <button
+                  onClick={() => handleDeleteChart(chart.id)}
+                  className="absolute top-2 right-2 text-red-500 hover:text-red-700"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ))}
+        </ResponsiveGridLayout>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold text-slate-900">My Dashboards</h1>
         <div className="flex items-center space-x-4">
           <select

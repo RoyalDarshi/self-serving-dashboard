@@ -150,7 +150,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
       <div
         className="h-full flex flex-col items-center justify-center 
                       bg-gradient-to-br from-blue-50 to-indigo-50 
-                      rounded-lg border border-dashed border-blue-200"
+                      rounded-lg border border-dashed border-blue-200 p-6"
       >
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-100">
           <div className="flex justify-center mb-4">
@@ -316,10 +316,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   };
 
   return (
-    <div
-      ref={chartContainerRef}
-      className="rounded-md border border-slate-200 p-0.5 w-full h-full"
-    >
+    <div ref={chartContainerRef} className="p-0.5 w-full h-full">
       <ResponsiveContainer width="100%" height={height || "100%"}>
         {renderChart()}
       </ResponsiveContainer>
