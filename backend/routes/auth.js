@@ -1,3 +1,4 @@
+// Updated auth.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -29,8 +30,14 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid username or password" });
     }
 
-    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET);
-    res.json({ token, user: { id: user.id, role: user.role } });
+    const token = jwt.sign(
+      { userId: user.id, role: user.role, designation: user.designation },
+      JWT_SECRET
+    );
+    res.json({
+      token,
+      user: { id: user.id, role: user.role, designation: user.designation },
+    });
   } catch (error) {
     console.error("Login error:", error.message);
     res.status(500).json({ error: "Failed to login" });
@@ -50,7 +57,7 @@ router.get("/validate", async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await dbPromise;
     const user = await db.get(
-      "SELECT id, username, role FROM users WHERE id = ?",
+      "SELECT id, username, role, designation FROM users WHERE id = ?",
       decoded.userId
     );
 

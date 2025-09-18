@@ -1,3 +1,4 @@
+// Updated api.ts (minor changes to include designation in responses where relevant)
 // api.ts
 const API_BASE = "http://localhost:3001/api"; // Adjust to your backend URL
 
@@ -157,13 +158,18 @@ export const apiService = {
     username: string,
     password: string
   ): Promise<
-    ApiResponse<{ token: string; user: { id: number; role: string } }>
+    ApiResponse<{
+      token: string;
+      user: { id: number; role: string; designation?: string | null };
+    }>
   > {
     return apiFetch("/auth/login", "POST", { username, password }, false);
   },
 
   async validateToken(): Promise<
-    ApiResponse<{ user: { id: number; role: string } }>
+    ApiResponse<{
+      user: { id: number; role: string; designation?: string | null };
+    }>
   > {
     return apiFetch("/auth/validate", "GET");
   },

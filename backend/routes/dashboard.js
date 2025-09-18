@@ -1,3 +1,4 @@
+// Updated dashboard.js
 // dashboard.js
 import { Router } from "express";
 import { dbPromise } from "../database/sqliteConnection.js";
@@ -10,10 +11,24 @@ router.post("/save", async (req, res) => {
   const { user } = req;
   const { name, description, connection_id, charts, layout } = req.body;
 
+  if (user.role === "admin") {
+    return res.status(403).json({ error: "Admins cannot create dashboards" });
+  }
+
   if (!name || !connection_id) {
     return res
       .status(400)
       .json({ error: "Dashboard name and connection_id are required" });
+  }
+
+  // Check if the connection is allowed for the user's designation
+  const accessCheck = await db.get(
+    `SELECT COUNT(*) as count FROM connection_designations 
+     WHERE connection_id = ? AND designation = ?`,
+    [connection_id, user.designation]
+  );
+  if (accessCheck.count === 0) {
+    return res.status(403).json({ error: "Access denied to this connection" });
   }
 
   let transactionActive = false;
@@ -80,6 +95,30 @@ router.put("/:id", async (req, res) => {
   const { id } = req.params;
   const { name, description, charts, layout } = req.body;
 
+  if (user.role === "admin") {
+    return res.status(403).json({ error: "Admins cannot update dashboards" });
+  }
+
+  // Check dashboard ownership and connection access
+  const dashboard = await db.get(
+    `SELECT connection_id FROM dashboards WHERE id = ? AND user_id = ?`,
+    [id, user.userId]
+  );
+  if (!dashboard) {
+    return res
+      .status(404)
+      .json({ error: "Dashboard not found or access denied" });
+  }
+
+  const accessCheck = await db.get(
+    `SELECT COUNT(*) as count FROM connection_designations 
+     WHERE connection_id = ? AND designation = ?`,
+    [dashboard.connection_id, user.designation]
+  );
+  if (accessCheck.count === 0) {
+    return res.status(403).json({ error: "Access denied to this connection" });
+  }
+
   let transactionActive = false;
   try {
     await db.run("BEGIN TRANSACTION");
@@ -143,15 +182,23 @@ router.get("/list", async (req, res) => {
   const { user } = req;
 
   try {
-    const dashboards = await db.all(
-      `SELECT d.id, d.name, d.description, d.connection_id, d.layout, d.is_public,
-              d.created_at, d.last_modified,
-              (SELECT COUNT(*) FROM charts c WHERE c.dashboard_id = d.id) AS chart_count
-       FROM dashboards d
-       WHERE d.user_id = ?
-       ORDER BY d.last_modified DESC`,
-      [user.userId]
-    );
+    let dashboards;
+    if (user.role === "admin") {
+      return res.json([]);
+    } else {
+      dashboards = await db.all(
+        `SELECT d.id, d.name, d.description, d.connection_id, d.layout, d.is_public,
+                d.created_at, d.last_modified,
+                (SELECT COUNT(*) FROM charts c WHERE c.dashboard_id = d.id) AS chart_count
+         FROM dashboards d
+         JOIN connections con ON d.connection_id = con.id
+         JOIN connection_designations cd ON con.id = cd.connection_id
+         WHERE d.user_id = ? AND cd.designation = ?
+         GROUP BY d.id  -- Ensure no duplicates if multiple designations
+         ORDER BY d.last_modified DESC`,
+        [user.userId, user.designation]
+      );
+    }
 
     const result = await Promise.all(
       dashboards.map(async (dashboard) => {
@@ -238,6 +285,30 @@ router.delete("/:id", async (req, res) => {
   const { user } = req;
   const { id } = req.params;
 
+  if (user.role === "admin") {
+    return res.status(403).json({ error: "Admins cannot delete dashboards" });
+  }
+
+  // Check ownership and access
+  const dashboard = await db.get(
+    `SELECT connection_id FROM dashboards WHERE id = ? AND user_id = ?`,
+    [id, user.userId]
+  );
+  if (!dashboard) {
+    return res
+      .status(404)
+      .json({ error: "Dashboard not found or access denied" });
+  }
+
+  const accessCheck = await db.get(
+    `SELECT COUNT(*) as count FROM connection_designations 
+     WHERE connection_id = ? AND designation = ?`,
+    [dashboard.connection_id, user.designation]
+  );
+  if (accessCheck.count === 0) {
+    return res.status(403).json({ error: "Access denied to this connection" });
+  }
+
   let transactionActive = false;
   try {
     await db.run("BEGIN TRANSACTION");
@@ -268,16 +339,34 @@ router.delete("/chart/:chartId", async (req, res) => {
   const { user } = req;
   const { chartId } = req.params;
 
+  if (user.role === "admin") {
+    return res.status(403).json({ error: "Admins cannot delete charts" });
+  }
+
   let transactionActive = false;
   try {
     const chart = await db.get(
-      `SELECT c.id FROM charts c JOIN dashboards d ON c.dashboard_id = d.id WHERE c.id = ? AND d.user_id = ?`,
+      `SELECT c.id, d.connection_id 
+       FROM charts c 
+       JOIN dashboards d ON c.dashboard_id = d.id 
+       WHERE c.id = ? AND d.user_id = ?`,
       [chartId, user.userId]
     );
     if (!chart) {
       return res
         .status(404)
         .json({ success: false, error: "Chart not found or access denied" });
+    }
+
+    const accessCheck = await db.get(
+      `SELECT COUNT(*) as count FROM connection_designations 
+       WHERE connection_id = ? AND designation = ?`,
+      [chart.connection_id, user.designation]
+    );
+    if (accessCheck.count === 0) {
+      return res
+        .status(403)
+        .json({ error: "Access denied to this connection" });
     }
 
     await db.run("BEGIN TRANSACTION");

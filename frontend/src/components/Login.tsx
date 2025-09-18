@@ -1,8 +1,15 @@
 import React, { useState } from "react";
 import { apiService } from "../services/api";
 
+// Updated interface to include designation and id
+interface User {
+  role: string;
+  designation?: string | null;
+  id?: number;
+}
+
 interface LoginProps {
-  setUser: (user: { role: string }) => void;
+  setUser: (user: User) => void;
 }
 
 const Login: React.FC<LoginProps> = ({ setUser }) => {
@@ -15,8 +22,12 @@ const Login: React.FC<LoginProps> = ({ setUser }) => {
     try {
       const response = await apiService.login(username, password);
       if (response.success && response.data) {
-        localStorage.setItem("token", response.data?.token || "");
-        setUser({ role: response.data.user.role });
+        localStorage.setItem("token", response.data.token || "");
+        setUser({
+          role: response.data.user.role,
+          designation: response.data.user.designation,
+          id: response.data.user.id,
+        });
         setError(null);
       } else {
         setError("Invalid username or password");

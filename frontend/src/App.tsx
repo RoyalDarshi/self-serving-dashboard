@@ -35,7 +35,6 @@ interface ChartConfig {
   aggregationType: AggregationType;
   stacked: boolean;
 }
-
 interface Connection {
   id: number;
   connection_name: string;
@@ -50,7 +49,6 @@ interface Connection {
   selected_db: string;
   created_at: string;
 }
-
 interface DashboardData {
   id: string;
   name: string;
@@ -60,8 +58,15 @@ interface DashboardData {
   layout: any[];
 }
 
+// Updated user interface to include designation
+interface User {
+  role: string;
+  designation?: string | null;
+  id?: number; // Added to store userId if needed
+}
+
 const App: React.FC = () => {
-  const [user, setUser] = useState<{ role: string } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<string>("chart-builder");
   const [loading, setLoading] = useState<boolean>(true);
   const [dashboards, setDashboards] = useState<DashboardData[]>([]);
@@ -77,7 +82,12 @@ const App: React.FC = () => {
         try {
           const response = await apiService.validateToken();
           if (response.success && response.data) {
-            setUser({ role: response.data.user.role });
+            setUser({
+              role: response.data.user.role,
+              designation: response.data.user.designation,
+              id: response.data.user.id,
+            });
+            console.log("User role:", response.data.user);
           } else {
             localStorage.removeItem("token");
           }
@@ -283,8 +293,8 @@ const App: React.FC = () => {
                 </div>
               </DragDropProvider>
             )}
-            {(activeTab === "my-dashboards" && user.role === "designer") ||
-              (user.role === "user" && (
+            {activeTab === "my-dashboards" &&
+              (user.role === "designer" || user.role === "user") && (
                 <Dashboard
                   dashboards={dashboards}
                   setDashboards={setDashboards}
@@ -294,7 +304,7 @@ const App: React.FC = () => {
                   connections={connections}
                   onDashboardsUpdate={handleDashboardsUpdate}
                 />
-              ))}
+              )}
           </div>
         </div>
       ) : (
