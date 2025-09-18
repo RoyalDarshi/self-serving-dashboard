@@ -159,9 +159,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
           </svg>
         </div>
         <p className="font-medium text-red-700">Chart generation failed</p>
-        <p className="text-sm mt-1 text-red-600 max-w-md text-center">
-          {error}
-        </p>
+        <p className="text-sm text-red-600 max-w-md text-center">{error}</p>
       </div>
     );
   }

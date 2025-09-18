@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   BarChart3,
   LineChart as LineChartIcon,
@@ -42,6 +42,9 @@ const aggregationOptions = [
   { value: "COUNT", label: "Count" },
   { value: "MIN", label: "Minimum" },
   { value: "MAX", label: "Maximum" },
+  { value: "MEDIAN", label: "Median" },
+  { value: "STDDEV", label: "Standard Deviation" },
+  { value: "VARIANCE", label: "Variance" },
 ];
 
 const viewOptions = [
@@ -63,7 +66,8 @@ const ChartControls: React.FC<ChartControlsProps> = ({
   groupByColumn,
 }) => {
   const [showChartOptions, setShowChartOptions] = React.useState(false);
-  const [showAggregationOptions, setShowAggregationOptions] = React.useState(false);
+  const [showAggregationOptions, setShowAggregationOptions] =
+    React.useState(false);
   const chartOptionsRef = React.useRef<HTMLDivElement>(null);
   const aggregationOptionsRef = React.useRef<HTMLDivElement>(null);
 
@@ -88,7 +92,9 @@ const ChartControls: React.FC<ChartControlsProps> = ({
     };
   }, []);
 
-  const CurrentChartIcon = chartTypeOptions.find(option => option.type === chartType)?.icon || BarChart3;
+  const CurrentChartIcon =
+    chartTypeOptions.find((option) => option.type === chartType)?.icon ||
+    BarChart3;
 
   return (
     <div className="relative z-20 flex flex-wrap items-center justify-between gap-4 mb-1">

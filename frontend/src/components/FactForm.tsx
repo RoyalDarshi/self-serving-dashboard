@@ -112,6 +112,9 @@ const FactForm: React.FC<FactFormProps> = ({
         <option value="COUNT">COUNT</option>
         <option value="MIN">MIN</option>
         <option value="MAX">MAX</option>
+        <option value="MEDIAN">MEDIAN</option>
+        <option value="STDDEV">STDDEV</option>
+        <option value="VARIANCE">VARIANCE</option>
       </Select>
       <div className="flex space-x-2">
         <Button onClick={editingFact ? onUpdate : onCreate} className="flex-1">

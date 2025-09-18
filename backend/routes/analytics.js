@@ -46,6 +46,27 @@ router.post("/query", async (req, res) => {
     const uniqueDimensionIds = [...new Set(dimensionIds)];
     const quote = (name) => quoteIdentifier(name, type);
 
+    function getSqlAggregate(agg, col) {
+      const upperAgg = agg.toUpperCase();
+      switch (upperAgg) {
+        case "SUM":
+        case "AVG":
+        case "MIN":
+        case "MAX":
+          return `${upperAgg}(${col})`;
+        case "COUNT":
+          return `COUNT(${col})`;
+        case "MEDIAN":
+          return `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${col})`;
+        case "STDDEV":
+          return `STDDEV_POP(${col})`;
+        case "VARIANCE":
+          return `VAR_POP(${col})`;
+        default:
+          return `${upperAgg}(${col})`;
+      }
+    }
+
     try {
       if (kpiId) {
         // KPI Flow
@@ -68,12 +89,9 @@ router.post("/query", async (req, res) => {
         let expr = kpi.expression;
         for (const f of facts) {
           const regex = new RegExp(`\\b${f.name}\\b`, "gi");
-          expr = expr.replace(
-            regex,
-            `${f.aggregate_function}(${quote(f.table_name)}.${quote(
-              f.column_name
-            )})`
-          );
+          const col = `${quote(f.table_name)}.${quote(f.column_name)}`;
+          const aggExpr = getSqlAggregate(f.aggregate_function, col);
+          expr = expr.replace(regex, aggExpr);
         }
 
         selectClause = `${expr} AS value`;
@@ -326,12 +344,11 @@ router.post("/query", async (req, res) => {
 
         const aggFunc = aggregation || facts[0].aggregate_function || "SUM";
         selectClause = facts
-          .map(
-            (f) =>
-              `${aggFunc}(${quote(f.table_name)}.${quote(
-                f.column_name
-              )}) AS ${quote(f.name)}`
-          )
+          .map((f) => {
+            const col = `${quote(f.table_name)}.${quote(f.column_name)}`;
+            const aggExpr = getSqlAggregate(aggFunc, col);
+            return `${aggExpr} AS ${quote(f.name)}`;
+          })
           .join(", ");
 
         if (dimColumns.length > 0) {

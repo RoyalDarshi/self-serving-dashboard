@@ -34,7 +34,15 @@ export interface ChartConfig {
   yAxisFacts: Fact[];
   groupByDimension: Dimension | null;
   chartType: "bar" | "line" | "pie";
-  aggregationType: "SUM" | "AVG" | "COUNT" | "MAX" | "MIN";
+  aggregationType:
+    | "SUM"
+    | "AVG"
+    | "COUNT"
+    | "MAX"
+    | "MIN"
+    | "MEDIAN"
+    | "STDDEV"
+    | "VARIANCE";
   stacked: boolean;
   title?: string;
   description?: string;

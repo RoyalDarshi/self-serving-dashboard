@@ -118,13 +118,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
 
   const [kpiName, setKpiName] = useState("");
   const [kpiExpression, setKpiExpression] = useState("");
+  const [kpiDescription, setKpiDescription] = useState("");
   const [kpiInsertType, setKpiInsertType] = useState<"fact" | "column" | "">(
     ""
   );
   const [kpiInsertFactId, setKpiInsertFactId] = useState("");
   const [kpiInsertTable, setKpiInsertTable] = useState("");
   const [kpiInsertColumn, setKpiInsertColumn] = useState("");
-  const [kpiDescription, setKpiDescription] = useState("");
 
   // Fetch connections on mount if authenticated
   useEffect(() => {
@@ -356,11 +356,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
     }
   };
 
-  const handleEditDimension = (dimension: Dimension) => {
-    setEditingDimension(dimension);
-    setDimensionName(dimension.name);
-    setDimensionTable(dimension.table_name);
-    setDimensionColumn(dimension.column_name);
+  const handleEditDimension = (dim: Dimension) => {
+    setEditingDimension(dim);
+    setDimensionName(dim.name);
+    setDimensionTable(dim.table_name);
+    setDimensionColumn(dim.column_name);
   };
 
   const handleUpdateDimension = async () => {
@@ -369,9 +369,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
       !dimensionName ||
       !dimensionTable ||
       !dimensionColumn
-    ) {
+    )
       return setError("All dimension fields are required");
-    }
     try {
       const response = await apiService.updateDimension(editingDimension.id, {
         connection_id: selectedConnectionId!,
@@ -411,7 +410,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
     }
   };
 
-  // Fact-Dimension CRUD operations
+  // Fact-Dimension Mapping CRUD operations
   const handleCreateFactDimension = async () => {
     if (
       !mappingFactId ||
@@ -419,9 +418,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
       !mappingJoinTable ||
       !mappingFactColumn ||
       !mappingDimensionColumn
-    ) {
+    )
       return setError("All mapping fields are required");
-    }
     try {
       const response = await apiService.createFactDimension({
         fact_id: Number(mappingFactId),
@@ -433,7 +431,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
       if (response.success && response.data) {
         setFactDimensions([...factDimensions, response.data]);
         clearForm();
-        setSuccess("Fact-Dimension mapping created successfully");
+        setSuccess("Mapping created successfully");
       } else {
         setError(response.error || "Failed to create mapping");
       }
@@ -442,8 +440,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
     }
   };
 
-  const handleEditFactDimension = (factDimension: FactDimension) => {
-    setEditingFactDimension(factDimension);
+  const handleEditFactDimension = (fd: FactDimension) => {
+    setEditingFactDimension(fd);
   };
 
   const handleUpdateFactDimension = async () => {
@@ -454,9 +452,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
       !mappingJoinTable ||
       !mappingFactColumn ||
       !mappingDimensionColumn
-    ) {
+    )
       return setError("All mapping fields are required");
-    }
     try {
       const response = await apiService.updateFactDimension(
         editingFactDimension.id,
@@ -475,7 +472,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
           )
         );
         clearForm();
-        setSuccess("Fact-Dimension mapping updated successfully");
+        setSuccess("Mapping updated successfully");
       } else {
         setError(response.error || "Failed to update mapping");
       }
@@ -487,11 +484,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
   const handleDeleteFactDimension = async (
     id: number,
     factName: string,
-    dimensionName: string
+    dimName: string
   ) => {
     if (
       !confirm(
-        `Are you sure you want to delete the mapping between "${factName}" and "${dimensionName}"?`
+        `Are you sure you want to delete the mapping between "${factName}" and "${dimName}"?`
       )
     )
       return;
@@ -500,7 +497,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
       if (response.success) {
         setFactDimensions(factDimensions.filter((fd) => fd.id !== id));
         setSuccess(
-          `Mapping between "${factName}" and "${dimensionName}" deleted successfully`
+          `Mapping between "${factName}" and "${dimName}" deleted successfully`
         );
       } else {
         setError(response.error || "Failed to delete mapping");
@@ -510,14 +507,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
     }
   };
 
+  const handleAutoMap = async () => {
+    if (!selectedConnectionId)
+      return setError("Please select a connection first.");
+    try {
+      const response = await apiFetch<FactDimension[]>(
+        "/semantic/auto-map",
+        "POST",
+        { connection_id: selectedConnectionId }
+      );
+      if (response.success && response.data) {
+        setFactDimensions(response.data);
+        setSuccess(`Auto-mapped ${response.data.length} relationships`);
+      } else {
+        setError(response.error || "Failed to auto-map");
+      }
+    } catch (err) {
+      setError(`Failed to auto-map: ${(err as Error).message}`);
+    }
+  };
+
   // KPI CRUD operations
   const handleCreateKPI = async () => {
     if (!selectedConnectionId)
       return setError("Please select a connection first.");
     if (!kpiName || !kpiExpression)
-      return setError("KPI name and expression are required");
+      return setError("Name and expression are required");
     try {
-      const response = await apiService.createKPI({
+      const response = await apiService.createKpi({
         connection_id: selectedConnectionId,
         name: kpiName,
         expression: kpiExpression,
@@ -544,9 +561,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
 
   const handleUpdateKPI = async () => {
     if (!editingKPI || !kpiName || !kpiExpression)
-      return setError("KPI name and expression are required");
+      return setError("Name and expression are required");
     try {
-      const response = await apiService.updateKPI(editingKPI.id, {
+      const response = await apiService.updateKpi(editingKPI.id, {
         name: kpiName,
         expression: kpiExpression,
         description: kpiDescription,
@@ -566,7 +583,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
   const handleDeleteKPI = async (id: number, name: string) => {
     if (!confirm(`Are you sure you want to delete the KPI "${name}"?`)) return;
     try {
-      const response = await apiService.deleteKPI(id);
+      const response = await apiService.deleteKpi(id);
       if (response.success) {
         setKpis(kpis.filter((k) => k.id !== id));
         setSuccess(`KPI "${name}" deleted successfully`);
@@ -575,18 +592,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
       }
     } catch (err) {
       setError(`Failed to delete KPI: ${(err as Error).message}`);
-    }
-  };
-
-  const handleAutoMap = async () => {
-    if (!selectedConnectionId)
-      return setError("Please select a connection first.");
-    try {
-      const res = await apiService.getFactDimensions(selectedConnectionId);
-      setFactDimensions(res);
-      setSuccess(`Auto-mapped ${res.length} fact-dimension pairs successfully`);
-    } catch (err) {
-      setError(`Failed to auto-map: ${(err as Error).message}`);
     }
   };
 

@@ -31,7 +31,15 @@ interface AggregationResponse {
   rows?: ChartDataItem[];
   error?: string;
 }
-type AggregationType = "SUM" | "AVG" | "COUNT" | "MAX" | "MIN";
+type AggregationType =
+  | "SUM"
+  | "AVG"
+  | "COUNT"
+  | "MAX"
+  | "MIN"
+  | "MEDIAN"
+  | "STDDEV"
+  | "VARIANCE";
 interface Column {
   key: string;
   label: string;

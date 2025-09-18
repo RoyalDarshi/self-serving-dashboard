@@ -598,6 +598,23 @@ router.post("/facts", async (req, res) => {
         error: "Missing required fact fields",
       });
     }
+    if (
+      ![
+        "SUM",
+        "AVG",
+        "COUNT",
+        "MIN",
+        "MAX",
+        "MEDIAN",
+        "STDDEV",
+        "VARIANCE",
+      ].includes(aggregate_function)
+    ) {
+      return res.status(400).json({
+        error:
+          "Invalid aggregate function. Must be 'SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', or 'VARIANCE'",
+      });
+    }
     const db = await dbPromise;
     const result = await db.run(
       `INSERT INTO facts (connection_id, name, table_name, column_name, aggregate_function)
@@ -631,6 +648,23 @@ router.put("/facts/:id", async (req, res) => {
     ) {
       return res.status(400).json({
         error: "Missing required fact fields",
+      });
+    }
+    if (
+      ![
+        "SUM",
+        "AVG",
+        "COUNT",
+        "MIN",
+        "MAX",
+        "MEDIAN",
+        "STDDEV",
+        "VARIANCE",
+      ].includes(aggregate_function)
+    ) {
+      return res.status(400).json({
+        error:
+          "Invalid aggregate function. Must be 'SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', or 'VARIANCE'",
       });
     }
     const db = await dbPromise;

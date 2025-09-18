@@ -48,7 +48,7 @@ export async function initializeDatabase() {
       name TEXT NOT NULL,
       table_name TEXT NOT NULL,
       column_name TEXT NOT NULL,
-      aggregate_function TEXT NOT NULL CHECK (aggregate_function IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX')),
+      aggregate_function TEXT NOT NULL CHECK (aggregate_function IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE')),
       FOREIGN KEY (connection_id) REFERENCES connections(id)
     )
   `);
@@ -120,7 +120,7 @@ export async function initializeDatabase() {
       y_axis_facts TEXT NOT NULL,
       group_by_dimension_id INTEGER,
       chart_type TEXT NOT NULL CHECK (chart_type IN ('bar', 'line', 'pie')),
-      aggregation_type TEXT NOT NULL CHECK (aggregation_type IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX')),
+      aggregation_type TEXT NOT NULL CHECK (aggregation_type IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE')),
       stacked BOOLEAN DEFAULT FALSE,
       title TEXT,
       description TEXT,
