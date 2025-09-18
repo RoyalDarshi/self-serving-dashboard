@@ -238,9 +238,20 @@ router.delete("/users/:id", async (req, res) => {
 router.get("/connections", async (req, res) => {
   try {
     const db = await dbPromise;
-    const connections = await db.all(
-      "SELECT id, connection_name, type, hostname, port, database, username, created_at FROM connections"
-    );
+    let connections;
+    if (req.user.role === "admin") {
+      connections = await db.all(
+        "SELECT id, connection_name, type, hostname, port, database, username, created_at FROM connections"
+      );
+    } else {
+      connections = await db.all(
+        `SELECT DISTINCT c.id, c.connection_name, c.type, c.hostname, c.port, c.database, c.username, c.created_at 
+         FROM connections c
+         JOIN connection_designations cd ON c.id = cd.connection_id
+         WHERE cd.designation = ?`,
+        [req.user.designation]
+      );
+    }
     res.json(connections);
   } catch (err) {
     console.error("List connections error:", err.message);
@@ -418,6 +429,70 @@ router.post("/connections/test", async (req, res) => {
       success: false,
       error: `Failed to connect: ${err.message}`,
     });
+  }
+});
+
+// Get all or per connection designations (admin only)
+router.get("/connection-designations", async (req, res) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Access denied. Admin only" });
+  }
+  try {
+    const { connection_id } = req.query;
+    const db = await dbPromise;
+    let query = "SELECT * FROM connection_designations";
+    let params = [];
+    if (connection_id) {
+      query += " WHERE connection_id = ?";
+      params = [connection_id];
+    }
+    const designations = await db.all(query, params);
+    res.json(designations);
+  } catch (err) {
+    console.error("List connection designations error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create designation link (admin only)
+router.post("/connection-designations", async (req, res) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Access denied. Admin only" });
+  }
+  try {
+    const { connection_id, designation } = req.body;
+    if (!connection_id || !designation) {
+      return res
+        .status(400)
+        .json({ error: "connection_id and designation required" });
+    }
+    const db = await dbPromise;
+    await db.run(
+      "INSERT INTO connection_designations (connection_id, designation) VALUES (?, ?)",
+      [connection_id, designation]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Create connection designation error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete designation link (admin only)
+router.delete("/connection-designations/:id", async (req, res) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Access denied. Admin only" });
+  }
+  try {
+    const db = await dbPromise;
+    await db.run(
+      "DELETE FROM connection_designations WHERE id = ?",
+      req.params.id
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete connection designation error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

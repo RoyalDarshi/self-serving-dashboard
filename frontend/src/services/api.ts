@@ -110,6 +110,12 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
+export interface ConnectionDesignation {
+  id: number;
+  connection_id: number;
+  designation: string;
+}
+
 async function apiFetch<T>(
   endpoint: string,
   method: string = "GET",
@@ -234,6 +240,31 @@ export const apiService = {
     connection: Omit<Connection, "id" | "created_at">
   ): Promise<ApiResponse<{ success: boolean; message?: string }>> {
     return apiFetch("/semantic/connections/test", "POST", connection);
+  },
+
+  async getConnectionDesignations(
+    connectionId?: number
+  ): Promise<ConnectionDesignation[]> {
+    const query = connectionId ? `?connection_id=${connectionId}` : "";
+    const response = await apiFetch<ConnectionDesignation[]>(
+      `/semantic/connection-designations${query}`,
+      "GET"
+    );
+    return response.success ? response.data || [] : [];
+  },
+
+  async addConnectionDesignation(
+    connectionId: number,
+    designation: string
+  ): Promise<ApiResponse<unknown>> {
+    return apiFetch("/semantic/connection-designations", "POST", {
+      connection_id: connectionId,
+      designation,
+    });
+  },
+
+  async deleteConnectionDesignation(id: number): Promise<ApiResponse<unknown>> {
+    return apiFetch(`/semantic/connection-designations/${id}`, "DELETE");
   },
 
   // Schema Management

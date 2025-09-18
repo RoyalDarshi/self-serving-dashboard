@@ -43,6 +43,17 @@ const Sidebar: React.FC<SidebarProps> = ({
           >
             <Settings className="h-6 w-6" />
           </button>
+          <button
+            onClick={() => setActiveTab("connection-designations")}
+            className={`p-2 rounded-md ${
+              activeTab === "connection-designations"
+                ? "bg-blue-600"
+                : "hover:bg-gray-700"
+            }`}
+            title="Connection Designations"
+          >
+            <Settings className="h-6 w-6" />
+          </button>
         </>
       )}
       {user?.role === "designer" && (

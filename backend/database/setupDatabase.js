@@ -132,6 +132,15 @@ export async function initializeDatabase() {
     )
   `);
 
+  await db.run(`CREATE TABLE IF NOT EXISTS connection_designations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      connection_id INTEGER NOT NULL,
+      designation TEXT NOT NULL,
+      UNIQUE (connection_id, designation),
+      FOREIGN KEY (connection_id) REFERENCES connections(id)
+    )
+  `);
+
   // Seed default admin user
   const admin = await db.get(`SELECT id FROM users WHERE username = 'admin'`);
   if (!admin) {

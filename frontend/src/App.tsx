@@ -10,6 +10,7 @@ import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
 import Dashboard from "./components/Dashboard";
 import { debounce } from "lodash";
+import ConnectionDesignationManager from "./components/ConnectionDesignationManager";
 
 // Types from DynamicSemanticChartBuilder
 interface Fact {
@@ -257,6 +258,10 @@ const App: React.FC = () => {
             {activeTab === "admin-panel" && user.role === "admin" && (
               <AdminPanel onConnectionsUpdate={handleConnectionsUpdate} />
             )}
+            {activeTab === "connection-designations" &&
+              user.role === "admin" && (
+                <ConnectionDesignationManager connections={connections} />
+              )}
             {activeTab === "chart-builder" && user.role === "designer" && (
               <DragDropProvider>
                 <div className="flex gap-4 p-4 h-screen">
