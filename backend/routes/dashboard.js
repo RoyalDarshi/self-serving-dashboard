@@ -1,4 +1,3 @@
-// Updated dashboard.js
 import { Router } from "express";
 import { dbPromise } from "../database/sqliteConnection.js";
 
@@ -321,14 +320,22 @@ router.delete("/:id", async (req, res) => {
   try {
     await db.run("BEGIN TRANSACTION");
     transactionActive = true;
+
+    // Delete related charts
     await db.run(`DELETE FROM charts WHERE dashboard_id = ?`, [id]);
+
+    // Delete the dashboard
     await db.run(`DELETE FROM dashboards WHERE id = ? AND user_id = ?`, [
       id,
       user.userId,
     ]);
+
     await db.run("COMMIT");
     transactionActive = false;
-    res.json({ success: true, message: "Dashboard deleted successfully" });
+    res.json({
+      success: true,
+      message: "Dashboard and related charts deleted successfully",
+    });
   } catch (error) {
     if (transactionActive) {
       await db.run("ROLLBACK");

@@ -1,4 +1,3 @@
-// semantic.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -151,11 +150,9 @@ router.put("/users/:id", async (req, res) => {
 
       if (role) {
         if (!["admin", "user", "designer"].includes(role)) {
-          return res
-            .status(400)
-            .json({
-              error: "Invalid role. Must be 'admin', 'user', or 'designer'",
-            });
+          return res.status(400).json({
+            error: "Invalid role. Must be 'admin', 'user', or 'designer'",
+          });
         }
         updates.push("role = ?");
         values.push(role);
@@ -197,12 +194,10 @@ router.put("/users/:id", async (req, res) => {
       );
       res.json(updated);
     } else {
-      return res
-        .status(400)
-        .json({
-          error:
-            "At least one field (username, password, role, designation) must be provided",
-        });
+      return res.status(400).json({
+        error:
+          "At least one field (username, password, role, designation) must be provided",
+      });
     }
   } catch (err) {
     console.error("Update user error:", err.message);
@@ -286,7 +281,7 @@ router.post("/connections", async (req, res) => {
     const db = await dbPromise;
     const result = await db.run(
       `INSERT INTO connections (
-        user_id, connection_name,  type, hostname, port, database,
+        user_id, connection_name, type, hostname, port, database,
         username, password
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -344,8 +339,7 @@ router.put("/connections/:id", async (req, res) => {
     await db.run(
       `UPDATE connections SET
         connection_name = ?, type = ?, hostname = ?, port = ?,
-        database = ?, username = ?,
-        password = ?,
+        database = ?, username = ?, password = ?
       WHERE id = ? AND user_id = ?`,
       [
         connection_name,
@@ -373,14 +367,88 @@ router.put("/connections/:id", async (req, res) => {
 router.delete("/connections/:id", async (req, res) => {
   try {
     const db = await dbPromise;
-    await db.run("DELETE FROM connections WHERE id = ? AND user_id = ?", [
-      req.params.id,
-      req.user?.userId,
-    ]);
-    res.json({});
+    const connection = await db.get(
+      "SELECT id FROM connections WHERE id = ? AND user_id = ?",
+      [req.params.id, req.user?.userId]
+    );
+    if (!connection) {
+      return res
+        .status(404)
+        .json({ error: "Connection not found or access denied" });
+    }
+
+    let transactionActive = false;
+    try {
+      await db.run("BEGIN TRANSACTION");
+      transactionActive = true;
+
+      // Delete related records
+      await db.run(
+        "DELETE FROM connection_designations WHERE connection_id = ?",
+        [req.params.id]
+      );
+      await db.run("DELETE FROM kpis WHERE connection_id = ?", [req.params.id]);
+
+      // Get all dashboards for this connection
+      const dashboards = await db.all(
+        "SELECT id FROM dashboards WHERE connection_id = ?",
+        [req.params.id]
+      );
+
+      // Delete charts for each dashboard
+      for (const dashboard of dashboards) {
+        await db.run("DELETE FROM charts WHERE dashboard_id = ?", [
+          dashboard.id,
+        ]);
+      }
+
+      // Delete dashboards
+      await db.run("DELETE FROM dashboards WHERE connection_id = ?", [
+        req.params.id,
+      ]);
+
+      // Delete facts and their related fact_dimensions
+      const facts = await db.all(
+        "SELECT id FROM facts WHERE connection_id = ?",
+        [req.params.id]
+      );
+      for (const fact of facts) {
+        await db.run("DELETE FROM fact_dimensions WHERE fact_id = ?", [
+          fact.id,
+        ]);
+      }
+      await db.run("DELETE FROM facts WHERE connection_id = ?", [
+        req.params.id,
+      ]);
+
+      // Delete dimensions
+      await db.run("DELETE FROM dimensions WHERE connection_id = ?", [
+        req.params.id,
+      ]);
+
+      // Delete the connection
+      await db.run("DELETE FROM connections WHERE id = ? AND user_id = ?", [
+        req.params.id,
+        req.user?.userId,
+      ]);
+
+      await db.run("COMMIT");
+      transactionActive = false;
+      res.json({
+        success: true,
+        message: "Connection and related records deleted successfully",
+      });
+    } catch (error) {
+      if (transactionActive) {
+        await db.run("ROLLBACK");
+      }
+      throw error;
+    }
   } catch (err) {
     console.error("Delete connection error:", err.message);
-    res.status(500).json({ error: err.message });
+    res
+      .status(500)
+      .json({ error: `Failed to delete connection: ${err.message}` });
   }
 });
 
