@@ -12,6 +12,8 @@ import {
   Table,
   Terminal,
   Check,
+  Download,
+  Plus,
 } from "lucide-react";
 import { AggregationType, ChartType } from "./type";
 
@@ -25,7 +27,12 @@ interface ChartControlsProps {
   activeView: "graph" | "table" | "query";
   setActiveView: (view: "graph" | "table" | "query") => void;
   yAxisCount: number;
-  groupByColumn: any; // Added this prop to check for stacked bar chart logic
+  groupByColumn: any;
+  handleDownloadGraph: () => void; // Added for downloading graph
+  handleDownloadTable: () => void; // Added for downloading table
+  handleAddToDashboard: () => void; // Added for adding to dashboard
+  isSaving: boolean; // Added to handle saving state
+  chartData: any[]; // Added to conditionally show buttons
 }
 
 const chartTypeOptions = [
@@ -64,6 +71,11 @@ const ChartControls: React.FC<ChartControlsProps> = ({
   setActiveView,
   yAxisCount,
   groupByColumn,
+  handleDownloadGraph,
+  handleDownloadTable,
+  handleAddToDashboard,
+  isSaving,
+  chartData,
 }) => {
   const [showChartOptions, setShowChartOptions] = React.useState(false);
   const [showAggregationOptions, setShowAggregationOptions] =
@@ -212,6 +224,38 @@ const ChartControls: React.FC<ChartControlsProps> = ({
             </div>
           )}
         </div>
+        {chartData.length > 0 && (
+          <div className="flex items-center space-x-2">
+            {activeView === "graph" && (
+              <button
+                onClick={handleDownloadGraph}
+                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSaving}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                <span>Graph</span>
+              </button>
+            )}
+            {activeView === "table" && (
+              <button
+                onClick={handleDownloadTable}
+                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSaving}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                <span>Table</span>
+              </button>
+            )}
+            <button
+              onClick={handleAddToDashboard}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSaving}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              <span>Add to Dashboard</span>
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex items-center space-x-2 ml-auto">
         <div className="flex bg-slate-100 rounded-lg p-1">

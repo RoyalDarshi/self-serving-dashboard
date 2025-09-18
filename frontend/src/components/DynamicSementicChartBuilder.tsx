@@ -448,6 +448,10 @@ const DynamicSemanticChartBuilder: React.FC<
         setChartType={setChartType}
         aggregationType={aggregationType}
         setAggregationType={setAggregationType}
+        chartData={chartData}
+        handleAddToDashboard={handleAddToDashboard}
+        handleDownloadGraph={handleDownloadGraph}
+        handleDownloadTable={handleDownloadTable}
         stacked={stacked}
         setStacked={setStacked}
         activeView={activeView}
@@ -466,37 +470,6 @@ const DynamicSemanticChartBuilder: React.FC<
       />
 
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-
-      {chartData.length > 0 && (
-        <div className="flex items-center space-x-2 ml-auto mb-2">
-          {activeView === "graph" && (
-            <button
-              onClick={handleDownloadGraph}
-              className="flex items-center space-x-1 px-4 py-2 bg-green-500 text-white rounded-lg"
-            >
-              <Download className="h-4 w-4" />
-              <span>Graph</span>
-            </button>
-          )}
-          {activeView === "table" && (
-            <button
-              onClick={handleDownloadTable}
-              className="flex items-center space-x-1 px-4 py-2 bg-green-500 text-white rounded-lg"
-            >
-              <Download className="h-4 w-4" />
-              <span>Table</span>
-            </button>
-          )}
-          <button
-            onClick={handleAddToDashboard}
-            className="flex items-center space-x-1 px-4 py-2 bg-blue-500 text-white rounded-lg"
-            disabled={isSaving}
-          >
-            <Plus className="h-4 w-4" />
-            <span>Add to Dashboard</span>
-          </button>
-        </div>
-      )}
 
       {activeView === "graph" && (
         <ChartDisplay
