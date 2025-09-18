@@ -1,4 +1,4 @@
-// ChartDisplay.tsx (Updated with unified rendering, improved series naming, removed uniqueGroupKeys, industry-level comments and structure)
+// ChartDisplay.tsx
 import React from "react";
 import {
   ResponsiveContainer,
@@ -33,7 +33,8 @@ interface ChartDisplayProps {
   error: string | null;
   stacked: boolean;
   chartContainerRef: React.RefObject<HTMLDivElement>;
-  sortOrder?: "asc" | "desc" | null; // Optional prop for sorting - null means no sorting
+  sortOrder?: "asc" | "desc" | null;
+  height?: number;
 }
 
 const COLORS = [
@@ -47,11 +48,6 @@ const COLORS = [
   "#84CC16",
 ];
 
-/**
- * Normalizes column type to 'string' or 'number'.
- * @param type - The raw type string.
- * @returns Normalized type.
- */
 const normalizeType = (type: string): "string" | "number" => {
   const lower = type.toLowerCase();
   if (lower.includes("char") || lower === "text") return "string";
@@ -77,23 +73,16 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   error,
   stacked,
   chartContainerRef,
-  sortOrder = null, // Default to null (no sorting)
+  sortOrder = null,
+  height,
 }) => {
   const isGrouped =
     !!groupByColumn && !!xAxisColumn && groupByColumn.key !== xAxisColumn.key;
 
-  /**
-   * Gets the display name for a series based on whether it's grouped or not.
-   * @param col - The column object.
-   * @returns Formatted series name.
-   */
   const getSeriesName = (col: DatabaseColumn): string => {
     if (isGrouped) {
-      // For grouped, use the group value directly (e.g., "USA")
       return col.label || col.key;
     } else {
-      // For non-grouped, use aggregation prefix (e.g., "SUM of Sales")
-      // Assuming always numeric in this context, but keeping isStr for robustness
       const isStr = normalizeType(col.type) === "string";
       return isStr
         ? `Count of ${col.label || col.key}`
@@ -101,20 +90,16 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
     }
   };
 
-  // Process data with optional sorting
   const processedChartData = React.useMemo(() => {
-    // If no sortOrder is specified or no Y columns, return original data
     if (!sortOrder || yAxisColumns.length === 0) {
       return chartData;
     }
 
-    // Apply sorting based on the first Y-axis column
     return [...chartData].sort((a, b) => {
       const key = yAxisColumns[0]?.key;
       const aValue = a[key] || 0;
       const bValue = b[key] || 0;
 
-      // Handle non-numeric values gracefully
       if (typeof aValue !== "number" || typeof bValue !== "number") {
         return 0;
       }
@@ -123,10 +108,9 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
     });
   }, [chartData, sortOrder, yAxisColumns]);
 
-  // 1) Loading state
   if (loading) {
     return (
-      <div className="h-96 flex flex-col items-center justify-center">
+      <div className="h-full flex flex-col items-center justify-center">
         <div className="relative">
           <RefreshCw className="h-10 w-10 animate-spin text-blue-500" />
           <div className="absolute inset-0 bg-blue-100 rounded-full animate-ping opacity-20" />
@@ -138,10 +122,9 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
     );
   }
 
-  // 2) Error state
   if (error) {
     return (
-      <div className="h-96 flex flex-col items-center justify-center bg-red-50 rounded-lg">
+      <div className="h-full flex flex-col items-center justify-center bg-red-50 rounded-lg">
         <div className="bg-red-100 p-4 rounded-full mb-4">
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -151,9 +134,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
           >
             <path
               fillRule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 
-                     0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 
-                     1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
               clipRule="evenodd"
             />
           </svg>
@@ -164,11 +145,10 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
     );
   }
 
-  // 3) Empty placeholder state
   if (!xAxisColumn || yAxisColumns.length === 0 || chartData.length === 0) {
     return (
       <div
-        className="h-96 flex flex-col items-center justify-center 
+        className="h-full flex flex-col items-center justify-center 
                       bg-gradient-to-br from-blue-50 to-indigo-50 
                       rounded-lg border border-dashed border-blue-200"
       >
@@ -206,13 +186,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
     margin: { top: 20, right: 30, left: 20, bottom: 5 },
   };
 
-  /**
-   * Renders the appropriate chart based on chartType.
-   * Unified handling for grouped and non-grouped series.
-   * @returns The chart component.
-   */
   const renderChart = () => {
-    // ① BAR Chart
     if (chartType === "bar") {
       return (
         <BarChart {...commonProps}>
@@ -234,7 +208,6 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
       );
     }
 
-    // ② LINE Chart
     if (chartType === "line") {
       return (
         <LineChart {...commonProps}>
@@ -257,7 +230,6 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
       );
     }
 
-    // ③ AREA Chart
     if (chartType === "area") {
       return (
         <AreaChart {...commonProps}>
@@ -281,7 +253,6 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
       );
     }
 
-    // ④ COMPOSED Chart
     if (chartType === "composed") {
       return (
         <ComposedChart {...commonProps}>
@@ -313,7 +284,6 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
       );
     }
 
-    // ⑤ PIE Chart (ignores multiple series, uses first Y column)
     if (chartType === "pie") {
       const pieData = processedChartData.map((r) => ({
         name: r.name,
@@ -348,9 +318,9 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   return (
     <div
       ref={chartContainerRef}
-      className="rounded-md border border-slate-200 p-0.5"
+      className="rounded-md border border-slate-200 p-0.5 w-full h-full"
     >
-      <ResponsiveContainer width="100%" height={360}>
+      <ResponsiveContainer width="100%" height={height || "100%"}>
         {renderChart()}
       </ResponsiveContainer>
     </div>

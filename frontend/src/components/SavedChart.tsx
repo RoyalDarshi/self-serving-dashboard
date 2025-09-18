@@ -1,3 +1,4 @@
+// SavedChart.tsx
 import React, { useState, useEffect, useRef } from "react";
 import { ChartConfig, AggregationResponse } from "../services/api";
 import ChartDisplay from "./ChartDisplay";
@@ -150,37 +151,40 @@ const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
   }, [config, connectionId]);
 
   return (
-    <div className="h-full w-full min-h-[350px] min-w-[300px]">
-      <h3 className="text-lg font-semibold mb-2">{config.title || "Chart"}</h3>
-      <p className="text-sm text-slate-600 mb-4">{config.description}</p>
-      <ChartDisplay
-        chartContainerRef={chartContainerRef}
-        chartType={config.chartType}
-        chartData={chartData}
-        xAxisColumn={
-          config.xAxisDimension
-            ? {
-                key: config.xAxisDimension.name,
-                label: config.xAxisDimension.name,
-                type: "string",
-              }
-            : null
-        }
-        yAxisColumns={yAxisColumns}
-        groupByColumn={
-          config.groupByDimension
-            ? {
-                key: config.groupByDimension.name,
-                label: config.groupByDimension.name,
-                type: "string",
-              }
-            : null
-        }
-        aggregationType={config.aggregationType}
-        loading={loading}
-        error={error}
-        stacked={config.stacked}
-      />
+    <div className="h-full w-full flex flex-col">
+      <h3 className="text-lg flex justify-center font-semibold p-2">
+        {config.title || "Chart"}
+      </h3>
+      <div className="flex-1">
+        <ChartDisplay
+          chartContainerRef={chartContainerRef}
+          chartType={config.chartType}
+          chartData={chartData}
+          xAxisColumn={
+            config.xAxisDimension
+              ? {
+                  key: config.xAxisDimension.name,
+                  label: config.xAxisDimension.name,
+                  type: "string",
+                }
+              : null
+          }
+          yAxisColumns={yAxisColumns}
+          groupByColumn={
+            config.groupByDimension
+              ? {
+                  key: config.groupByDimension.name,
+                  label: config.groupByDimension.name,
+                  type: "string",
+                }
+              : null
+          }
+          aggregationType={config.aggregationType}
+          loading={loading}
+          error={error}
+          stacked={config.stacked}
+        />
+      </div>
     </div>
   );
 };

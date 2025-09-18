@@ -1,3 +1,4 @@
+// Dashboard.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -103,7 +104,7 @@ interface DashboardProps {
 interface User {
   role: string;
   designation?: string | null;
-  id?: number; // Added to store userId if needed
+  id?: number;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -130,7 +131,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const currentLayoutRef = useRef<any>(null);
 
-  // Get chart type icon
   const getChartIcon = useCallback((chartType: string) => {
     switch (chartType) {
       case "bar":
@@ -144,7 +144,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, []);
 
-  // Filter dashboards based on search and selected connection
   const filteredDashboards = useCallback(
     () =>
       dashboards.filter(
@@ -168,7 +167,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
         const updatedDashboards = await apiService.getDashboards();
         setDashboards(updatedDashboards);
-        onDashboardsUpdate(updatedDashboards); // Notify App.tsx
+        onDashboardsUpdate(updatedDashboards);
         setNewDashboardName("");
         setNewDashboardDescription("");
         setShowCreateModal(false);
@@ -185,7 +184,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     onDashboardsUpdate,
   ]);
 
-  // Handle connection change
   const handleConnectionChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>) => {
       const connectionId = parseInt(event.target.value);
@@ -194,7 +192,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     [setSelectedConnectionId]
   );
 
-  // Generate default layout for charts
   const generateLayout = useCallback((charts: ChartConfig[]) => {
     return charts.map((chart, index) => ({
       i: chart.id || `chart-${index}`,
@@ -207,12 +204,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     }));
   }, []);
 
-  // Update local layout
   const handleLayoutChange = useCallback((layout: any) => {
     setLayouts({ lg: layout });
   }, []);
 
-  // Debounced save layout to backend
   const saveLayout = useCallback(
     debounce(async (layout: any) => {
       if (isSavingLayout) return;
@@ -232,7 +227,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               d.id === selectedDashboard ? { ...d, layout } : d
             );
             setDashboards(updatedDashboards);
-            onDashboardsUpdate(updatedDashboards); // Notify App.tsx
+            onDashboardsUpdate(updatedDashboards);
             currentLayoutRef.current = layout;
           } else {
             console.error("Failed to update dashboard layout:", response.error);
@@ -249,7 +244,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     [dashboards, selectedDashboard, setDashboards, onDashboardsUpdate]
   );
 
-  // Handle stop events for drag and resize
   const handleStop = useCallback(
     (layout: any) => {
       const currentLayout = currentLayoutRef.current;
@@ -267,7 +261,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         if (response.success) {
           const updatedDashboards = await apiService.getDashboards();
           setDashboards(updatedDashboards);
-          onDashboardsUpdate(updatedDashboards); // Notify App.tsx
+          onDashboardsUpdate(updatedDashboards);
           if (selectedDashboard === dashboardId) {
             setSelectedDashboard(null);
           }
@@ -304,7 +298,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             if (updateResponse.success) {
               const updatedDashboards = await apiService.getDashboards();
               setDashboards(updatedDashboards);
-              onDashboardsUpdate(updatedDashboards); // Notify App.tsx
+              onDashboardsUpdate(updatedDashboards);
             }
           }
         }
@@ -319,7 +313,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     (d) => d.id === selectedDashboard
   );
 
-  // Initialize currentLayoutRef on dashboard selection
   useEffect(() => {
     if (selectedDashboardData) {
       const initialLayout = selectedDashboardData.layout?.length
@@ -401,7 +394,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             </p>
           )}
         </div>
-        <div className="p-6">
+        <div className="">
           {isEditMode && (
             <p className="text-orange-600 mb-4">
               Drag and resize charts to adjust layout.
@@ -412,7 +405,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             layouts={{ lg: currentLayout }}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
             cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-            rowHeight={60}
+            rowHeight={50} // Reduced for smoother resizing
+            containerPadding={[10, 10]} // Added padding for better spacing
             isDraggable={isEditMode}
             isResizable={isEditMode}
             onLayoutChange={(layout) => {
@@ -428,7 +422,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             {selectedDashboardData.charts.map((chart) => (
               <div
                 key={chart.id}
-                className="bg-white border rounded-lg p-4 relative"
+                className="bg-white border rounded-lg relative h-full"
               >
                 <SavedChart
                   config={chart}
@@ -450,7 +444,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   }
 
-  // Dashboard List View
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -490,7 +483,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Dashboard List */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200">
         <div className="px-6 py-4 border-b border-slate-200">
           <div className="grid grid-cols-12 gap-4 text-sm font-medium text-slate-600">
@@ -565,7 +557,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                       >
                         <Edit3 className="h-4 w-4" />
                       </button>
-
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -585,7 +576,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Create Dashboard Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">

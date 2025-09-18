@@ -528,6 +528,7 @@ const DynamicSemanticChartBuilder: React.FC<
           loading={loading}
           error={error}
           stacked={stacked}
+          height={360}
         />
       )}
       {activeView === "table" && (
