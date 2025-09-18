@@ -95,6 +95,7 @@ const DynamicSemanticChartBuilder: React.FC<
   const [chartData, setChartData] = useState<ChartDataItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [stacked, setStacked] = useState(true);
   const [generatedQuery, setGeneratedQuery] = useState("");
   const [activeView, setActiveView] = useState<"graph" | "table" | "query">(
@@ -159,6 +160,21 @@ const DynamicSemanticChartBuilder: React.FC<
     aggregationType,
     chartType,
   ]);
+
+  // Automatically select the first dashboard when modal opens if available
+  useEffect(() => {
+    if (showDashboardModal) {
+      const availableDashboards = dashboards.filter(
+        (d) => d.connectionId === selectedConnectionId
+      );
+      if (availableDashboards.length > 0 && !selectedDashboard) {
+        setSelectedDashboard(availableDashboards[0].id);
+      }
+      // Reset success/error when modal opens
+      setSuccess(null);
+      setError(null);
+    }
+  }, [showDashboardModal, dashboards, selectedConnectionId, selectedDashboard]);
 
   const generateChartData = useCallback(async () => {
     if (!selectedConnectionId) {
@@ -427,6 +443,7 @@ const DynamicSemanticChartBuilder: React.FC<
         throw new Error(response.error || "Failed to update dashboard");
       }
 
+      setSuccess("Chart added to dashboard successfully");
       setShowDashboardModal(false);
       setSelectedDashboard("");
       setNewDashboardName("");
@@ -439,6 +456,10 @@ const DynamicSemanticChartBuilder: React.FC<
       setIsSaving(false);
     }
   }, 1000);
+
+  const availableDashboards = dashboards.filter(
+    (d) => d.connectionId === selectedConnectionId
+  );
 
   return (
     <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-200">
@@ -478,6 +499,7 @@ const DynamicSemanticChartBuilder: React.FC<
       />
 
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+      {success && <p className="text-green-500 text-sm mb-4">{success}</p>}
 
       {activeView === "graph" && (
         <ChartDisplay
@@ -552,28 +574,35 @@ const DynamicSemanticChartBuilder: React.FC<
                 Add Chart to Dashboard
               </h2>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Select Dashboard
-                  </label>
-                  <select
-                    value={selectedDashboard}
-                    onChange={(e) => setSelectedDashboard(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select a dashboard</option>
-                    {dashboards
-                      .filter((d) => d.connectionId === selectedConnectionId)
-                      .map((d) => (
+                {availableDashboards.length > 0 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Select Dashboard
+                    </label>
+                    <select
+                      value={selectedDashboard}
+                      onChange={(e) => setSelectedDashboard(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select a dashboard</option>
+                      {availableDashboards.map((d) => (
                         <option key={d.id} value={d.id}>
                           {d.name}
                         </option>
                       ))}
-                  </select>
-                </div>
+                    </select>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-600 mb-2">
+                    No dashboards found for this connection. Create a new one
+                    below.
+                  </p>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Or New Dashboard Name
+                    {availableDashboards.length > 0
+                      ? "Or New Dashboard Name"
+                      : "New Dashboard Name"}
                   </label>
                   <input
                     type="text"
@@ -603,13 +632,15 @@ const DynamicSemanticChartBuilder: React.FC<
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={() => handleSaveToDashboard(selectedDashboard)}
-                  disabled={!selectedDashboard || isSaving}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Add to Selected
-                </button>
+                {availableDashboards.length > 0 && (
+                  <button
+                    onClick={() => handleSaveToDashboard(selectedDashboard)}
+                    disabled={!selectedDashboard || isSaving}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Add to Selected
+                  </button>
+                )}
                 <button
                   onClick={handleCreateNewDashboard}
                   disabled={!newDashboardName.trim() || isSaving}
