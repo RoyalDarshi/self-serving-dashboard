@@ -368,6 +368,14 @@ const DynamicSemanticChartBuilder: React.FC<
     if (isSaving) return;
     setIsSaving(true);
 
+    // Generate dynamic chart title based on facts, dimension, and groupBy
+    const factNames = yAxisFacts.map((fact) => fact.name).join(" and ");
+    const xAxisName = xAxisDimension.name;
+    const groupByName = groupByDimension
+      ? ` Grouped by ${groupByDimension.name}`
+      : "";
+    const title = `${factNames} ${aggregationType} by ${xAxisName}${groupByName}`;
+
     const chartConfig: ChartConfig = {
       id: uuidv4(),
       xAxisDimension,
@@ -376,7 +384,7 @@ const DynamicSemanticChartBuilder: React.FC<
       chartType,
       aggregationType,
       stacked,
-      title: "New Chart",
+      title,
       description: "",
     };
 
