@@ -107,6 +107,27 @@ const DynamicSemanticChartBuilder: React.FC<
   const [newDashboardDescription, setNewDashboardDescription] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // Validate and map fact's aggregate_function to AggregationType
+  const getValidAggregationType = (
+    aggregateFunction: string
+  ): AggregationType => {
+    const validAggregations: AggregationType[] = [
+      "SUM",
+      "AVG",
+      "COUNT",
+      "MAX",
+      "MIN",
+      "MEDIAN",
+      "STDDEV",
+      "VARIANCE",
+    ];
+    const upperCaseFunction = aggregateFunction.toUpperCase();
+    return validAggregations.includes(upperCaseFunction as AggregationType)
+      ? (upperCaseFunction as AggregationType)
+      : "SUM"; // Fallback to SUM if invalid
+  };
+
+  // Reset chart data and related states when axes or group-by changes
   useEffect(() => {
     setChartData([]);
     setYAxisColumns([]);
@@ -114,6 +135,19 @@ const DynamicSemanticChartBuilder: React.FC<
     setError(null);
   }, [xAxisDimension, yAxisFacts, groupByDimension]);
 
+  // Set aggregation type based on the first fact's aggregate_function
+  useEffect(() => {
+    if (yAxisFacts.length > 0 && yAxisFacts[0].aggregate_function) {
+      const newAggregationType = getValidAggregationType(
+        yAxisFacts[0].aggregate_function
+      );
+      setAggregationType(newAggregationType);
+    } else {
+      setAggregationType("SUM"); // Default fallback when no facts are selected
+    }
+  }, [yAxisFacts]);
+
+  // Generate chart data when configuration changes
   useEffect(() => {
     if (xAxisDimension && yAxisFacts.length > 0) {
       generateChartData();
@@ -358,10 +392,8 @@ const DynamicSemanticChartBuilder: React.FC<
         return;
       }
 
-      // Add the chart to the dashboard
       addChartToDashboard(chartConfig, dashboardId);
 
-      // Update the dashboard in the backend
       const updatedCharts = [...dashboard.charts, chartConfig];
       const updatedLayout = [
         ...dashboard.layout,
@@ -387,16 +419,11 @@ const DynamicSemanticChartBuilder: React.FC<
         throw new Error(response.error || "Failed to update dashboard");
       }
 
-      // Reset modal and clear error
       setShowDashboardModal(false);
       setSelectedDashboard("");
       setNewDashboardName("");
       setNewDashboardDescription("");
       setError(null);
-
-      // Refresh dashboards to reflect the update
-      const updatedDashboards = await apiService.getDashboards();
-      // Assuming the parent component updates the dashboards prop
     } catch (error) {
       console.error("Error saving chart to dashboard:", error);
       setError("Failed to save chart to dashboard: " + error.message);
