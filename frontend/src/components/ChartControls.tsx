@@ -13,7 +13,7 @@ import {
   Terminal,
   Check,
   Download,
-  Plus,
+  LayoutDashboard,
 } from "lucide-react";
 import { AggregationType, ChartType } from "./type";
 
@@ -118,7 +118,7 @@ const ChartControls: React.FC<ChartControlsProps> = ({
               className="flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
             >
               <Settings className="h-4 w-4 mr-2 text-blue-500" />
-              <span>Chart Options</span>
+              <span>Charts</span>
               {showChartOptions ? (
                 <ChevronUp className="h-4 w-4 ml-2" />
               ) : (
@@ -222,8 +222,8 @@ const ChartControls: React.FC<ChartControlsProps> = ({
               className="flex items-center px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isSaving}
             >
-              <Plus className="h-4 w-4 mr-2 text-blue-500" />
-              <span>Add to Dashboard</span>
+              <span>Add to</span>
+              <LayoutDashboard className="h-4 w-4 ml-2 text-blue-500" />
             </button>
           </div>
         )}
