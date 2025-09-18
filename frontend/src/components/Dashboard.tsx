@@ -97,6 +97,13 @@ interface DashboardProps {
   setSelectedConnectionId: React.Dispatch<React.SetStateAction<number | null>>;
   connections: Connection[];
   onDashboardsUpdate: (dashboards: DashboardData[]) => void;
+  user: User;
+}
+
+interface User {
+  role: string;
+  designation?: string | null;
+  id?: number; // Added to store userId if needed
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -107,6 +114,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   setSelectedConnectionId,
   connections,
   onDashboardsUpdate,
+  user,
 }) => {
   const [selectedDashboard, setSelectedDashboard] = useState<string | null>(
     null
@@ -209,7 +217,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     debounce(async (layout: any) => {
       if (isSavingLayout) return;
       setIsSavingLayout(true);
-      console.log("Saving layout to backend:", layout);
 
       const dashboard = dashboards.find((d) => d.id === selectedDashboard);
       if (dashboard && selectedDashboard) {
@@ -220,7 +227,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             charts: dashboard.charts,
             layout,
           });
-          console.log("Backend update response:", response);
           if (response.success) {
             const updatedDashboards = dashboards.map((d) =>
               d.id === selectedDashboard ? { ...d, layout } : d
@@ -249,8 +255,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       const currentLayout = currentLayoutRef.current;
       if (JSON.stringify(layout) !== JSON.stringify(currentLayout)) {
         saveLayout(layout);
-      } else {
-        console.log("Layout unchanged, skipping save");
       }
     },
     [saveLayout]
@@ -262,7 +266,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         const response = await apiService.deleteDashboard(dashboardId);
         if (response.success) {
           const updatedDashboards = await apiService.getDashboards();
-          console.log("Updated dashboards after delete:", updatedDashboards);
           setDashboards(updatedDashboards);
           onDashboardsUpdate(updatedDashboards); // Notify App.tsx
           if (selectedDashboard === dashboardId) {
@@ -300,10 +303,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             );
             if (updateResponse.success) {
               const updatedDashboards = await apiService.getDashboards();
-              console.log(
-                "Updated dashboards after chart delete:",
-                updatedDashboards
-              );
               setDashboards(updatedDashboards);
               onDashboardsUpdate(updatedDashboards); // Notify App.tsx
             }
@@ -328,11 +327,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         : generateLayout(selectedDashboardData.charts);
       setLayouts({ lg: initialLayout });
       currentLayoutRef.current = initialLayout;
-      console.log(
-        "Initialized layout for dashboard:",
-        selectedDashboardData.id,
-        initialLayout
-      );
     }
   }, [selectedDashboardData, generateLayout]);
 
@@ -365,26 +359,28 @@ const Dashboard: React.FC<DashboardProps> = ({
               </h1>
             </div>
             <div className="flex items-center space-x-3">
-              <button
-                onClick={() => setIsEditMode(!isEditMode)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                  isEditMode
-                    ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                }`}
-              >
-                {isEditMode ? (
-                  <>
-                    <Lock className="h-4 w-4" />
-                    <span>Lock Layout</span>
-                  </>
-                ) : (
-                  <>
-                    <Unlock className="h-4 w-4" />
-                    <span>Edit Layout</span>
-                  </>
-                )}
-              </button>
+              {user.role === "designer" && (
+                <button
+                  onClick={() => setIsEditMode(!isEditMode)}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                    isEditMode
+                      ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                  }`}
+                >
+                  {isEditMode ? (
+                    <>
+                      <Lock className="h-4 w-4" />
+                      <span>Lock Layout</span>
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="h-4 w-4" />
+                      <span>Edit Layout</span>
+                    </>
+                  )}
+                </button>
+              )}
               <button className="flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors">
                 <Share2 className="h-4 w-4" />
                 <span>Share</span>
@@ -420,15 +416,12 @@ const Dashboard: React.FC<DashboardProps> = ({
             isDraggable={isEditMode}
             isResizable={isEditMode}
             onLayoutChange={(layout) => {
-              console.log("Layout changed:", layout);
               handleLayoutChange(layout);
             }}
             onDragStop={(layout) => {
-              console.log("Drag stopped, layout:", layout);
               handleStop(layout);
             }}
             onResizeStop={(layout) => {
-              console.log("Resize stopped, layout:", layout);
               handleStop(layout);
             }}
           >
@@ -441,7 +434,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   config={chart}
                   connectionId={selectedDashboardData.connectionId}
                 />
-                {isEditMode && (
+                {isEditMode && user.role === "designer" && (
                   <button
                     onClick={() => handleDeleteChart(chart.id)}
                     className="absolute top-2 right-2 text-red-500 hover:text-red-700"
@@ -560,26 +553,31 @@ const Dashboard: React.FC<DashboardProps> = ({
                   >
                     <Eye className="h-4 w-4" />
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Handle edit
-                    }}
-                    className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                    title="Edit"
-                  >
-                    <Edit3 className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteDashboard(dashboard.id);
-                    }}
-                    className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {user.role === "designer" && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Handle edit
+                        }}
+                        className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                        title="Edit"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteDashboard(dashboard.id);
+                        }}
+                        className="p-1 text-slate-400 hover:text-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

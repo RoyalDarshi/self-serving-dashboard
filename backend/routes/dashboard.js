@@ -180,15 +180,8 @@ router.get("/list", async (req, res) => {
   const { user } = req;
 
   try {
-    console.log("Fetching dashboards for user:", {
-      userId: user.userId,
-      role: user.role,
-      designation: user.designation,
-    });
-
     let dashboards;
     if (user.role === "admin") {
-      console.log("Returning empty array for admin user");
       return res.json([]);
     } else {
       dashboards = await db.all(
@@ -203,7 +196,6 @@ router.get("/list", async (req, res) => {
          ORDER BY d.last_modified DESC`,
         [user.designation]
       );
-      console.log("Dashboards query result:", dashboards);
     }
 
     const result = await Promise.all(
@@ -275,7 +267,6 @@ router.get("/list", async (req, res) => {
       })
     );
 
-    console.log("Final dashboards response:", result);
     res.json(result);
   } catch (error) {
     console.error("Error fetching dashboards:", error.message);

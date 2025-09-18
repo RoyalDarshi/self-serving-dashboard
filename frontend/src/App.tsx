@@ -87,7 +87,6 @@ const App: React.FC = () => {
               designation: response.data.user.designation,
               id: response.data.user.id,
             });
-            console.log("User role:", response.data.user);
           } else {
             localStorage.removeItem("token");
           }
@@ -104,9 +103,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      console.log("Fetching connections and dashboards for user:", user);
       apiService.getConnections().then((connections) => {
-        console.log("Fetched connections:", connections);
         setConnections(connections);
       });
       fetchDashboards();
@@ -122,16 +119,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (connections.length > 0 && selectedConnectionId === null) {
-      console.log("Setting default connection ID:", connections[0].id);
       setSelectedConnectionId(connections[0].id);
     }
   }, [connections, selectedConnectionId]);
 
   const fetchDashboards = useCallback(async () => {
     try {
-      console.log("Calling fetchDashboards");
       const dashboards = await apiService.getDashboards();
-      console.log("Fetched dashboards:", dashboards);
       const synchronizedDashboards = dashboards.map((dashboard) => ({
         ...dashboard,
         layout: dashboard.layout.filter((item) =>
@@ -146,7 +140,6 @@ const App: React.FC = () => {
 
   const addNewDashboard = useCallback(
     debounce(async (name: string, description?: string): Promise<string> => {
-      console.log("Calling addNewDashboard with:", { name, description });
       if (!selectedConnectionId) {
         throw new Error("No connection selected");
       }
@@ -173,7 +166,6 @@ const App: React.FC = () => {
 
   const addChartToDashboard = useCallback(
     debounce(async (config: ChartConfig, dashboardId: string) => {
-      console.log("Calling addChartToDashboard with:", { dashboardId, config });
       const dashboard = dashboards.find((d) => d.id === dashboardId);
       if (!dashboard) {
         console.error("Dashboard not found:", dashboardId);
@@ -235,7 +227,6 @@ const App: React.FC = () => {
   );
 
   const handleLogout = () => {
-    console.log("Logging out user");
     localStorage.removeItem("token");
     setUser(null);
     setActiveTab("dashboard");
@@ -303,6 +294,7 @@ const App: React.FC = () => {
                   setSelectedConnectionId={setSelectedConnectionId}
                   connections={connections}
                   onDashboardsUpdate={handleDashboardsUpdate}
+                  user={user}
                 />
               )}
           </div>

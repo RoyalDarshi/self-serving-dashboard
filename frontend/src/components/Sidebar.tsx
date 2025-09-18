@@ -2,10 +2,11 @@
 import React from "react";
 import {
   UserPlus,
-  Settings,
+  Database,
   BarChart3,
   LayoutDashboard,
   LogOut,
+  Link,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -30,7 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             className={`p-2 rounded-md ${
               activeTab === "create-user" ? "bg-blue-600" : "hover:bg-gray-700"
             }`}
-            title="Create User"
+            title="User Management"
           >
             <UserPlus className="h-6 w-6" />
           </button>
@@ -41,7 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }`}
             title="Admin Panel"
           >
-            <Settings className="h-6 w-6" />
+            <Database className="h-6 w-6" />
           </button>
           <button
             onClick={() => setActiveTab("connection-designations")}
@@ -50,9 +51,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                 ? "bg-blue-600"
                 : "hover:bg-gray-700"
             }`}
-            title="Connection Designations"
+            title="Connection Hub"
           >
-            <Settings className="h-6 w-6" />
+            <Link className="h-6 w-6" />
           </button>
         </>
       )}
