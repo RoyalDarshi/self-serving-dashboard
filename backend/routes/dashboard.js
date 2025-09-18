@@ -1,5 +1,4 @@
 // Updated dashboard.js
-// dashboard.js
 import { Router } from "express";
 import { dbPromise } from "../database/sqliteConnection.js";
 
@@ -182,8 +181,15 @@ router.get("/list", async (req, res) => {
   const { user } = req;
 
   try {
+    console.log("Fetching dashboards for user:", {
+      userId: user.userId,
+      role: user.role,
+      designation: user.designation,
+    });
+
     let dashboards;
     if (user.role === "admin") {
+      console.log("Returning empty array for admin user");
       return res.json([]);
     } else {
       dashboards = await db.all(
@@ -193,11 +199,12 @@ router.get("/list", async (req, res) => {
          FROM dashboards d
          JOIN connections con ON d.connection_id = con.id
          JOIN connection_designations cd ON con.id = cd.connection_id
-         WHERE d.user_id = ? AND cd.designation = ?
-         GROUP BY d.id  -- Ensure no duplicates if multiple designations
+         WHERE cd.designation = ?
+         GROUP BY d.id
          ORDER BY d.last_modified DESC`,
-        [user.userId, user.designation]
+        [user.designation]
       );
+      console.log("Dashboards query result:", dashboards);
     }
 
     const result = await Promise.all(
@@ -269,6 +276,7 @@ router.get("/list", async (req, res) => {
       })
     );
 
+    console.log("Final dashboards response:", result);
     res.json(result);
   } catch (error) {
     console.error("Error fetching dashboards:", error.message);
