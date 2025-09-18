@@ -112,14 +112,17 @@ const ChartDropZone: React.FC<ChartDropZoneProps> = ({
   const handleRemoveX = () => setXAxisDimension(null);
 
   const handleDropY = (item: { fact?: Fact }) => {
-    if (item.fact && !yAxisFacts.some((f) => f.id === item.fact!.id)) {
-      setYAxisFacts([...yAxisFacts, item.fact]);
+    if (item.fact) {
+      // Prevent adding duplicate facts by checking IDs
+      if (!yAxisFacts.some((f) => f.id === item.fact!.id)) {
+        setYAxisFacts((prev) => [...prev, item.fact!]);
+      }
     }
   };
 
   const handleRemoveY = (id?: number) => {
     if (id !== undefined) {
-      setYAxisFacts(yAxisFacts.filter((f) => f.id !== id));
+      setYAxisFacts((prev) => prev.filter((f) => f.id !== id));
     }
   };
 
@@ -167,10 +170,10 @@ const ChartDropZone: React.FC<ChartDropZoneProps> = ({
           selectedColumns={yAxisFacts.map((f) => ({
             id: f.id,
             key: f.name,
-            label: f.name,
+            label: `${f.name} (${f.aggregate_function})`,
             type: "number",
           }))}
-          label="Drop facts here"
+          label="Drop facts here (multiple allowed)"
           accept={["fact"]}
           allowMultiple={true}
         />
