@@ -1,10 +1,4 @@
-// App.tsx fixes:
-// 1. Correct the import typo: Change DynamicSementicChartBuilder to DynamicSemanticChartBuilder
-//    Assuming the file is named correctly as DynamicSemanticChartBuilder.tsx
-// 2. Remove addChartToDashboard prop as per previous suggestion (logic moved to component)
-// 3. Add refreshDashboards={fetchDashboards} to DynamicSemanticChartBuilder
-// 4. In fetchDashboards, add layout fixing to ensure all x/y/w/h are numbers, defaulting invalid to safe values
-
+// App.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { apiService } from "./services/api";
@@ -12,10 +6,11 @@ import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import UserManagement from "./components/UserManagement";
 import AdminPanel from "./components/AdminPanel";
-import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder"; // Corrected typo
+import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
 import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
 import Dashboard from "./components/Dashboard";
+import SemanticBuilder from "./components/SemanticBuilder"; // New component for designer
 import { debounce } from "lodash";
 import ConnectionDesignationManager from "./components/ConnectionDesignationManager";
 
@@ -69,7 +64,7 @@ interface DashboardData {
 interface User {
   role: string;
   designation?: string | null;
-  id?: number; // Added to store userId if needed
+  id?: number;
 }
 
 const App: React.FC = () => {
@@ -114,6 +109,8 @@ const App: React.FC = () => {
         setConnections(connections);
       });
       fetchDashboards();
+
+      // Set initial tab based on role
       if (user.role === "admin") {
         setActiveTab("create-user");
       } else if (user.role === "designer") {
@@ -139,7 +136,7 @@ const App: React.FC = () => {
           .map((item) => ({
             ...item,
             x: Number(item.x) || 0,
-            y: Number(item.y) || 0, // Fix null/NaN y to 0
+            y: Number(item.y) || 0,
             w: Number(item.w) || 6,
             h: Number(item.h) || 7,
             minW: Number(item.minW) || 3,
@@ -250,11 +247,18 @@ const App: React.FC = () => {
                       dashboards={dashboards}
                       addNewDashboard={addNewDashboard}
                       selectedConnectionId={selectedConnectionId}
-                      refreshDashboards={fetchDashboards} // Added this prop
+                      refreshDashboards={fetchDashboards}
                     />
                   </div>
                 </div>
               </DragDropProvider>
+            )}
+            {activeTab === "semantic-builder" && user.role === "designer" && (
+              <SemanticBuilder
+                connections={connections}
+                selectedConnectionId={selectedConnectionId}
+                setSelectedConnectionId={setSelectedConnectionId}
+              />
             )}
             {activeTab === "my-dashboards" &&
               (user.role === "designer" || user.role === "user") && (

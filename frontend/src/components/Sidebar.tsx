@@ -40,7 +40,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             className={`p-2 rounded-md ${
               activeTab === "admin-panel" ? "bg-blue-600" : "hover:bg-gray-700"
             }`}
-            title="Admin Panel"
+            title="Connections Management"
           >
             <Database className="h-6 w-6" />
           </button>
@@ -58,15 +58,30 @@ const Sidebar: React.FC<SidebarProps> = ({
         </>
       )}
       {user?.role === "designer" && (
-        <button
-          onClick={() => setActiveTab("chart-builder")}
-          className={`p-2 rounded-md ${
-            activeTab === "chart-builder" ? "bg-blue-600" : "hover:bg-gray-700"
-          }`}
-          title="Chart Builder"
-        >
-          <BarChart3 className="h-6 w-6" />
-        </button>
+        <>
+          <button
+            onClick={() => setActiveTab("semantic-builder")}
+            className={`p-2 rounded-md ${
+              activeTab === "semantic-builder"
+                ? "bg-blue-600"
+                : "hover:bg-gray-700"
+            }`}
+            title="Semantic Builder"
+          >
+            <Database className="h-6 w-6" />
+          </button>
+          <button
+            onClick={() => setActiveTab("chart-builder")}
+            className={`p-2 rounded-md ${
+              activeTab === "chart-builder"
+                ? "bg-blue-600"
+                : "hover:bg-gray-700"
+            }`}
+            title="Chart Builder"
+          >
+            <BarChart3 className="h-6 w-6" />
+          </button>
+        </>
       )}
       {(user?.role === "designer" || user?.role === "user") && (
         <button
