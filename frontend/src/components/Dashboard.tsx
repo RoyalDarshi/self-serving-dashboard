@@ -1,5 +1,11 @@
 // Dashboard.tsx
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -26,6 +32,8 @@ import {
   Move,
   Lock,
   Unlock,
+  Star,
+  StarOff,
 } from "lucide-react";
 import { debounce } from "lodash";
 import SavedChart from "./SavedChart";
@@ -86,6 +94,7 @@ interface DashboardData {
   charts: ChartConfig[];
   layout?: any[];
   isPublic?: boolean;
+  isDefault?: boolean;
   createdAt?: string;
   lastModified?: string;
 }
@@ -117,9 +126,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   onDashboardsUpdate,
   user,
 }) => {
+  // All state declarations at the top
   const [selectedDashboard, setSelectedDashboard] = useState<string | null>(
     null
   );
+  const [defaultDashboardId, setDefaultDashboardId] = useState<string | null>(
+    null
+  ); // Track the default dashboard
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTag, setFilterTag] = useState<string>("all");
@@ -131,6 +144,107 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const currentLayoutRef = useRef<any>(null);
 
+  // Auto-select dashboard with charts - simplified logic
+  useEffect(() => {
+    // Only auto-select if:
+    // 1. No dashboard is currently selected
+    // 2. We haven't set a default yet
+    // 3. There are dashboards available
+    if (!selectedDashboard && !defaultDashboardId && dashboards.length > 0) {
+      console.log(
+        "Auto-selection conditions met. Dashboards available:",
+        dashboards.length
+      );
+
+      let defaultDashboard: DashboardData | null = null;
+
+      // First try to find a dashboard with charts that matches the selected connection
+      if (selectedConnectionId) {
+        defaultDashboard = dashboards.find(
+          (dashboard) =>
+            dashboard.connectionId === selectedConnectionId &&
+            dashboard.charts.length > 0
+        );
+        console.log(
+          "Looking for connection-specific dashboard:",
+          selectedConnectionId,
+          "Found:",
+          !!defaultDashboard
+        );
+      }
+
+      // If no connection selected or no dashboard with charts for that connection,
+      // find any dashboard with charts
+      if (!defaultDashboard) {
+        defaultDashboard = dashboards.find(
+          (dashboard) => dashboard.charts.length > 0
+        );
+        console.log(
+          "Looking for any dashboard with charts. Found:",
+          !!defaultDashboard
+        );
+      }
+
+      // If still no dashboard with charts, select the first dashboard
+      if (!defaultDashboard) {
+        defaultDashboard = dashboards[0];
+        console.log(
+          "No dashboard with charts found, selecting first dashboard:",
+          !!defaultDashboard
+        );
+      }
+
+      if (defaultDashboard) {
+        console.log(
+          "Auto-selecting dashboard:",
+          defaultDashboard.name,
+          defaultDashboard.id
+        );
+        setSelectedDashboard(defaultDashboard.id);
+        setDefaultDashboardId(defaultDashboard.id); // Mark this as the default
+      } else {
+        console.log("No dashboard found for auto-selection");
+      }
+    }
+  }, [dashboards, selectedConnectionId, selectedDashboard, defaultDashboardId]);
+
+  // Reset default selection when connection changes
+  useEffect(() => {
+    if (selectedConnectionId !== null) {
+      setDefaultDashboardId(null);
+      setSelectedDashboard(null);
+    }
+  }, [selectedConnectionId]);
+
+  // All useEffects after all state and refs
+  // Layout setup for selected dashboard
+  const selectedDashboardData = useMemo(() => {
+    return dashboards.find((d) => d.id === selectedDashboard);
+  }, [dashboards, selectedDashboard]);
+
+  useEffect(() => {
+    if (selectedDashboardData) {
+      const generateLayout = (charts: ChartConfig[]) => {
+        return charts.map((chart, index) => ({
+          i: chart.id || `chart-${index}`,
+          x: (index % 2) * 6,
+          y: Math.floor(index / 2) * 8,
+          w: 6,
+          h: 8,
+          minW: 3,
+          minH: 3,
+        }));
+      };
+
+      const initialLayout = selectedDashboardData.layout?.length
+        ? selectedDashboardData.layout
+        : generateLayout(selectedDashboardData.charts);
+      setLayouts({ lg: initialLayout });
+      currentLayoutRef.current = initialLayout;
+    }
+  }, [selectedDashboardData]);
+
+  // All callbacks
   const getChartIcon = useCallback((chartType: string) => {
     switch (chartType) {
       case "bar":
@@ -171,6 +285,25 @@ const Dashboard: React.FC<DashboardProps> = ({
         setNewDashboardName("");
         setNewDashboardDescription("");
         setShowCreateModal(false);
+
+        // Auto-select the newly created dashboard as default ONLY if no default exists
+        if (!defaultDashboardId) {
+          const newDashboard = updatedDashboards.find(
+            (d) => d.id === dashboardId
+          );
+          if (newDashboard) {
+            setSelectedDashboard(newDashboard.id);
+            setDefaultDashboardId(newDashboard.id);
+          }
+        } else {
+          // Just select the new dashboard without changing the default
+          const newDashboard = updatedDashboards.find(
+            (d) => d.id === dashboardId
+          );
+          if (newDashboard) {
+            setSelectedDashboard(newDashboard.id);
+          }
+        }
       } catch (error) {
         console.error("Error creating dashboard:", error);
       }
@@ -182,15 +315,24 @@ const Dashboard: React.FC<DashboardProps> = ({
     addNewDashboard,
     setDashboards,
     onDashboardsUpdate,
+    defaultDashboardId,
   ]);
 
   const handleConnectionChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>) => {
       const connectionId = parseInt(event.target.value);
       setSelectedConnectionId(connectionId || null);
+      setSelectedDashboard(null);
+      setDefaultDashboardId(null); // Reset default for new connection
     },
     [setSelectedConnectionId]
   );
+
+  const handleViewAllDashboards = useCallback(() => {
+    console.log("User wants to see all dashboards");
+    setSelectedDashboard(null);
+    // Keep the defaultDashboardId so we know which one was auto-selected
+  }, []);
 
   const generateLayout = useCallback((charts: ChartConfig[]) => {
     return charts.map((chart, index) => ({
@@ -241,7 +383,13 @@ const Dashboard: React.FC<DashboardProps> = ({
         setIsSavingLayout(false);
       }
     }, 1000),
-    [dashboards, selectedDashboard, setDashboards, onDashboardsUpdate]
+    [
+      dashboards,
+      selectedDashboard,
+      setDashboards,
+      onDashboardsUpdate,
+      isSavingLayout,
+    ]
   );
 
   const handleStop = useCallback(
@@ -256,6 +404,11 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleDeleteDashboard = useCallback(
     async (dashboardId: string) => {
+      // If deleting the default dashboard, reset the default
+      if (defaultDashboardId === dashboardId) {
+        setDefaultDashboardId(null);
+      }
+
       try {
         const response = await apiService.deleteDashboard(dashboardId);
         if (response.success) {
@@ -270,11 +423,13 @@ const Dashboard: React.FC<DashboardProps> = ({
         console.error("Error deleting dashboard:", error);
       }
     },
-    [selectedDashboard, setDashboards, onDashboardsUpdate]
+    [selectedDashboard, setDashboards, onDashboardsUpdate, defaultDashboardId]
   );
 
   const handleDeleteChart = useCallback(
     async (chartId: string) => {
+      if (!selectedDashboard) return;
+
       try {
         const response = await apiService.deleteChart(chartId);
         if (response.success) {
@@ -283,9 +438,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             const updatedCharts = dashboard.charts.filter(
               (c) => c.id !== chartId
             );
-            const updatedLayout = dashboard.layout.filter(
-              (l) => l.i !== chartId
-            );
+            const updatedLayout =
+              dashboard.layout?.filter((l) => l.i !== chartId) || [];
             const updateResponse = await apiService.updateDashboard(
               dashboard.id,
               {
@@ -299,6 +453,14 @@ const Dashboard: React.FC<DashboardProps> = ({
               const updatedDashboards = await apiService.getDashboards();
               setDashboards(updatedDashboards);
               onDashboardsUpdate(updatedDashboards);
+
+              // If this was the default dashboard and now has no charts, reset default
+              if (
+                defaultDashboardId === dashboard.id &&
+                updatedCharts.length === 0
+              ) {
+                setDefaultDashboardId(null);
+              }
             }
           }
         }
@@ -306,33 +468,44 @@ const Dashboard: React.FC<DashboardProps> = ({
         console.error("Error deleting chart:", error);
       }
     },
-    [dashboards, selectedDashboard, setDashboards, onDashboardsUpdate]
+    [
+      dashboards,
+      selectedDashboard,
+      setDashboards,
+      onDashboardsUpdate,
+      defaultDashboardId,
+    ]
   );
 
-  const selectedDashboardData = dashboards.find(
-    (d) => d.id === selectedDashboard
-  );
+  // Calculate current layout for selected dashboard
+  const currentLayout = useMemo(() => {
+    if (!selectedDashboardData) return [];
 
-  useEffect(() => {
-    if (selectedDashboardData) {
-      const initialLayout = selectedDashboardData.layout?.length
-        ? selectedDashboardData.layout
-        : generateLayout(selectedDashboardData.charts);
-      setLayouts({ lg: initialLayout });
-      currentLayoutRef.current = initialLayout;
-    }
-  }, [selectedDashboardData, generateLayout]);
-
-  if (selectedDashboard && selectedDashboardData) {
-    const currentLayout =
+    if (
       layouts.lg?.length &&
-      layouts.lg.every((item) =>
+      layouts.lg.every((item: any) =>
         selectedDashboardData.charts.some((chart) => chart.id === item.i)
       )
-        ? layouts.lg
-        : selectedDashboardData.layout?.length
-        ? selectedDashboardData.layout
-        : generateLayout(selectedDashboardData.charts);
+    ) {
+      return layouts.lg;
+    } else if (selectedDashboardData.layout?.length) {
+      return selectedDashboardData.layout;
+    } else {
+      return generateLayout(selectedDashboardData.charts);
+    }
+  }, [layouts.lg, selectedDashboardData, generateLayout]);
+
+  // Helper function to check if dashboard is default
+  const isDefaultDashboard = useCallback(
+    (dashboardId: string) => {
+      return defaultDashboardId === dashboardId;
+    },
+    [defaultDashboardId]
+  );
+
+  // Render Dashboard View Component
+  const DashboardView = useMemo(() => {
+    if (!selectedDashboard || !selectedDashboardData) return null;
 
     return (
       <div className="min-h-screen bg-slate-50">
@@ -340,16 +513,24 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => setSelectedDashboard(null)}
+                onClick={handleViewAllDashboards}
                 className="flex items-center space-x-2 text-slate-600 hover:text-slate-900 transition-colors"
               >
                 <LayoutDashboard className="h-5 w-5" />
                 <span className="font-medium">All Dashboards</span>
               </button>
               <div className="text-slate-400">/</div>
-              <h1 className="text-2xl font-bold text-slate-900">
-                {selectedDashboardData.name}
-              </h1>
+              <div className="flex items-center space-x-2">
+                {isDefaultDashboard(selectedDashboard) && (
+                  <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium border border-yellow-300">
+                    <Star className="h-3 w-3 fill-current" />
+                    <span>Default</span>
+                  </div>
+                )}
+                <h1 className="text-2xl font-bold text-slate-900">
+                  {selectedDashboardData.name}
+                </h1>
+              </div>
             </div>
             <div className="flex items-center space-x-3">
               {user.role === "designer" && (
@@ -399,19 +580,13 @@ const Dashboard: React.FC<DashboardProps> = ({
           layouts={{ lg: currentLayout }}
           breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
           cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-          rowHeight={50} // Reduced for smoother resizing
-          containerPadding={[10, 10]} // Added padding for better spacing
+          rowHeight={50}
+          containerPadding={[10, 10]}
           isDraggable={isEditMode}
           isResizable={isEditMode}
-          onLayoutChange={(layout) => {
-            handleLayoutChange(layout);
-          }}
-          onDragStop={(layout) => {
-            handleStop(layout);
-          }}
-          onResizeStop={(layout) => {
-            handleStop(layout);
-          }}
+          onLayoutChange={handleLayoutChange}
+          onDragStop={handleStop}
+          onResizeStop={handleStop}
         >
           {selectedDashboardData.charts.map((chart) => (
             <div
@@ -424,7 +599,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               />
               {isEditMode && user.role === "designer" && (
                 <button
-                  onClick={() => handleDeleteChart(chart.id)}
+                  onClick={() => handleDeleteChart(chart.id!)}
                   className="absolute top-2 right-2 text-red-500 hover:text-red-700"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -435,143 +610,248 @@ const Dashboard: React.FC<DashboardProps> = ({
         </ResponsiveGridLayout>
       </div>
     );
-  }
+  }, [
+    selectedDashboard,
+    selectedDashboardData,
+    currentLayout,
+    isEditMode,
+    user.role,
+    handleViewAllDashboards,
+    handleLayoutChange,
+    handleStop,
+    handleDeleteChart,
+    isDefaultDashboard,
+  ]);
 
-  return (
-    <div className="p-4">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">My Dashboards</h1>
-        <div className="flex items-center space-x-4">
-          <select
-            value={selectedConnectionId || ""}
-            onChange={handleConnectionChange}
-            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="" disabled>
-              Select Connection
-            </option>
-            {connections.map((connection) => (
-              <option key={connection.id} value={connection.id}>
-                {connection.connection_name}
+  // All Dashboards View Component
+  const AllDashboardsView = useMemo(
+    () => (
+      <div className="p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold text-slate-900">My Dashboards</h1>
+          <div className="flex items-center space-x-4">
+            <select
+              value={selectedConnectionId || ""}
+              onChange={handleConnectionChange}
+              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="" disabled>
+                Select Connection
               </option>
-            ))}
-          </select>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search dashboards..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <Search className="h-5 w-5 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+              {connections.map((connection) => (
+                <option key={connection.id} value={connection.id}>
+                  {connection.connection_name}
+                </option>
+              ))}
+            </select>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search dashboards..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <Search className="h-5 w-5 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+            </div>
+            {user.role === "designer" && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Create Dashboard</span>
+              </button>
+            )}
           </div>
-          {user.role === "designer" && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Create Dashboard</span>
-            </button>
-          )}
         </div>
-      </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200">
-        <div className="px-6 py-4 border-b border-slate-200">
-          <div className="grid grid-cols-12 gap-4 text-sm font-medium text-slate-600">
-            <div className="col-span-4">Name</div>
-            <div className="col-span-2">Charts</div>
-            <div className="col-span-2">Last Modified</div>
-            <div className="col-span-2">Status</div>
-            <div className="col-span-2">Actions</div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <div className="grid grid-cols-12 gap-4 text-sm font-medium text-slate-600">
+              <div className="col-span-4">Name</div>
+              <div className="col-span-2">Charts</div>
+              <div className="col-span-2">Last Modified</div>
+              <div className="col-span-2">Status</div>
+              <div className="col-span-2">Actions</div>
+            </div>
           </div>
-        </div>
-        <div className="divide-y divide-slate-200">
-          {filteredDashboards().map((dashboard) => (
-            <div
-              key={dashboard.id}
-              className="px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer"
-              onClick={() => setSelectedDashboard(dashboard.id)}
-            >
-              <div className="grid grid-cols-12 gap-4 items-center">
-                <div className="col-span-4 flex items-center space-x-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <LayoutDashboard className="h-5 w-5 text-blue-600" />
+          <div className="divide-y divide-slate-200">
+            {filteredDashboards().map((dashboard) => (
+              <div
+                key={dashboard.id}
+                className={`px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer ${
+                  isDefaultDashboard(dashboard.id)
+                    ? "hover:bg-yellow-50 border-l-4 border-yellow-400"
+                    : dashboard.charts.length > 0
+                    ? "hover:bg-blue-50"
+                    : ""
+                }`}
+                onClick={() => {
+                  console.log(
+                    "User clicked dashboard:",
+                    dashboard.name,
+                    "- Default remains:",
+                    defaultDashboardId
+                  );
+                  setSelectedDashboard(dashboard.id);
+                  // DO NOT change defaultDashboardId - keep it fixed
+                }}
+              >
+                <div className="grid grid-cols-12 gap-4 items-center">
+                  <div className="col-span-4 flex items-center space-x-3">
+                    <div
+                      className={`p-2 rounded-lg ${
+                        isDefaultDashboard(dashboard.id)
+                          ? "bg-yellow-100 border-2 border-yellow-300"
+                          : dashboard.charts.length > 0
+                          ? "bg-blue-100"
+                          : "bg-slate-100"
+                      }`}
+                    >
+                      <LayoutDashboard
+                        className={`h-5 w-5 ${
+                          isDefaultDashboard(dashboard.id)
+                            ? "text-yellow-600"
+                            : dashboard.charts.length > 0
+                            ? "text-blue-600"
+                            : "text-slate-500"
+                        }`}
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {isDefaultDashboard(dashboard.id) && (
+                        <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium border border-yellow-300">
+                          <Star className="h-3 w-3 fill-current" />
+                          <span>Default</span>
+                        </div>
+                      )}
+                      <div>
+                        <h3
+                          className={`font-medium ${
+                            isDefaultDashboard(dashboard.id)
+                              ? "text-yellow-900"
+                              : "text-slate-900"
+                          }`}
+                        >
+                          {dashboard.name}
+                        </h3>
+                        {dashboard.description && (
+                          <p className="text-sm text-slate-500 truncate">
+                            {dashboard.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium text-slate-900">
-                      {dashboard.name}
-                    </h3>
-                    {dashboard.description && (
-                      <p className="text-sm text-slate-500 truncate">
-                        {dashboard.description}
-                      </p>
+                  <div
+                    className={`col-span-2 text-sm ${
+                      isDefaultDashboard(dashboard.id)
+                        ? "text-yellow-600 font-semibold"
+                        : dashboard.charts.length > 0
+                        ? "text-blue-600 font-medium"
+                        : "text-slate-600"
+                    }`}
+                  >
+                    {dashboard.charts.length} chart
+                    {dashboard.charts.length !== 1 ? "s" : ""}
+                  </div>
+                  <div className="col-span-2 text-sm text-slate-600">
+                    {dashboard.lastModified || "Recently"}
+                  </div>
+                  <div className="col-span-2">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        dashboard.isPublic
+                          ? "bg-green-100 text-green-800"
+                          : "bg-slate-100 text-slate-800"
+                      }`}
+                    >
+                      {dashboard.isPublic ? "Shared" : "Private"}
+                    </span>
+                  </div>
+                  <div className="col-span-2 flex items-center space-x-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log(
+                          "View button clicked for:",
+                          dashboard.name,
+                          "- Default remains:",
+                          defaultDashboardId
+                        );
+                        setSelectedDashboard(dashboard.id);
+                        // DO NOT change defaultDashboardId - keep it fixed
+                      }}
+                      className={`p-1 transition-colors ${
+                        isDefaultDashboard(dashboard.id)
+                          ? "text-yellow-600 hover:text-yellow-700"
+                          : "text-slate-400 hover:text-blue-600"
+                      }`}
+                      title="View"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                    {user.role === "designer" && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Handle edit
+                          }}
+                          className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteDashboard(dashboard.id);
+                          }}
+                          className="p-1 text-slate-400 hover:text-red-600 transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
-                <div className="col-span-2 text-sm text-slate-600">
-                  {dashboard.charts.length} chart
-                  {dashboard.charts.length !== 1 ? "s" : ""}
-                </div>
-                <div className="col-span-2 text-sm text-slate-600">
-                  {dashboard.lastModified || "Recently"}
-                </div>
-                <div className="col-span-2">
-                  <span
-                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      dashboard.isPublic
-                        ? "bg-green-100 text-green-800"
-                        : "bg-slate-100 text-slate-800"
-                    }`}
-                  >
-                    {dashboard.isPublic ? "Shared" : "Private"}
-                  </span>
-                </div>
-                <div className="col-span-2 flex items-center space-x-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedDashboard(dashboard.id);
-                    }}
-                    className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
-                    title="View"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                  {user.role === "designer" && (
-                    <>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Handle edit
-                        }}
-                        className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                        title="Edit"
-                      >
-                        <Edit3 className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteDashboard(dashboard.id);
-                        }}
-                        className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </>
-                  )}
-                </div>
               </div>
-            </div>
-          ))}
+            ))}
+            {filteredDashboards().length === 0 && (
+              <div className="px-6 py-8 text-center text-slate-500">
+                <LayoutDashboard className="h-12 w-12 mx-auto mb-4 text-slate-400" />
+                <p className="text-lg">No dashboards found</p>
+                {user.role === "designer" && (
+                  <p className="text-sm mt-2">
+                    Create your first dashboard to get started!
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+    ),
+    [
+      filteredDashboards,
+      selectedConnectionId,
+      connections,
+      searchTerm,
+      user.role,
+      handleConnectionChange,
+      handleDeleteDashboard,
+      isDefaultDashboard,
+      defaultDashboardId, // Added for logging
+    ]
+  );
 
-      {showCreateModal && (
+  // Create Modal Component
+  const CreateModal = useMemo(
+    () =>
+      showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
             <div className="p-6">
@@ -646,8 +926,33 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
         </div>
-      )}
-    </div>
+      ),
+    [
+      showCreateModal,
+      selectedConnectionId,
+      connections,
+      newDashboardName,
+      newDashboardDescription,
+      handleConnectionChange,
+      handleCreateDashboard,
+    ]
+  );
+
+  // Debug info - remove this in production
+  console.log("Dashboard render:", {
+    selectedDashboard,
+    defaultDashboardId,
+    dashboardsCount: dashboards.length,
+    dashboardsWithCharts: dashboards.filter((d) => d.charts.length > 0).length,
+    selectedConnectionId,
+  });
+
+  // Main render - always render the same structure
+  return (
+    <>
+      {DashboardView || AllDashboardsView}
+      {CreateModal}
+    </>
   );
 };
 
