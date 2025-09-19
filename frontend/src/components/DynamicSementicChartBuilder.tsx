@@ -599,7 +599,7 @@ const DynamicSemanticChartBuilder: React.FC<
               ? {
                   ...groupByDimension,
                   key: groupByDimension.name,
-                  label: humourByDimension.name,
+                  label: groupByDimension.name,
                   type: "string",
                 }
               : null
