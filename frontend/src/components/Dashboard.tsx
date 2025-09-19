@@ -132,8 +132,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
   const [defaultDashboardId, setDefaultDashboardId] = useState<string | null>(
     null
-  ); // Track the default dashboard
-  const [userWantsAllDashboards, setUserWantsAllDashboards] = useState(false); // Track when user intentionally wants all dashboards
+  );
+  const [userWantsAllDashboards, setUserWantsAllDashboards] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTag, setFilterTag] = useState<string>("all");
@@ -145,17 +145,17 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const currentLayoutRef = useRef<any>(null);
 
-  // Auto-select dashboard with charts - simplified logic
+  // Modified auto-select logic based on user role
   useEffect(() => {
-    // Only auto-select if:
-    // 1. No dashboard is currently selected
-    // 2. User does NOT want to see all dashboards
-    // 3. We haven't set a default yet
-    // 4. There are dashboards available
+    if (user.role === "designer") {
+      return;
+    }
+
+    // For regular users: auto-select dashboard with charts
     if (
+      user.role === "user" &&
       !selectedDashboard &&
       !userWantsAllDashboards &&
-      !defaultDashboardId &&
       dashboards.length > 0
     ) {
       let defaultDashboard: DashboardData | null = null;
@@ -177,29 +177,30 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
       }
 
-      // If still no dashboard with charts, select the first dashboard
-      if (!defaultDashboard) {
-        defaultDashboard = dashboards[0];
-      }
-
+      // If found a dashboard with charts, select it
       if (defaultDashboard) {
         setSelectedDashboard(defaultDashboard.id);
-        setDefaultDashboardId(defaultDashboard.id); // Mark this as the default
-        setUserWantsAllDashboards(false); // Ensure flag is reset
+        setDefaultDashboardId(defaultDashboard.id);
+        setUserWantsAllDashboards(false);
+      } else {
+        // No dashboards with charts - show all dashboards view
+        setSelectedDashboard(null);
+        setDefaultDashboardId(null);
+        setUserWantsAllDashboards(false);
       }
     }
   }, [
     dashboards,
     selectedConnectionId,
     selectedDashboard,
-    defaultDashboardId,
     userWantsAllDashboards,
+    user.role,
   ]);
 
   // Reset userWantsAllDashboards flag after a delay when in all dashboards view
   useEffect(() => {
     if (!selectedDashboard && userWantsAllDashboards) {
-      // Reset the flag after 3 seconds so next fresh load can auto-select
+      // Reset the flag after 3 seconds so next fresh load can auto-select (for users only)
       const timer = setTimeout(() => {
         setUserWantsAllDashboards(false);
       }, 3000);
@@ -208,7 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [selectedDashboard, userWantsAllDashboards]);
 
-  // Reset default selection when connection changes
+  // Reset selection when connection changes
   useEffect(() => {
     if (selectedConnectionId !== null) {
       setDefaultDashboardId(null);
@@ -217,7 +218,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [selectedConnectionId]);
 
-  // All useEffects after all state and refs
   // Layout setup for selected dashboard
   const selectedDashboardData = useMemo(() => {
     return dashboards.find((d) => d.id === selectedDashboard);
@@ -287,24 +287,16 @@ const Dashboard: React.FC<DashboardProps> = ({
         setNewDashboardDescription("");
         setShowCreateModal(false);
 
-        // Auto-select the newly created dashboard as default ONLY if no default exists
-        if (!defaultDashboardId) {
-          const newDashboard = updatedDashboards.find(
-            (d) => d.id === dashboardId
-          );
-          if (newDashboard) {
-            setSelectedDashboard(newDashboard.id);
+        // Select the new dashboard for both roles, but set as default only for users if none exists
+        const newDashboard = updatedDashboards.find(
+          (d) => d.id === dashboardId
+        );
+        if (newDashboard) {
+          setSelectedDashboard(newDashboard.id);
+          if (user.role === "user" && !defaultDashboardId) {
             setDefaultDashboardId(newDashboard.id);
-            setUserWantsAllDashboards(false);
           }
-        } else {
-          // Just select the new dashboard without changing the default
-          const newDashboard = updatedDashboards.find(
-            (d) => d.id === dashboardId
-          );
-          if (newDashboard) {
-            setSelectedDashboard(newDashboard.id);
-          }
+          setUserWantsAllDashboards(false);
         }
       } catch (error) {
         console.error("Error creating dashboard:", error);
@@ -318,6 +310,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     setDashboards,
     onDashboardsUpdate,
     defaultDashboardId,
+    user.role,
   ]);
 
   const handleConnectionChange = useCallback(
@@ -325,7 +318,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       const connectionId = parseInt(event.target.value);
       setSelectedConnectionId(connectionId || null);
       setSelectedDashboard(null);
-      setDefaultDashboardId(null); // Reset default for new connection
+      setDefaultDashboardId(null);
       setUserWantsAllDashboards(false);
     },
     [setSelectedConnectionId]
@@ -333,15 +326,20 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleViewAllDashboards = useCallback(() => {
     setSelectedDashboard(null);
-    setUserWantsAllDashboards(true); // Set flag to prevent auto-selection
+    setUserWantsAllDashboards(true);
   }, []);
 
   const handleDashboardClick = useCallback(
     (dashboardId: string) => {
       setSelectedDashboard(dashboardId);
-      setUserWantsAllDashboards(false); // Reset flag when user selects a dashboard
+      setUserWantsAllDashboards(false);
+
+      // Only set as default for users
+      if (user.role === "user") {
+        setDefaultDashboardId(dashboardId);
+      }
     },
-    [defaultDashboardId]
+    [user.role]
   );
 
   const generateLayout = useCallback((charts: ChartConfig[]) => {
@@ -414,8 +412,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleDeleteDashboard = useCallback(
     async (dashboardId: string) => {
-      // If deleting the default dashboard, reset the default
-      if (defaultDashboardId === dashboardId) {
+      // If deleting the default dashboard, reset the default (only for users)
+      if (user.role === "user" && defaultDashboardId === dashboardId) {
         setDefaultDashboardId(null);
       }
 
@@ -427,14 +425,19 @@ const Dashboard: React.FC<DashboardProps> = ({
           onDashboardsUpdate(updatedDashboards);
           if (selectedDashboard === dashboardId) {
             setSelectedDashboard(null);
-            // Don't set userWantsAllDashboards here - let auto-selection handle it
           }
         }
       } catch (error) {
         console.error("Error deleting dashboard:", error);
       }
     },
-    [selectedDashboard, setDashboards, onDashboardsUpdate, defaultDashboardId]
+    [
+      selectedDashboard,
+      setDashboards,
+      onDashboardsUpdate,
+      defaultDashboardId,
+      user.role,
+    ]
   );
 
   const handleDeleteChart = useCallback(
@@ -465,8 +468,9 @@ const Dashboard: React.FC<DashboardProps> = ({
               setDashboards(updatedDashboards);
               onDashboardsUpdate(updatedDashboards);
 
-              // If this was the default dashboard and now has no charts, reset default
+              // If this was the default dashboard and now has no charts, reset default (only for users)
               if (
+                user.role === "user" &&
                 defaultDashboardId === dashboard.id &&
                 updatedCharts.length === 0
               ) {
@@ -485,6 +489,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       setDashboards,
       onDashboardsUpdate,
       defaultDashboardId,
+      user.role,
     ]
   );
 
@@ -506,12 +511,12 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [layouts.lg, selectedDashboardData, generateLayout]);
 
-  // Helper function to check if dashboard is default
+  // Helper function to check if dashboard is default (only for users)
   const isDefaultDashboard = useCallback(
     (dashboardId: string) => {
-      return defaultDashboardId === dashboardId;
+      return user.role === "user" && defaultDashboardId === dashboardId;
     },
-    [defaultDashboardId]
+    [defaultDashboardId, user.role]
   );
 
   // Render Dashboard View Component
@@ -824,6 +829,11 @@ const Dashboard: React.FC<DashboardProps> = ({
                     Create your first dashboard to get started!
                   </p>
                 )}
+                {user.role === "user" && (
+                  <p className="text-sm mt-2">
+                    No dashboards available. Contact your administrator.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -840,7 +850,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       handleDeleteDashboard,
       isDefaultDashboard,
       handleDashboardClick,
-      defaultDashboardId,
     ]
   );
 
@@ -933,7 +942,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       handleCreateDashboard,
     ]
   );
-
 
   // Main render - always render the same structure
   return (
