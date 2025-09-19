@@ -329,17 +329,16 @@ router.post("/query", async (req, res) => {
             dimColumns.push(col);
           }
 
-          if (
-            table !== baseFact.table_name &&
-            !seenJoins.has(`${table}.${d.column_name}`)
-          ) {
-            seenJoins.add(`${table}.${d.column_name}`);
-            fromClause += ` LEFT JOIN ${quote(table)} ON ${quote(
-              table
-            )}.${quote(d.dimension_column)} = ${quote(
-              baseFact.table_name
-            )}.${quote(d.fact_column)}`;
-          }
+if (
+  table !== baseFact.table_name &&
+  !seenJoins.has(`${table}.${d.column_name}`)
+) {
+  seenJoins.add(`${table}.${d.column_name}`);
+  fromClause += ` LEFT JOIN ${quote(table)} ON ${quote(table)}.${quote(
+    d.dimension_column
+  )}::text = ${quote(baseFact.table_name)}.${quote(d.fact_column)}::text`;
+}
+
         });
 
         const aggFunc = aggregation || facts[0].aggregate_function || "SUM";
