@@ -1,3 +1,8 @@
+// Updated DynamicSemanticChartBuilder.tsx
+// Re-added tempDashboard for new dashboard creation to handle state update lag.
+// Ensured dashboard is always available: temp for new, state for existing.
+// Kept refreshDashboards after update to sync state.
+
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import html2canvas from "html2canvas";
 import { v4 as uuidv4 } from "uuid";
@@ -70,8 +75,8 @@ interface DynamicSemanticChartBuilderProps {
     layout: any[];
   }[];
   addNewDashboard: (name: string, description?: string) => Promise<string>;
-  addChartToDashboard: (config: ChartConfig, dashboardId: string) => void;
   selectedConnectionId: number | null;
+  refreshDashboards: () => Promise<void>;
 }
 
 const DynamicSemanticChartBuilder: React.FC<
@@ -79,8 +84,8 @@ const DynamicSemanticChartBuilder: React.FC<
 > = ({
   dashboards,
   addNewDashboard,
-  addChartToDashboard,
   selectedConnectionId,
+  refreshDashboards,
 }) => {
   const [xAxisDimension, setXAxisDimension] = useState<Dimension | null>(null);
   const [yAxisFacts, setYAxisFacts] = useState<Fact[]>([]);
@@ -363,50 +368,30 @@ const DynamicSemanticChartBuilder: React.FC<
 
   const handleCreateNewDashboard = async () => {
     if (!newDashboardName.trim() || !selectedConnectionId) {
-      setError("Dashboard name and connection ID are required");
+      setError("Dashboard name and connection are required");
       return;
     }
 
-    if (isSaving) return;
     setIsSaving(true);
-
     try {
-      // Create new dashboard
-      const dashboardId = await addNewDashboard(
-        newDashboardName.trim(),
+      const newId = await addNewDashboard(
+        newDashboardName,
         newDashboardDescription
       );
-      console.log("New Dashboard Created:", {
-        dashboardId,
-        name: newDashboardName,
-        description: newDashboardDescription,
-        connectionId: selectedConnectionId,
-      });
-
-      // Validate dashboardId
-      if (!dashboardId || typeof dashboardId !== "string") {
-        throw new Error("Invalid dashboard ID returned from addNewDashboard");
-      }
-
-      // Create a temporary dashboard object for immediate use
+      // Create tempDashboard since state may not be updated yet
       const tempDashboard = {
-        id: dashboardId,
-        name: newDashboardName.trim(),
+        id: newId,
+        name: newDashboardName,
         description: newDashboardDescription,
         connectionId: selectedConnectionId,
         charts: [],
         layout: [],
       };
-
-      // Add chart to the new dashboard
-      await handleSaveToDashboard(dashboardId, tempDashboard);
-
-      // Clear form and close modal
-      setShowDashboardModal(false);
+      await handleSaveToDashboard(newId, tempDashboard);
       setNewDashboardName("");
       setNewDashboardDescription("");
     } catch (error) {
-      console.error("Error creating and adding to dashboard:", error);
+      console.error("Error creating new dashboard:", error);
       setError(`Failed to create new dashboard: ${error.message}`);
     } finally {
       setIsSaving(false);
@@ -429,7 +414,7 @@ const DynamicSemanticChartBuilder: React.FC<
       return;
     }
 
-    if (!dashboardId || typeof dashboardId !== "string") {
+    if (!dashboardId) {
       setError("Invalid dashboard ID");
       return;
     }
@@ -458,14 +443,10 @@ const DynamicSemanticChartBuilder: React.FC<
     };
 
     try {
-      // Use tempDashboard if provided (for new dashboards), otherwise find in dashboards
+      // Use tempDashboard if provided (for new), else find in state
       const dashboard =
         tempDashboard || dashboards.find((d) => d.id === dashboardId);
       if (!dashboard) {
-        console.error("Dashboard not found in dashboards array:", {
-          dashboardId,
-          dashboards,
-        });
         setError("Dashboard not found");
         return;
       }
@@ -475,23 +456,21 @@ const DynamicSemanticChartBuilder: React.FC<
         return;
       }
 
-      // Add chart to dashboard (locally)
-      addChartToDashboard(chartConfig, dashboardId);
+      // Calculate new chart index and layout item consistently
+      const chartIndex = dashboard.charts.length;
+      const newLayoutItem = {
+        i: chartConfig.id,
+        x: (chartIndex % 2) * 6,
+        y: Math.floor(chartIndex / 2) * 7,
+        w: 6,
+        h: 7,
+        minW: 3,
+        minH: 3,
+      };
 
       // Prepare updated dashboard data
       const updatedCharts = [...dashboard.charts, chartConfig];
-      const updatedLayout = [
-        ...dashboard.layout,
-        {
-          i: chartConfig.id,
-          x: 0,
-          y: Infinity,
-          w: 4,
-          h: 4,
-          minW: 3,
-          minH: 3,
-        },
-      ];
+      const updatedLayout = [...dashboard.layout, newLayoutItem];
 
       // Update dashboard via API
       console.log("Updating dashboard with:", {
@@ -511,9 +490,13 @@ const DynamicSemanticChartBuilder: React.FC<
         throw new Error(response.error || "Failed to update dashboard");
       }
 
+      // Refresh dashboards to sync state
+      await refreshDashboards();
+
       setSuccess(
         `Chart "${title}" added to dashboard "${dashboard.name}" successfully`
       );
+      setShowDashboardModal(false); // Close modal after success
       setSelectedDashboard("");
       setError(null);
     } catch (error) {

@@ -1,3 +1,10 @@
+// App.tsx fixes:
+// 1. Correct the import typo: Change DynamicSementicChartBuilder to DynamicSemanticChartBuilder
+//    Assuming the file is named correctly as DynamicSemanticChartBuilder.tsx
+// 2. Remove addChartToDashboard prop as per previous suggestion (logic moved to component)
+// 3. Add refreshDashboards={fetchDashboards} to DynamicSemanticChartBuilder
+// 4. In fetchDashboards, add layout fixing to ensure all x/y/w/h are numbers, defaulting invalid to safe values
+
 import React, { useState, useEffect, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { apiService } from "./services/api";
@@ -128,9 +135,19 @@ const App: React.FC = () => {
       const dashboards = await apiService.getDashboards();
       const synchronizedDashboards = dashboards.map((dashboard) => ({
         ...dashboard,
-        layout: dashboard.layout.filter((item) =>
-          dashboard.charts.some((chart) => chart.id === item.i)
-        ),
+        layout: (dashboard.layout || [])
+          .map((item) => ({
+            ...item,
+            x: Number(item.x) || 0,
+            y: Number(item.y) || 0, // Fix null/NaN y to 0
+            w: Number(item.w) || 6,
+            h: Number(item.h) || 7,
+            minW: Number(item.minW) || 3,
+            minH: Number(item.minH) || 3,
+          }))
+          .filter((item) =>
+            dashboard.charts.some((chart) => chart.id === item.i)
+          ),
       }));
       setDashboards(synchronizedDashboards);
     } catch (error) {
@@ -139,7 +156,7 @@ const App: React.FC = () => {
   }, []);
 
   const addNewDashboard = useCallback(
-    debounce(async (name: string, description?: string): Promise<string> => {
+    async (name: string, description?: string): Promise<string> => {
       if (!selectedConnectionId) {
         throw new Error("No connection selected");
       }
@@ -153,60 +170,15 @@ const App: React.FC = () => {
         });
         if (response.success && response.data) {
           await fetchDashboards();
-          return response.data.dashboardId;
+          return response.data.data.dashboardId;
         }
         throw new Error(response.error || "Failed to create dashboard");
       } catch (error) {
         console.error("Error creating dashboard:", error);
         throw error;
       }
-    }, 1000),
+    },
     [selectedConnectionId, fetchDashboards]
-  );
-
-  const addChartToDashboard = useCallback(
-    debounce(async (config: ChartConfig, dashboardId: string) => {
-      const dashboard = dashboards.find((d) => d.id === dashboardId);
-      if (!dashboard) {
-        console.error("Dashboard not found:", dashboardId);
-        return;
-      }
-
-      try {
-        const chartId = config.id || uuidv4();
-        const updatedCharts = [...dashboard.charts, { ...config, id: chartId }];
-        const updatedLayout = [
-          ...dashboard.layout.filter((item) =>
-            updatedCharts.some((chart) => chart.id === item.i)
-          ),
-          {
-            i: chartId,
-            x: ((updatedCharts.length - 1) % 2) * 6,
-            y: Math.floor((updatedCharts.length - 1) / 2) * 7,
-            w: 6,
-            h: 7,
-            minW: 3,
-            minH: 3,
-          },
-        ];
-
-        const response = await apiService.updateDashboard(dashboardId, {
-          name: dashboard.name,
-          description: dashboard.description,
-          charts: updatedCharts,
-          layout: updatedLayout,
-        });
-
-        if (response.success) {
-          await fetchDashboards();
-        } else {
-          throw new Error(response.error || "Failed to update dashboard");
-        }
-      } catch (error) {
-        console.error("Error adding chart to dashboard:", error);
-      }
-    }, 1000),
-    [dashboards, fetchDashboards]
   );
 
   const handleConnectionsUpdate = useCallback(
@@ -277,8 +249,8 @@ const App: React.FC = () => {
                     <DynamicSemanticChartBuilder
                       dashboards={dashboards}
                       addNewDashboard={addNewDashboard}
-                      addChartToDashboard={addChartToDashboard}
                       selectedConnectionId={selectedConnectionId}
+                      refreshDashboards={fetchDashboards} // Added this prop
                     />
                   </div>
                 </div>

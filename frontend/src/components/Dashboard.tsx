@@ -158,11 +158,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       !defaultDashboardId &&
       dashboards.length > 0
     ) {
-      console.log(
-        "Auto-selection conditions met. Dashboards available:",
-        dashboards.length
-      );
-
       let defaultDashboard: DashboardData | null = null;
 
       // First try to find a dashboard with charts that matches the selected connection
@@ -172,12 +167,6 @@ const Dashboard: React.FC<DashboardProps> = ({
             dashboard.connectionId === selectedConnectionId &&
             dashboard.charts.length > 0
         );
-        console.log(
-          "Looking for connection-specific dashboard:",
-          selectedConnectionId,
-          "Found:",
-          !!defaultDashboard
-        );
       }
 
       // If no connection selected or no dashboard with charts for that connection,
@@ -186,32 +175,17 @@ const Dashboard: React.FC<DashboardProps> = ({
         defaultDashboard = dashboards.find(
           (dashboard) => dashboard.charts.length > 0
         );
-        console.log(
-          "Looking for any dashboard with charts. Found:",
-          !!defaultDashboard
-        );
       }
 
       // If still no dashboard with charts, select the first dashboard
       if (!defaultDashboard) {
         defaultDashboard = dashboards[0];
-        console.log(
-          "No dashboard with charts found, selecting first dashboard:",
-          !!defaultDashboard
-        );
       }
 
       if (defaultDashboard) {
-        console.log(
-          "Auto-selecting dashboard:",
-          defaultDashboard.name,
-          defaultDashboard.id
-        );
         setSelectedDashboard(defaultDashboard.id);
         setDefaultDashboardId(defaultDashboard.id); // Mark this as the default
         setUserWantsAllDashboards(false); // Ensure flag is reset
-      } else {
-        console.log("No dashboard found for auto-selection");
       }
     }
   }, [
@@ -228,7 +202,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       // Reset the flag after 3 seconds so next fresh load can auto-select
       const timer = setTimeout(() => {
         setUserWantsAllDashboards(false);
-        console.log("Reset userWantsAllDashboards flag for next fresh load");
       }, 3000);
 
       return () => clearTimeout(timer);
@@ -359,19 +332,12 @@ const Dashboard: React.FC<DashboardProps> = ({
   );
 
   const handleViewAllDashboards = useCallback(() => {
-    console.log("User wants to see all dashboards");
     setSelectedDashboard(null);
     setUserWantsAllDashboards(true); // Set flag to prevent auto-selection
   }, []);
 
   const handleDashboardClick = useCallback(
     (dashboardId: string) => {
-      console.log(
-        "User clicked dashboard:",
-        dashboardId,
-        "- Default remains:",
-        defaultDashboardId
-      );
       setSelectedDashboard(dashboardId);
       setUserWantsAllDashboards(false); // Reset flag when user selects a dashboard
     },
@@ -727,7 +693,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 key={dashboard.id}
                 className={`px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer ${
                   isDefaultDashboard(dashboard.id)
-                    ? "hover:bg-yellow-50 border-l-4 border-yellow-400"
+                    ? "hover:bg-yellow-50 "
                     : dashboard.charts.length > 0
                     ? "hover:bg-blue-50"
                     : ""
@@ -739,7 +705,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <div
                       className={`p-2 rounded-lg ${
                         isDefaultDashboard(dashboard.id)
-                          ? "bg-yellow-100 border-2 border-yellow-300"
+                          ? "border-2 bg-blue-100"
                           : dashboard.charts.length > 0
                           ? "bg-blue-100"
                           : "bg-slate-100"
@@ -748,7 +714,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       <LayoutDashboard
                         className={`h-5 w-5 ${
                           isDefaultDashboard(dashboard.id)
-                            ? "text-yellow-600"
+                            ? "text-blue-600"
                             : dashboard.charts.length > 0
                             ? "text-blue-600"
                             : "text-slate-500"
@@ -756,12 +722,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                       />
                     </div>
                     <div className="flex items-center space-x-2">
-                      {isDefaultDashboard(dashboard.id) && (
-                        <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium border border-yellow-300">
-                          <Star className="h-3 w-3 fill-current" />
-                          <span>Default</span>
-                        </div>
-                      )}
                       <div>
                         <h3
                           className={`font-medium ${
@@ -778,6 +738,12 @@ const Dashboard: React.FC<DashboardProps> = ({
                           </p>
                         )}
                       </div>
+                      {isDefaultDashboard(dashboard.id) && (
+                        <div className="flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium border border-yellow-300">
+                          <Star className="h-3 w-3 fill-current" />
+                          <span>Default</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div
@@ -968,15 +934,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     ]
   );
 
-  // Debug info - remove this in production
-  console.log("Dashboard render:", {
-    selectedDashboard,
-    defaultDashboardId,
-    userWantsAllDashboards,
-    dashboardsCount: dashboards.length,
-    dashboardsWithCharts: dashboards.filter((d) => d.charts.length > 0).length,
-    selectedConnectionId,
-  });
 
   // Main render - always render the same structure
   return (
