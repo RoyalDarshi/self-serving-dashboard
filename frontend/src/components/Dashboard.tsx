@@ -133,6 +133,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [defaultDashboardId, setDefaultDashboardId] = useState<string | null>(
     null
   ); // Track the default dashboard
+  const [userWantsAllDashboards, setUserWantsAllDashboards] = useState(false); // Track when user intentionally wants all dashboards
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterTag, setFilterTag] = useState<string>("all");
@@ -148,9 +149,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   useEffect(() => {
     // Only auto-select if:
     // 1. No dashboard is currently selected
-    // 2. We haven't set a default yet
-    // 3. There are dashboards available
-    if (!selectedDashboard && !defaultDashboardId && dashboards.length > 0) {
+    // 2. User does NOT want to see all dashboards
+    // 3. We haven't set a default yet
+    // 4. There are dashboards available
+    if (
+      !selectedDashboard &&
+      !userWantsAllDashboards &&
+      !defaultDashboardId &&
+      dashboards.length > 0
+    ) {
       console.log(
         "Auto-selection conditions met. Dashboards available:",
         dashboards.length
@@ -202,17 +209,38 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
         setSelectedDashboard(defaultDashboard.id);
         setDefaultDashboardId(defaultDashboard.id); // Mark this as the default
+        setUserWantsAllDashboards(false); // Ensure flag is reset
       } else {
         console.log("No dashboard found for auto-selection");
       }
     }
-  }, [dashboards, selectedConnectionId, selectedDashboard, defaultDashboardId]);
+  }, [
+    dashboards,
+    selectedConnectionId,
+    selectedDashboard,
+    defaultDashboardId,
+    userWantsAllDashboards,
+  ]);
+
+  // Reset userWantsAllDashboards flag after a delay when in all dashboards view
+  useEffect(() => {
+    if (!selectedDashboard && userWantsAllDashboards) {
+      // Reset the flag after 3 seconds so next fresh load can auto-select
+      const timer = setTimeout(() => {
+        setUserWantsAllDashboards(false);
+        console.log("Reset userWantsAllDashboards flag for next fresh load");
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [selectedDashboard, userWantsAllDashboards]);
 
   // Reset default selection when connection changes
   useEffect(() => {
     if (selectedConnectionId !== null) {
       setDefaultDashboardId(null);
       setSelectedDashboard(null);
+      setUserWantsAllDashboards(false);
     }
   }, [selectedConnectionId]);
 
@@ -294,6 +322,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           if (newDashboard) {
             setSelectedDashboard(newDashboard.id);
             setDefaultDashboardId(newDashboard.id);
+            setUserWantsAllDashboards(false);
           }
         } else {
           // Just select the new dashboard without changing the default
@@ -324,6 +353,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       setSelectedConnectionId(connectionId || null);
       setSelectedDashboard(null);
       setDefaultDashboardId(null); // Reset default for new connection
+      setUserWantsAllDashboards(false);
     },
     [setSelectedConnectionId]
   );
@@ -331,8 +361,22 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleViewAllDashboards = useCallback(() => {
     console.log("User wants to see all dashboards");
     setSelectedDashboard(null);
-    // Keep the defaultDashboardId so we know which one was auto-selected
+    setUserWantsAllDashboards(true); // Set flag to prevent auto-selection
   }, []);
+
+  const handleDashboardClick = useCallback(
+    (dashboardId: string) => {
+      console.log(
+        "User clicked dashboard:",
+        dashboardId,
+        "- Default remains:",
+        defaultDashboardId
+      );
+      setSelectedDashboard(dashboardId);
+      setUserWantsAllDashboards(false); // Reset flag when user selects a dashboard
+    },
+    [defaultDashboardId]
+  );
 
   const generateLayout = useCallback((charts: ChartConfig[]) => {
     return charts.map((chart, index) => ({
@@ -417,6 +461,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           onDashboardsUpdate(updatedDashboards);
           if (selectedDashboard === dashboardId) {
             setSelectedDashboard(null);
+            // Don't set userWantsAllDashboards here - let auto-selection handle it
           }
         }
       } catch (error) {
@@ -687,16 +732,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     ? "hover:bg-blue-50"
                     : ""
                 }`}
-                onClick={() => {
-                  console.log(
-                    "User clicked dashboard:",
-                    dashboard.name,
-                    "- Default remains:",
-                    defaultDashboardId
-                  );
-                  setSelectedDashboard(dashboard.id);
-                  // DO NOT change defaultDashboardId - keep it fixed
-                }}
+                onClick={() => handleDashboardClick(dashboard.id)}
               >
                 <div className="grid grid-cols-12 gap-4 items-center">
                   <div className="col-span-4 flex items-center space-x-3">
@@ -774,14 +810,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        console.log(
-                          "View button clicked for:",
-                          dashboard.name,
-                          "- Default remains:",
-                          defaultDashboardId
-                        );
-                        setSelectedDashboard(dashboard.id);
-                        // DO NOT change defaultDashboardId - keep it fixed
+                        handleDashboardClick(dashboard.id);
                       }}
                       className={`p-1 transition-colors ${
                         isDefaultDashboard(dashboard.id)
@@ -844,7 +873,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       handleConnectionChange,
       handleDeleteDashboard,
       isDefaultDashboard,
-      defaultDashboardId, // Added for logging
+      handleDashboardClick,
+      defaultDashboardId,
     ]
   );
 
@@ -942,6 +972,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   console.log("Dashboard render:", {
     selectedDashboard,
     defaultDashboardId,
+    userWantsAllDashboards,
     dashboardsCount: dashboards.length,
     dashboardsWithCharts: dashboards.filter((d) => d.charts.length > 0).length,
     selectedConnectionId,
