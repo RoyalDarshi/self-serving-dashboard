@@ -144,16 +144,19 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [layouts, setLayouts] = useState<any>({});
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const currentLayoutRef = useRef<any>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true); // Track initial load
 
-  // Modified auto-select logic based on user role
+  // Modified auto-select logic based on user role - only on initial load
   useEffect(() => {
     if (user.role === "designer") {
+      setIsInitialLoad(false);
       return;
     }
 
-    // For regular users: auto-select dashboard with charts
+    // For regular users: auto-select dashboard with charts ONLY on initial load
     if (
       user.role === "user" &&
+      isInitialLoad &&
       !selectedDashboard &&
       !userWantsAllDashboards &&
       dashboards.length > 0
@@ -177,7 +180,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
       }
 
-      // If found a dashboard with charts, select it
+      // If found a dashboard with charts, select it and set as default
       if (defaultDashboard) {
         setSelectedDashboard(defaultDashboard.id);
         setDefaultDashboardId(defaultDashboard.id);
@@ -188,6 +191,11 @@ const Dashboard: React.FC<DashboardProps> = ({
         setDefaultDashboardId(null);
         setUserWantsAllDashboards(false);
       }
+
+      setIsInitialLoad(false); // Mark initial load as complete
+    } else if (isInitialLoad) {
+      // If we've completed initial load, mark it as done
+      setIsInitialLoad(false);
     }
   }, [
     dashboards,
@@ -195,19 +203,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     selectedDashboard,
     userWantsAllDashboards,
     user.role,
+    isInitialLoad,
   ]);
 
-  // Reset userWantsAllDashboards flag after a delay when in all dashboards view
-  useEffect(() => {
-    if (!selectedDashboard && userWantsAllDashboards) {
-      // Reset the flag after 3 seconds so next fresh load can auto-select (for users only)
-      const timer = setTimeout(() => {
-        setUserWantsAllDashboards(false);
-      }, 3000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [selectedDashboard, userWantsAllDashboards]);
+  // REMOVED: The timer effect that was causing the auto-selection after 3 seconds
 
   // Reset selection when connection changes
   useEffect(() => {
@@ -215,6 +214,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       setDefaultDashboardId(null);
       setSelectedDashboard(null);
       setUserWantsAllDashboards(false);
+      setIsInitialLoad(true); // Reset initial load when connection changes
     }
   }, [selectedConnectionId]);
 
@@ -293,6 +293,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         );
         if (newDashboard) {
           setSelectedDashboard(newDashboard.id);
+          // Only set as default if no default exists yet
           if (user.role === "user" && !defaultDashboardId) {
             setDefaultDashboardId(newDashboard.id);
           }
@@ -327,20 +328,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleViewAllDashboards = useCallback(() => {
     setSelectedDashboard(null);
     setUserWantsAllDashboards(true);
+    // Don't reset isInitialLoad here - user explicitly wants all dashboards
   }, []);
 
-  const handleDashboardClick = useCallback(
-    (dashboardId: string) => {
-      setSelectedDashboard(dashboardId);
-      setUserWantsAllDashboards(false);
-
-      // Only set as default for users
-      if (user.role === "user") {
-        setDefaultDashboardId(dashboardId);
-      }
-    },
-    [user.role]
-  );
+  // FIXED: Only select dashboard, don't change default when manually clicking
+  const handleDashboardClick = useCallback((dashboardId: string) => {
+    setSelectedDashboard(dashboardId);
+    setUserWantsAllDashboards(false);
+    // Don't set as default here - only auto-selection sets default
+  }, []);
 
   const generateLayout = useCallback((charts: ChartConfig[]) => {
     return charts.map((chart, index) => ({
@@ -425,6 +421,8 @@ const Dashboard: React.FC<DashboardProps> = ({
           onDashboardsUpdate(updatedDashboards);
           if (selectedDashboard === dashboardId) {
             setSelectedDashboard(null);
+            // Set userWantsAllDashboards to true so it doesn't auto-select after delete
+            setUserWantsAllDashboards(true);
           }
         }
       } catch (error) {
@@ -475,6 +473,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 updatedCharts.length === 0
               ) {
                 setDefaultDashboardId(null);
+                setUserWantsAllDashboards(true); // Show all dashboards view
               }
             }
           }
@@ -518,6 +517,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     },
     [defaultDashboardId, user.role]
   );
+
+  // ... (keep DashboardView, AllDashboardsView, and CreateModal exactly the same as in the previous version)
 
   // Render Dashboard View Component
   const DashboardView = useMemo(() => {
