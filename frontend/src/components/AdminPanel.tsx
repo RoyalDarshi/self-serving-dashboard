@@ -166,35 +166,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
         .getDimensions(selectedConnectionId)
         .catch((err) => ({ error: err.message })),
       apiService
-        .getFactDimensions(selectedConnectionId)
-        .catch((err) => ({ error: err.message })),
-      apiService
         .getKpis(selectedConnectionId)
         .catch((err) => ({ error: err.message })),
     ])
-      .then(
-        ([schemasRes, factsRes, dimensionsRes, factDimensionsRes, kpisRes]) => {
-          if (schemasRes.error)
-            return setError(`Failed to fetch schemas: ${schemasRes.error}`);
-          if (factsRes.error)
-            return setError(`Failed to fetch facts: ${factsRes.error}`);
-          if (dimensionsRes.error)
-            return setError(
-              `Failed to fetch dimensions: ${dimensionsRes.error}`
-            );
-          if (factDimensionsRes.error)
-            return setError(
-              `Failed to fetch fact dimensions: ${factDimensionsRes.error}`
-            );
-          if (kpisRes.error)
-            return setError(`Failed to fetch KPIs: ${kpisRes.error}`);
-          setSchemas(schemasRes);
-          setFacts(factsRes);
-          setDimensions(dimensionsRes);
-          setFactDimensions(factDimensionsRes);
-          setKpis(kpisRes);
-        }
-      )
+      .then(([schemasRes, factsRes, dimensionsRes, kpisRes]) => {
+        if (schemasRes.error)
+          return setError(`Failed to fetch schemas: ${schemasRes.error}`);
+        if (factsRes.error)
+          return setError(`Failed to fetch facts: ${factsRes.error}`);
+        if (dimensionsRes.error)
+          return setError(`Failed to fetch dimensions: ${dimensionsRes.error}`);
+        if (kpisRes.error)
+          return setError(`Failed to fetch KPIs: ${kpisRes.error}`);
+        setSchemas(schemasRes);
+        setFacts(factsRes);
+        setDimensions(dimensionsRes);
+        setKpis(kpisRes);
+      })
       .catch((err) => setError(`Failed to fetch data: ${err.message}`));
   }, [token, selectedConnectionId]);
 

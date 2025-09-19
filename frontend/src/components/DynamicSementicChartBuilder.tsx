@@ -8,7 +8,6 @@ import SqlQueryDisplay from "./SqlQueryDisplay";
 import ChartControls from "./ChartControls";
 import ChartDisplay from "./ChartDisplay";
 import { Download, Plus } from "lucide-react";
-import { debounce } from "lodash";
 
 interface Fact {
   id: number;
@@ -107,6 +106,14 @@ const DynamicSemanticChartBuilder: React.FC<
   const [newDashboardName, setNewDashboardName] = useState("");
   const [newDashboardDescription, setNewDashboardDescription] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Auto-dismiss success message after 5 seconds
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => setSuccess(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
 
   // Validate and map fact's aggregate_function to AggregationType
   const getValidAggregationType = (
@@ -354,37 +361,83 @@ const DynamicSemanticChartBuilder: React.FC<
     setShowDashboardModal(true);
   };
 
-  const handleCreateNewDashboard = debounce(async () => {
-    if (newDashboardName.trim() && selectedConnectionId) {
-      if (isSaving) return;
-      setIsSaving(true);
-      try {
-        const dashboardId = await addNewDashboard(
-          newDashboardName.trim(),
-          newDashboardDescription
-        );
-        await handleSaveToDashboard(dashboardId);
-      } catch (error) {
-        console.error("Error creating and adding to dashboard:", error);
-        setError("Failed to create new dashboard: " + error.message);
-      } finally {
-        setIsSaving(false);
-      }
-    } else {
+  const handleCreateNewDashboard = async () => {
+    if (!newDashboardName.trim() || !selectedConnectionId) {
       setError("Dashboard name and connection ID are required");
-    }
-  }, 1000);
-
-  const handleSaveToDashboard = debounce(async (dashboardId: string) => {
-    if (!xAxisDimension || yAxisFacts.length === 0) {
-      setError("Incomplete chart configuration");
       return;
     }
 
     if (isSaving) return;
     setIsSaving(true);
 
-    // Generate dynamic chart title based on facts, dimension, and groupBy
+    try {
+      // Create new dashboard
+      const dashboardId = await addNewDashboard(
+        newDashboardName.trim(),
+        newDashboardDescription
+      );
+      console.log("New Dashboard Created:", {
+        dashboardId,
+        name: newDashboardName,
+        description: newDashboardDescription,
+        connectionId: selectedConnectionId,
+      });
+
+      // Validate dashboardId
+      if (!dashboardId || typeof dashboardId !== "string") {
+        throw new Error("Invalid dashboard ID returned from addNewDashboard");
+      }
+
+      // Create a temporary dashboard object for immediate use
+      const tempDashboard = {
+        id: dashboardId,
+        name: newDashboardName.trim(),
+        description: newDashboardDescription,
+        connectionId: selectedConnectionId,
+        charts: [],
+        layout: [],
+      };
+
+      // Add chart to the new dashboard
+      await handleSaveToDashboard(dashboardId, tempDashboard);
+
+      // Clear form and close modal
+      setShowDashboardModal(false);
+      setNewDashboardName("");
+      setNewDashboardDescription("");
+    } catch (error) {
+      console.error("Error creating and adding to dashboard:", error);
+      setError(`Failed to create new dashboard: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveToDashboard = async (
+    dashboardId: string,
+    tempDashboard?: {
+      id: string;
+      name: string;
+      description?: string;
+      connectionId: number;
+      charts: ChartConfig[];
+      layout: any[];
+    }
+  ) => {
+    if (!xAxisDimension || yAxisFacts.length === 0) {
+      setError("Incomplete chart configuration");
+      return;
+    }
+
+    if (!dashboardId || typeof dashboardId !== "string") {
+      setError("Invalid dashboard ID");
+      return;
+    }
+
+    if (isSaving) return;
+    setIsSaving(true);
+
+    // Generate dynamic chart title
     const factNames = yAxisFacts.map((fact) => fact.name).join(" and ");
     const xAxisName = xAxisDimension.name;
     const groupByName = groupByDimension
@@ -405,8 +458,14 @@ const DynamicSemanticChartBuilder: React.FC<
     };
 
     try {
-      const dashboard = dashboards.find((d) => d.id === dashboardId);
+      // Use tempDashboard if provided (for new dashboards), otherwise find in dashboards
+      const dashboard =
+        tempDashboard || dashboards.find((d) => d.id === dashboardId);
       if (!dashboard) {
+        console.error("Dashboard not found in dashboards array:", {
+          dashboardId,
+          dashboards,
+        });
         setError("Dashboard not found");
         return;
       }
@@ -416,8 +475,10 @@ const DynamicSemanticChartBuilder: React.FC<
         return;
       }
 
+      // Add chart to dashboard (locally)
       addChartToDashboard(chartConfig, dashboardId);
 
+      // Prepare updated dashboard data
       const updatedCharts = [...dashboard.charts, chartConfig];
       const updatedLayout = [
         ...dashboard.layout,
@@ -432,6 +493,13 @@ const DynamicSemanticChartBuilder: React.FC<
         },
       ];
 
+      // Update dashboard via API
+      console.log("Updating dashboard with:", {
+        dashboardId,
+        name: dashboard.name,
+        charts: updatedCharts,
+        layout: updatedLayout,
+      });
       const response = await apiService.updateDashboard(dashboardId, {
         name: dashboard.name,
         description: dashboard.description,
@@ -443,19 +511,18 @@ const DynamicSemanticChartBuilder: React.FC<
         throw new Error(response.error || "Failed to update dashboard");
       }
 
-      setSuccess("Chart added to dashboard successfully");
-      setShowDashboardModal(false);
+      setSuccess(
+        `Chart "${title}" added to dashboard "${dashboard.name}" successfully`
+      );
       setSelectedDashboard("");
-      setNewDashboardName("");
-      setNewDashboardDescription("");
       setError(null);
     } catch (error) {
       console.error("Error saving chart to dashboard:", error);
-      setError("Failed to save chart to dashboard: " + error.message);
+      setError(`Failed to save chart to dashboard: ${error.message}`);
     } finally {
       setIsSaving(false);
     }
-  }, 1000);
+  };
 
   const availableDashboards = dashboards.filter(
     (d) => d.connectionId === selectedConnectionId
@@ -499,7 +566,17 @@ const DynamicSemanticChartBuilder: React.FC<
       />
 
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-      {success && <p className="text-green-500 text-sm mb-4">{success}</p>}
+      {success && (
+        <p className="text-green-500 text-sm mb-4 flex items-center">
+          {success}
+          <button
+            onClick={() => setSuccess(null)}
+            className="ml-2 text-green-700 hover:text-green-900"
+          >
+            ✕
+          </button>
+        </p>
+      )}
 
       {activeView === "graph" && (
         <ChartDisplay
@@ -522,7 +599,7 @@ const DynamicSemanticChartBuilder: React.FC<
               ? {
                   ...groupByDimension,
                   key: groupByDimension.name,
-                  label: groupByDimension.name,
+                  label: humourByDimension.name,
                   type: "string",
                 }
               : null
@@ -646,7 +723,7 @@ const DynamicSemanticChartBuilder: React.FC<
                   disabled={!newDashboardName.trim() || isSaving}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  Create New
+                  Create and Add
                 </button>
               </div>
             </div>
