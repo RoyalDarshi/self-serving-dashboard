@@ -5,7 +5,7 @@ import { apiService } from "./services/api";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import UserManagement from "./components/UserManagement";
-import AdminPanel from "./components/AdminPanel";
+import ConnectionManager from "./components/ConnectionManager";
 import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
 import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
@@ -226,7 +226,9 @@ const App: React.FC = () => {
               <UserManagement />
             )}
             {activeTab === "admin-panel" && user.role === "admin" && (
-              <AdminPanel onConnectionsUpdate={handleConnectionsUpdate} />
+              <ConnectionManager
+                onConnectionsUpdate={handleConnectionsUpdate}
+              />
             )}
             {activeTab === "connection-designations" &&
               user.role === "admin" && (

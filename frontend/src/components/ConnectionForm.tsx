@@ -372,8 +372,6 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
       return;
     }
     try {
-      setLoading(true);
-      setLoadingText("Creating connection...");
       const body = {
         connection_name: formData.connectionName,
         type: formData.selectedDB,
@@ -384,7 +382,6 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
         password: formData.password,
       };
       const res = await apiService.createConnection(body);
-      setLoading(false);
       if (res.success) {
         const newConn: Connection = {
           id: res.data.id!,
@@ -409,7 +406,6 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
         onError(res.error || "Failed to create connection");
       }
     } catch (err) {
-      setLoading(false);
       toast.error(`Failed to create connection: ${(err as Error).message}`);
       onError(`Failed to create connection: ${(err as Error).message}`);
     }

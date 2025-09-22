@@ -29,11 +29,11 @@ interface Connection {
   created_at: string;
 }
 
-interface AdminPanelProps {
+interface ConnectionManagerProps {
   onConnectionsUpdate: (connections: Connection[]) => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
+const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpdate }) => {
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [connections, setConnections] = useState<Connection[]>([]);
   const [error, setError] = useState("");
@@ -107,27 +107,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">
-                    Admin Panel
+                    Connection Manager
                   </h1>
                   <p className="text-sm text-gray-600">
                     Database Connection Management
                   </p>
                 </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span className="text-green-700 text-sm font-medium">
-                    {connections.length} Active
-                  </span>
-                </div>
-                <button
-                  onClick={handleRefresh}
-                  className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>Refresh</span>
-                </button>
               </div>
             </div>
           </div>
@@ -262,4 +247,4 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
   );
 };
 
-export default AdminPanel;
+export default ConnectionManager;
