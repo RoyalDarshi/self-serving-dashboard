@@ -166,9 +166,20 @@ router.post("/query", async (req, res) => {
             return res.status(400).json({ error: "No valid dimensions found" });
           }
 
-          const seenJoins = new Set();
-          const dimColumns = [];
+          // FIXED: Group dimensions by table and join each table only once
+          const tableToDimensions = {};
+          dimensions.forEach((d) => {
+            const table = d.join_table || d.table_name;
+            if (!tableToDimensions[table]) {
+              tableToDimensions[table] = [];
+            }
+            tableToDimensions[table].push(d);
+          });
 
+          const dimColumns = [];
+          const seenJoins = new Set();
+
+          // Add dimension columns to SELECT clause
           dimensions.forEach((d) => {
             const table = d.join_table || d.table_name;
             const col = `${quote(table)}.${quote(d.column_name)} AS ${quote(
@@ -177,22 +188,31 @@ router.post("/query", async (req, res) => {
             if (!dimColumns.includes(col)) {
               dimColumns.push(col);
             }
+          });
 
-            if (
-              table !== baseFact.table_name &&
-              !seenJoins.has(`${table}.${d.column_name}`)
-            ) {
-              seenJoins.add(`${table}.${d.column_name}`);
-              fromClause += ` LEFT JOIN ${quote(table)} ON ${quote(
-                table
-              )}.${quote(d.dimension_column)} = ${quote(
-                baseFact.table_name
-              )}.${quote(d.fact_column)}`;
+          // Build joins - only one join per table
+          Object.keys(tableToDimensions).forEach((table) => {
+            if (table === baseFact.table_name) return; // Skip if same as base table
+
+            const dimsForTable = tableToDimensions[table];
+            const firstDim = dimsForTable[0];
+
+            // Use the first dimension's join info for the table join
+            const joinCondition = `${quote(table)}.${quote(
+              firstDim.dimension_column
+            )}::text = ${quote(baseFact.table_name)}.${quote(
+              firstDim.fact_column
+            )}::text`;
+
+            if (!seenJoins.has(table)) {
+              seenJoins.add(table);
+              fromClause += ` LEFT JOIN ${quote(table)} ON ${joinCondition}`;
             }
           });
 
           if (dimColumns.length > 0) {
             dimSelects = dimColumns.join(", ");
+            // FIXED: Group by unique table.column combinations
             groupByClause = dimensions
               .map(
                 (d) =>
@@ -317,9 +337,21 @@ router.post("/query", async (req, res) => {
 
         const baseFact = facts[0];
         fromClause = `${quote(baseFact.table_name)}`;
-        const seenJoins = new Set();
-        const dimColumns = [];
 
+        // FIXED: Group dimensions by table and join each table only once
+        const tableToDimensions = {};
+        dimensions.forEach((d) => {
+          const table = d.join_table || d.table_name;
+          if (!tableToDimensions[table]) {
+            tableToDimensions[table] = [];
+          }
+          tableToDimensions[table].push(d);
+        });
+
+        const dimColumns = [];
+        const seenJoins = new Set();
+
+        // Add dimension columns to SELECT clause
         dimensions.forEach((d) => {
           const table = d.join_table || d.table_name;
           const col = `${quote(table)}.${quote(d.column_name)} AS ${quote(
@@ -328,17 +360,26 @@ router.post("/query", async (req, res) => {
           if (!dimColumns.includes(col)) {
             dimColumns.push(col);
           }
+        });
 
-if (
-  table !== baseFact.table_name &&
-  !seenJoins.has(`${table}.${d.column_name}`)
-) {
-  seenJoins.add(`${table}.${d.column_name}`);
-  fromClause += ` LEFT JOIN ${quote(table)} ON ${quote(table)}.${quote(
-    d.dimension_column
-  )}::text = ${quote(baseFact.table_name)}.${quote(d.fact_column)}::text`;
-}
+        // Build joins - only one join per table
+        Object.keys(tableToDimensions).forEach((table) => {
+          if (table === baseFact.table_name) return; // Skip if same as base table
 
+          const dimsForTable = tableToDimensions[table];
+          const firstDim = dimsForTable[0];
+
+          // Use the first dimension's join info for the table join
+          const joinCondition = `${quote(table)}.${quote(
+            firstDim.dimension_column
+          )}::text = ${quote(baseFact.table_name)}.${quote(
+            firstDim.fact_column
+          )}::text`;
+
+          if (!seenJoins.has(table)) {
+            seenJoins.add(table);
+            fromClause += ` LEFT JOIN ${quote(table)} ON ${joinCondition}`;
+          }
         });
 
         const aggFunc = aggregation || facts[0].aggregate_function || "SUM";
@@ -352,6 +393,7 @@ if (
 
         if (dimColumns.length > 0) {
           dimSelects = dimColumns.join(", ");
+          // FIXED: Group by unique table.column combinations
           groupByClause = dimensions
             .map(
               (d) =>
