@@ -41,6 +41,7 @@ import apiService from "../services/api";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
+// Types and Interfaces
 interface Fact {
   id: number;
   name: string;
@@ -99,6 +100,12 @@ interface DashboardData {
   lastModified?: string;
 }
 
+interface User {
+  role: string;
+  designation?: string | null;
+  id?: number;
+}
+
 interface DashboardProps {
   dashboards: DashboardData[];
   setDashboards: React.Dispatch<React.SetStateAction<DashboardData[]>>;
@@ -110,12 +117,7 @@ interface DashboardProps {
   user: User;
 }
 
-interface User {
-  role: string;
-  designation?: string | null;
-  id?: number;
-}
-
+// Main Component
 const Dashboard: React.FC<DashboardProps> = ({
   dashboards,
   setDashboards,
@@ -126,7 +128,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onDashboardsUpdate,
   user,
 }) => {
-  // All state declarations at the top
+  // State Management
   const [selectedDashboard, setSelectedDashboard] = useState<string | null>(
     null
   );
@@ -144,19 +146,16 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [layouts, setLayouts] = useState<any>({});
   const [isSavingLayout, setIsSavingLayout] = useState(false);
   const currentLayoutRef = useRef<any>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true); // Track initial load
 
-  // Modified auto-select logic based on user role - only on initial load
+  // Effects
   useEffect(() => {
     if (user.role === "designer") {
-      setIsInitialLoad(false);
       return;
     }
 
-    // For regular users: auto-select dashboard with charts ONLY on initial load
+    // For regular users: auto-select dashboard with charts
     if (
       user.role === "user" &&
-      isInitialLoad &&
       !selectedDashboard &&
       !userWantsAllDashboards &&
       dashboards.length > 0
@@ -191,11 +190,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         setDefaultDashboardId(null);
         setUserWantsAllDashboards(false);
       }
-
-      setIsInitialLoad(false); // Mark initial load as complete
-    } else if (isInitialLoad) {
-      // If we've completed initial load, mark it as done
-      setIsInitialLoad(false);
     }
   }, [
     dashboards,
@@ -203,10 +197,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     selectedDashboard,
     userWantsAllDashboards,
     user.role,
-    isInitialLoad,
   ]);
-
-  // REMOVED: The timer effect that was causing the auto-selection after 3 seconds
 
   // Reset selection when connection changes
   useEffect(() => {
@@ -214,7 +205,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       setDefaultDashboardId(null);
       setSelectedDashboard(null);
       setUserWantsAllDashboards(false);
-      setIsInitialLoad(true); // Reset initial load when connection changes
     }
   }, [selectedConnectionId]);
 
@@ -245,7 +235,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [selectedDashboardData]);
 
-  // All callbacks
+  // Callbacks and Handlers
   const getChartIcon = useCallback((chartType: string) => {
     switch (chartType) {
       case "bar":
@@ -328,10 +318,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleViewAllDashboards = useCallback(() => {
     setSelectedDashboard(null);
     setUserWantsAllDashboards(true);
-    // Don't reset isInitialLoad here - user explicitly wants all dashboards
   }, []);
 
-  // FIXED: Only select dashboard, don't change default when manually clicking
   const handleDashboardClick = useCallback((dashboardId: string) => {
     setSelectedDashboard(dashboardId);
     setUserWantsAllDashboards(false);
@@ -492,7 +480,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     ]
   );
 
-  // Calculate current layout for selected dashboard
+  // Memoized Values
   const currentLayout = useMemo(() => {
     if (!selectedDashboardData) return [];
 
@@ -510,7 +498,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [layouts.lg, selectedDashboardData, generateLayout]);
 
-  // Helper function to check if dashboard is default (only for users)
   const isDefaultDashboard = useCallback(
     (dashboardId: string) => {
       return user.role === "user" && defaultDashboardId === dashboardId;
@@ -518,9 +505,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     [defaultDashboardId, user.role]
   );
 
-  // ... (keep DashboardView, AllDashboardsView, and CreateModal exactly the same as in the previous version)
-
-  // Render Dashboard View Component
+  // Sub-components
   const DashboardView = useMemo(() => {
     if (!selectedDashboard || !selectedDashboardData) return null;
 
@@ -640,7 +625,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     isDefaultDashboard,
   ]);
 
-  // All Dashboards View Component
   const AllDashboardsView = useMemo(
     () => (
       <div className="p-4">
@@ -854,7 +838,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     ]
   );
 
-  // Create Modal Component
   const CreateModal = useMemo(
     () =>
       showCreateModal && (
@@ -944,7 +927,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     ]
   );
 
-  // Main render - always render the same structure
+  // Main Render
   return (
     <>
       {DashboardView || AllDashboardsView}
