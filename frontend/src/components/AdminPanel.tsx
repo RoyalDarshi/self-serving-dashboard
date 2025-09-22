@@ -1,6 +1,14 @@
-// AdminPanel.tsx
 import React, { useState, useEffect } from "react";
-import { Database, Plus } from "lucide-react";
+import {
+  Database,
+  Plus,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle,
+  Settings,
+  Server,
+  Activity,
+} from "lucide-react";
 import { apiService } from "../services/api";
 import ConnectionForm from "./ConnectionForm";
 import ConnectionsList from "./ConnectionsList";
@@ -72,10 +80,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Database className="w-12 h-12 mx-auto text-blue-500 animate-spin" />
-          <p className="mt-4 text-gray-600">Loading connections...</p>
+      <div className="min-h-screen bg-gray-50">
+        <div className="text-center py-20">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
+            <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Loading Admin Panel
+          </h3>
+          <p className="text-gray-600">Initializing database connections...</p>
         </div>
       </div>
     );
@@ -84,58 +97,63 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
-        <div className="container mx-auto p-4">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center space-x-2">
-                <Database className="w-8 h-8 text-blue-600" />
-                <span>Connections Management</span>
-              </h1>
-              <p className="text-gray-600 mt-1">
-                Manage database connections for the team
-              </p>
-            </div>
-            <div className="flex space-x-2">
-              <button
-                onClick={handleRefresh}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-              >
-                <span>Refresh</span>
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Stats Card */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between">
+        {/* Header */}
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Settings className="w-6 h-6 text-blue-600" />
+                </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-600">
-                    Total Connections
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">
-                    {connections.length}
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Admin Panel
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    Database Connection Management
                   </p>
                 </div>
-                <div classConnectionType="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Database className="w-6 h-6 text-blue-600" />
+              </div>
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="text-green-700 text-sm font-medium">
+                    {connections.length} Active
+                  </span>
                 </div>
+                <button
+                  onClick={handleRefresh}
+                  className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Refresh</span>
+                </button>
               </div>
             </div>
           </div>
+        </header>
 
-          {/* Connections Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-                <Plus className="w-5 h-5 text-blue-600" />
-                <span>Create New Connection</span>
-              </h2>
+        <div className="container mx-auto px-6 py-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* Create New Connection Card */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Plus className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    New Connection
+                  </h2>
+                  <p className="text-sm text-gray-600">
+                    Configure database connection
+                  </p>
+                </div>
+              </div>
+
               <ConnectionForm
                 onSuccess={(message) => {
                   setSuccess(message);
-                  fetchConnections(); // Refresh list after success
                 }}
                 onError={setError}
                 onCreate={(newConn) => {
@@ -153,14 +171,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
               />
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                Existing Connections
-              </h2>
+            {/* Existing Connections Card */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Database className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Connections
+                  </h2>
+                  <p className="text-sm text-gray-600">
+                    {connections.length} configured
+                  </p>
+                </div>
+              </div>
+
               <ConnectionsList
                 connections={connections}
                 selectedConnectionId={null}
-                setSelectedConnectionId={() => {}} // Disabled for admin
+                setSelectedConnectionId={() => {}}
                 onDelete={(id, name) =>
                   apiService.deleteConnection(id).then((response) => {
                     if (response.success) {
@@ -178,25 +208,55 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onConnectionsUpdate }) => {
               />
             </div>
           </div>
-
-          {/* Notifications */}
-          {(error || success) && (
-            <div className="fixed bottom-4 right-4 z-50 space-y-2">
-              {error && (
-                <div className="bg-red-500 text-white px-6 py-4 rounded-xl shadow-lg flex items-center space-x-3 animate-slide-up">
-                  <Database className="w-5 h-5" />
-                  <span>{error}</span>
-                </div>
-              )}
-              {success && (
-                <div className="bg-green-500 text-white px-6 py-4 rounded-xl shadow-lg flex items-center space-x-3 animate-slide-up">
-                  <Database className="w-5 h-5" />
-                  <span>{success}</span>
-                </div>
-              )}
-            </div>
-          )}
         </div>
+
+        {/* Toast Notifications */}
+        {(error || success) && (
+          <div className="fixed bottom-6 right-6 z-50 space-y-3">
+            {error && (
+              <div className="bg-white border border-red-200 text-gray-800 p-4 rounded-lg shadow-lg max-w-sm">
+                <div className="flex items-start space-x-3">
+                  <div className="p-1 bg-red-100 rounded">
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-red-700 text-sm">Error</h4>
+                    <p className="text-sm text-gray-600 mt-1">{error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {success && (
+              <div className="bg-white border border-green-200 text-gray-800 p-4 rounded-lg shadow-lg max-w-sm">
+                <div className="flex items-start space-x-3">
+                  <div className="p-1 bg-green-100 rounded">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-green-700 text-sm">
+                      Success
+                    </h4>
+                    <p className="text-sm text-gray-600 mt-1">{success}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <style jsx>{`
+          .animate-spin {
+            animation: spin 1s linear infinite;
+          }
+          @keyframes spin {
+            from {
+              transform: rotate(0deg);
+            }
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        `}</style>
       </div>
     </ErrorBoundary>
   );
