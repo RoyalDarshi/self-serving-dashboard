@@ -5,6 +5,7 @@ interface User {
   role: string;
   designation?: string | null;
   id?: number;
+  accessLevel?: string | null;
 }
 
 interface LoginProps {
@@ -29,6 +30,7 @@ const Login: React.FC<LoginProps> = ({ setUser }) => {
           role: response.data.user.role,
           designation: response.data.user.designation,
           id: response.data.user.id,
+          accessLevel: response.data.user.accessLevel,
         });
         setError(null);
         setTimeout(() => {

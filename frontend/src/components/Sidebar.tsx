@@ -12,7 +12,7 @@ import {
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  user: { role: string } | null;
+  user: { role: string; accessLevel: string } | null;
   onLogout: () => void;
 }
 
@@ -58,18 +58,20 @@ const Sidebar: React.FC<SidebarProps> = ({
         </>
       )}
       {user?.role === "designer" && (
-        <>
-          <button
-            onClick={() => setActiveTab("semantic-builder")}
-            className={`p-2 rounded-md ${
-              activeTab === "semantic-builder"
-                ? "bg-blue-600"
-                : "hover:bg-gray-700"
-            }`}
-            title="Semantic Builder"
-          >
-            <Database className="h-6 w-6" />
-          </button>
+        <button
+          onClick={() => setActiveTab("semantic-builder")}
+          className={`p-2 rounded-md ${
+            activeTab === "semantic-builder"
+              ? "bg-blue-600"
+              : "hover:bg-gray-700"
+          }`}
+          title="Semantic Builder"
+        >
+          <Database className="h-6 w-6" />
+        </button>
+      )}
+      {user?.role === "designer" ||
+        (user?.role === "user" && user?.accessLevel === "editor" && (
           <button
             onClick={() => setActiveTab("chart-builder")}
             className={`p-2 rounded-md ${
@@ -81,8 +83,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           >
             <BarChart3 className="h-6 w-6" />
           </button>
-        </>
-      )}
+        ))}
       {(user?.role === "designer" || user?.role === "user") && (
         <button
           onClick={() => setActiveTab("my-dashboards")}

@@ -53,7 +53,8 @@ router.post("/login", async (req, res) => {
     );
 
     // Case 1: User exists and is a local user (not LDAP)
-    if (localUser && localUser.is_ad_user === false) {
+    if (localUser && localUser.is_ad_user === 0) {
+      console.log("User is Local");
       const match = await bcrypt.compare(password, localUser.password);
       if (match) {
         const token = signJwtForUser(localUser);
@@ -69,6 +70,7 @@ router.post("/login", async (req, res) => {
       }
       // If password doesn't match, we'll fall through to the final error
     }
+    console.log("User is from AD");
 
     // Case 2: User is LDAP or does not exist locally. Attempt LDAP bind.
     let ldapClient;

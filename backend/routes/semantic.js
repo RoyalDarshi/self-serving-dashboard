@@ -371,20 +371,19 @@ router.get("/users/:id", requireAdminOrSelf, async (req, res) => {
 });
 
 router.put("/users/:id", requireAdminOrSelf, async (req, res) => {
-  const { username, password, role, designation, access_level } = req.body;
+  const { username, password, role, designation, accessLevel } = req.body;
   const updates = new Map();
 
   if (username) updates.set("username", username);
   if (password) updates.set("password", password);
   if (role) updates.set("role", role);
   if (designation !== undefined) updates.set("designation", designation);
-  // Add access_level to updates map
-  if (access_level !== undefined) updates.set("access_level", access_level);
+  if (accessLevel !== undefined) updates.set("access_level", accessLevel);
 
   if (updates.size === 0) {
     return res.status(400).json({
       error:
-        "At least one field (username, password, role, designation, access_level) must be provided",
+        "At least one field (username, password, role, designation, accessLevel) must be provided",
     });
   }
 
@@ -399,23 +398,28 @@ router.put("/users/:id", requireAdminOrSelf, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // --- Start: New Validation Logic for access_level on update ---
+    // --- Start: Corrected Logic ---
     const newRole = role || currentUser.role;
     if (newRole === "user") {
-      if (access_level && !VALID_ACCESS_LEVELS.includes(access_level)) {
+      // 1. Validate the incoming accessLevel if it exists
+      if (accessLevel && !VALID_ACCESS_LEVELS.includes(accessLevel)) {
         return res.status(400).json({
           error: `Invalid access level. Must be one of: ${VALID_ACCESS_LEVELS.join(
             ", "
           )}`,
         });
       }
+      // 2. **THE FIX**: If role is being changed TO 'user' and no accessLevel is provided, default it to 'viewer'.
+      if (updates.has("role") && accessLevel === undefined) {
+        updates.set("access_level", "viewer");
+      }
     } else {
-      // If role is changing to non-user, nullify access_level
+      // 3. If role is changing to a non-user role, always nullify the accessLevel
       if (updates.has("role")) {
         updates.set("access_level", null);
       }
     }
-    // --- End: New Validation Logic ---
+    // --- End: Corrected Logic ---
 
     if (currentUser.is_ad_user && password) {
       return res
@@ -452,11 +456,25 @@ router.put("/users/:id", requireAdminOrSelf, async (req, res) => {
 
     for (const [field, value] of updates) {
       updateFields.push(`${field} = ?`);
-      if (field === "password") {
+      if (field === "password" && value) {
+        // Also check if password is not an empty string
         values.push(await bcrypt.hash(value, SALT_ROUNDS));
       } else {
         values.push(value);
       }
+    }
+
+    // Do not update password if it's an empty string
+    const passwordIndex = updateFields.findIndex((f) =>
+      f.startsWith("password")
+    );
+    if (passwordIndex > -1 && !updates.get("password")) {
+      updateFields.splice(passwordIndex, 1);
+      values.splice(passwordIndex, 1);
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: "No valid fields to update." });
     }
 
     values.push(req.params.id);
@@ -466,13 +484,11 @@ router.put("/users/:id", requireAdminOrSelf, async (req, res) => {
       values
     );
 
-    // Updated SELECT to get new field
     const updatedUser = await db.get(
       "SELECT id, username, role, designation, access_level, created_at, is_ad_user FROM users WHERE id = ?",
       [req.params.id]
     );
 
-    // Map to a consistent key
     const formattedUser = {
       ...updatedUser,
       accessLevel: updatedUser.access_level,

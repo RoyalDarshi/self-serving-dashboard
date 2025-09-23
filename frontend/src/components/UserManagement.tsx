@@ -1,46 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { apiService } from "../services/api";
-
-// Types
-interface User {
-  id: number;
-  username: string;
-  role: "admin" | "user" | "designer";
-  designation: string | null;
-  created_at: string;
-  is_ad_user: boolean;
-}
-
-type Designation =
-  | ""
-  | "Business Analyst"
-  | "Data Scientist"
-  | "Operations Manager"
-  | "Finance Manager"
-  | "Consumer Insights Manager"
-  | "Store / Regional Manager"
-  | null;
-
-interface FormData {
-  id: number;
-  username: string;
-  password: string;
-  role: "admin" | "user" | "designer";
-  designation: Designation;
-}
+import {
+  apiService,
+  User,
+  Role,
+  Designation,
+  AccessLevel,
+} from "../services/api";
 
 // Constants
-const ROLES: ("admin" | "user" | "designer")[] = ["admin", "user", "designer"];
-const DESIGNATIONS: (
-  | ""
-  | "Business Analyst"
-  | "Data Scientist"
-  | "Operations Manager"
-  | "Finance Manager"
-  | "Consumer Insights Manager"
-  | "Store / Regional Manager"
-)[] = [
-  "",
+const ROLES: Role[] = ["admin", "user", "designer"];
+const ACCESS_LEVELS: AccessLevel[] = ["viewer", "editor"];
+const DESIGNATIONS: Designation[] = [
+  null,
   "Business Analyst",
   "Data Scientist",
   "Operations Manager",
@@ -48,6 +19,16 @@ const DESIGNATIONS: (
   "Consumer Insights Manager",
   "Store / Regional Manager",
 ];
+
+// Form data interface, separate from the main User type
+interface FormData {
+  id: number;
+  username: string;
+  password: string;
+  role: Role;
+  accessLevel: AccessLevel;
+  designation: Designation;
+}
 
 // Utility Functions
 const getRoleColor = (role: string): string => {
@@ -70,6 +51,164 @@ const formatDate = (dateString: string): string =>
     day: "numeric",
   });
 
+// ===================================================================
+// START: MOVED AND UPDATED UserForm COMPONENT
+// ===================================================================
+
+interface UserFormProps {
+  isEditing: boolean;
+  formData: FormData;
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  handleSubmit: (e: React.FormEvent) => void;
+  handleCancel: () => void;
+}
+
+const UserForm: React.FC<UserFormProps> = ({
+  isEditing,
+  formData,
+  handleInputChange,
+  handleSubmit,
+  handleCancel,
+}) => (
+  <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-lg bg-white">
+      <div className="flex items-center justify-between pb-4 border-b">
+        <h3 className="text-lg font-semibold text-gray-900">
+          {isEditing ? "Edit User" : "Create New User"}
+        </h3>
+        <button
+          onClick={handleCancel}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          aria-label="Close form"
+        >
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Username *
+            </label>
+            <input
+              type="text"
+              name="username"
+              value={formData.username}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+              required
+              disabled={isEditing}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Password *
+            </label>
+            <input
+              type="password"
+              name="password"
+              value={formData.password}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+              required={!isEditing}
+              placeholder={isEditing ? "Leave blank to keep current" : ""}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Role *
+            </label>
+            <select
+              name="role"
+              value={formData.role}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+            >
+              {ROLES.map((role) => (
+                <option key={role} value={role}>
+                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {formData.role === "user" && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Access Level
+              </label>
+              <select
+                name="accessLevel"
+                value={formData.accessLevel}
+                onChange={handleInputChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+              >
+                {ACCESS_LEVELS.map((level) => (
+                  <option key={level} value={level}>
+                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className={formData.role === "user" ? "" : "md:col-span-1"}>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Designation
+            </label>
+            <select
+              name="designation"
+              value={formData.designation || ""}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+            >
+              {DESIGNATIONS.map((designation) => (
+                <option key={designation || "none"} value={designation || ""}>
+                  {designation || "None"}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-8 flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors font-medium"
+          >
+            {isEditing ? "Update User" : "Create User"}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+);
+// ===================================================================
+// END: MOVED AND UPDATED UserForm COMPONENT
+// ===================================================================
+
 const UserManagement: React.FC = () => {
   // State
   const [users, setUsers] = useState<User[]>([]);
@@ -78,7 +217,8 @@ const UserManagement: React.FC = () => {
     username: "",
     password: "",
     role: "user",
-    designation: "",
+    accessLevel: "viewer", // Default access level
+    designation: null,
   });
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,20 +249,31 @@ const UserManagement: React.FC = () => {
     setError(null);
     setSuccess(null);
 
-    if (!formData.username || !formData.password || !formData.role) {
-      setError("Username, password, and role are required");
-      return;
+    // Construct the payload for both create and update
+    const payload: any = {
+      username: formData.username,
+      role: formData.role,
+      designation: formData.designation || null,
+    };
+
+    // Only add password if it's not empty
+    if (formData.password) {
+      payload.password = formData.password;
+    }
+
+    // Only add accessLevel if the role is 'user'
+    if (formData.role === "user") {
+      payload.accessLevel = formData.accessLevel;
     }
 
     try {
       if (isEditing) {
-        const response = await apiService.updateUser(formData.id, {
-          username: formData.username,
-          password: formData.password,
-          role: formData.role,
-          designation: formData.designation || null,
-        });
-
+        // Validation for editing
+        if (!formData.username || !formData.role) {
+          setError("Username and role are required");
+          return;
+        }
+        const response = await apiService.updateUser(formData.id, payload);
         if (response.success && response.data) {
           setUsers((prev) =>
             prev.map((user) => (user.id === formData.id ? response.data : user))
@@ -132,13 +283,12 @@ const UserManagement: React.FC = () => {
           setError(response.error || "Failed to update user");
         }
       } else {
-        const response = await apiService.createUser(
-          formData.username,
-          formData.password,
-          formData.role,
-          formData.designation || null
-        );
-
+        // Validation for creating
+        if (!formData.username || !formData.password || !formData.role) {
+          setError("Username, password, and role are required");
+          return;
+        }
+        const response = await apiService.createUser(payload);
         if (response.success && response.data) {
           setUsers((prev) => [...prev, response.data.user]);
           setSuccess("User created successfully");
@@ -207,9 +357,10 @@ const UserManagement: React.FC = () => {
     setFormData({
       id: user.id,
       username: user.username,
-      password: "",
+      password: "", // Clear password for editing
       role: user.role,
-      designation: user.designation || "",
+      accessLevel: user.accessLevel || "viewer", // Set accessLevel from user data
+      designation: user.designation || null,
     });
     setIsEditing(true);
     setShowForm(true);
@@ -221,7 +372,8 @@ const UserManagement: React.FC = () => {
       username: "",
       password: "",
       role: "user",
-      designation: "",
+      accessLevel: "viewer",
+      designation: null,
     });
     setIsEditing(false);
   };
@@ -245,124 +397,7 @@ const UserManagement: React.FC = () => {
         user.designation.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // Components
-  const UserForm: React.FC = () => (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-lg bg-white">
-        <div className="flex items-center justify-between pb-4 border-b">
-          <h3 className="text-lg font-semibold text-gray-900">
-            {isEditing ? "Edit User" : "Create New User"}
-          </h3>
-          <button
-            onClick={handleCancel}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            aria-label="Close form"
-          >
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="mt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Username *
-              </label>
-              <input
-                type="text"
-                name="username"
-                value={formData.username}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
-                required
-                disabled={isEditing}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Password *
-              </label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
-                required={!isEditing}
-                placeholder={isEditing ? "Leave blank to keep current" : ""}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Role *
-              </label>
-              <select
-                name="role"
-                value={formData.role}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
-              >
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {role.charAt(0).toUpperCase() + role.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Designation
-              </label>
-              <select
-                name="designation"
-                value={formData.designation || ""}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
-              >
-                {DESIGNATIONS.map((designation) => (
-                  <option key={designation || "none"} value={designation || ""}>
-                    {designation || "None"}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-8 flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors font-medium"
-            >
-              {isEditing ? "Update User" : "Create User"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-
+  // Sub-Components (Not defined inside render)
   const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
     <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg">
       <div className="flex">
@@ -409,30 +444,58 @@ const UserManagement: React.FC = () => {
     </div>
   );
 
+  const colorClasses: Record<string, any> = {
+    blue: {
+      bg: "bg-blue-500",
+      text: "text-blue-600",
+      border: "border-blue-200",
+      from: "from-blue-50",
+      to: "to-blue-100",
+    },
+    purple: {
+      bg: "bg-purple-500",
+      text: "text-purple-600",
+      border: "border-purple-200",
+      from: "from-purple-50",
+      to: "to-purple-100",
+    },
+    green: {
+      bg: "bg-green-500",
+      text: "text-green-600",
+      border: "border-green-200",
+      from: "from-green-50",
+      to: "to-green-100",
+    },
+  };
+
   const StatsCard: React.FC<{
     title: string;
     value: number | string;
-    color: string;
+    color: "blue" | "purple" | "green";
     icon: React.ReactNode;
-  }> = ({ title, value, color, icon }) => (
-    <div
-      className={`bg-gradient-to-r from-${color}-50 to-${color}-100 rounded-lg p-4 border border-${color}-200`}
-    >
-      <div className="flex items-center">
-        <div className="flex-shrink-0">
-          <div
-            className={`w-8 h-8 bg-${color}-500 rounded-lg flex items-center justify-center`}
-          >
-            {icon}
+  }> = ({ title, value, color, icon }) => {
+    const c = colorClasses[color];
+
+    return (
+      <div
+        className={`bg-gradient-to-r ${c.from} ${c.to} rounded-lg p-4 border ${c.border}`}
+      >
+        <div className="flex items-center">
+          <div className="flex-shrink-0">
+            <div
+              className={`w-8 h-8 ${c.bg} rounded-lg flex items-center justify-center`}
+            >
+              {icon}
+            </div>
+          </div>
+          <div className="ml-3">
+            <p className={`text-sm font-medium ${c.text}`}>{title}</p>
+            <p className="text-2xl font-semibold">{value}</p>
           </div>
         </div>
-        <div className="ml-3">
-          <p className={`text-sm font-medium text-${color}-600`}>{title}</p>
-          <p className={`text-2xl font-semibold text-${color}-900`}>{value}</p>
-        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -559,7 +622,15 @@ const UserManagement: React.FC = () => {
         </div>
 
         {/* Form Modal */}
-        {showForm && <UserForm />}
+        {showForm && (
+          <UserForm
+            isEditing={isEditing}
+            formData={formData}
+            handleInputChange={handleInputChange}
+            handleSubmit={handleSubmit}
+            handleCancel={handleCancel}
+          />
+        )}
 
         {/* Messages */}
         {error && <ErrorMessage message={error} />}
@@ -606,6 +677,9 @@ const UserManagement: React.FC = () => {
                     Role
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Access Level
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     Designation
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -620,34 +694,7 @@ const UserManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredUsers.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-6 py-8 text-center text-gray-500"
-                    >
-                      <div className="flex flex-col items-center">
-                        <svg
-                          className="w-12 h-12 text-gray-300 mb-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                          />
-                        </svg>
-                        <p className="text-lg font-medium">No users found</p>
-                        <p className="text-sm">
-                          Get started by creating your first user.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
+                {filteredUsers.length > 0 ? (
                   filteredUsers.map((user) => (
                     <tr
                       key={user.id}
@@ -681,6 +728,22 @@ const UserManagement: React.FC = () => {
                           {user.role.charAt(0).toUpperCase() +
                             user.role.slice(1)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {user.role === "user" && user.accessLevel ? (
+                          <span
+                            className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                              user.accessLevel === "editor"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {user.accessLevel.charAt(0).toUpperCase() +
+                              user.accessLevel.slice(1)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 italic">N/A</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {user.designation || (
@@ -758,6 +821,15 @@ const UserManagement: React.FC = () => {
                       </td>
                     </tr>
                   ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-6 py-8 text-center text-gray-500"
+                    >
+                      No users found that match your search.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>

@@ -1,6 +1,5 @@
 // App.tsx
 import React, { useState, useEffect, useCallback } from "react";
-import { v4 as uuidv4 } from "uuid";
 import { apiService } from "./services/api";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
@@ -11,7 +10,6 @@ import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
 import Dashboard from "./components/Dashboard";
 import SemanticBuilder from "./components/SemanticBuilder"; // New component for designer
-import { debounce } from "lodash";
 import ConnectionDesignationManager from "./components/ConnectionDesignationManager";
 
 // Types from DynamicSemanticChartBuilder
@@ -65,6 +63,7 @@ interface User {
   role: string;
   designation?: string | null;
   id?: number;
+  accessLevel?: string | null;
 }
 
 const App: React.FC = () => {
@@ -88,7 +87,9 @@ const App: React.FC = () => {
               role: response.data.user.role,
               designation: response.data.user.designation,
               id: response.data.user.id,
+              accessLevel: response.data.user.accessLevel,
             });
+            console.log(response.data);
           } else {
             localStorage.removeItem("token");
           }
@@ -234,27 +235,29 @@ const App: React.FC = () => {
               user.role === "admin" && (
                 <ConnectionDesignationManager connections={connections} />
               )}
-            {activeTab === "chart-builder" && user.role === "designer" && (
-              <DragDropProvider>
-                <div className="flex gap-4 p-4 h-screen">
-                  <div className="w-1/4">
-                    <DynamicSemanticPanel
-                      connections={connections}
-                      selectedConnectionId={selectedConnectionId}
-                      setSelectedConnectionId={setSelectedConnectionId}
-                    />
+            {activeTab === "chart-builder" &&
+              (user.role === "designer" ||
+                (user.role === "user" && user.accessLevel === "editor")) && (
+                <DragDropProvider>
+                  <div className="flex gap-4 p-4 h-screen">
+                    <div className="w-1/4">
+                      <DynamicSemanticPanel
+                        connections={connections}
+                        selectedConnectionId={selectedConnectionId}
+                        setSelectedConnectionId={setSelectedConnectionId}
+                      />
+                    </div>
+                    <div className="w-3/4">
+                      <DynamicSemanticChartBuilder
+                        dashboards={dashboards}
+                        addNewDashboard={addNewDashboard}
+                        selectedConnectionId={selectedConnectionId}
+                        refreshDashboards={fetchDashboards}
+                      />
+                    </div>
                   </div>
-                  <div className="w-3/4">
-                    <DynamicSemanticChartBuilder
-                      dashboards={dashboards}
-                      addNewDashboard={addNewDashboard}
-                      selectedConnectionId={selectedConnectionId}
-                      refreshDashboards={fetchDashboards}
-                    />
-                  </div>
-                </div>
-              </DragDropProvider>
-            )}
+                </DragDropProvider>
+              )}
             {activeTab === "semantic-builder" && user.role === "designer" && (
               <SemanticBuilder
                 connections={connections}
