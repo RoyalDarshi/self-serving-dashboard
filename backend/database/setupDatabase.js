@@ -1,15 +1,16 @@
+// setupDatabase.js
 import { dbPromise } from "./sqliteConnection.js";
 import bcrypt from "bcrypt";
 
-export async function initializeDatabase() {
-  const db = await dbPromise;
+const SALT_ROUNDS = 10;
 
-  // Users table
-  await db.run(`
+// Database Schema - Tables only (no inline indexes)
+const SCHEMAS = {
+  users: `
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
+      username TEXT UNIQUE NOT NULL COLLATE NOCASE,
+      password TEXT,
       role TEXT NOT NULL CHECK (role IN ('admin', 'user', 'designer')),
       designation TEXT CHECK (designation IN (
         'Business Analyst',
@@ -17,56 +18,58 @@ export async function initializeDatabase() {
         'Operations Manager',
         'Finance Manager',
         'Consumer Insights Manager',
-        'Store / Regional Manager'
+        'Store / Regional Manager',
+        NULL
       )),
+      is_ad_user BOOLEAN DEFAULT FALSE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `);
+  `,
 
-  // Connections table
-  await db.run(`
+  connections: `
     CREATE TABLE IF NOT EXISTS connections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
-      connection_name TEXT NOT NULL UNIQUE,
+      connection_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
       type TEXT NOT NULL CHECK (type IN ('postgres', 'mysql')),
       hostname TEXT NOT NULL,
-      port INTEGER NOT NULL,
+      port INTEGER NOT NULL CHECK (port > 0),
       database TEXT NOT NULL,
       username TEXT NOT NULL,
       password TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
-  `);
+  `,
 
-  // Facts table
-  await db.run(`
+  facts: `
     CREATE TABLE IF NOT EXISTS facts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       connection_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       table_name TEXT NOT NULL,
       column_name TEXT NOT NULL,
-      aggregate_function TEXT NOT NULL CHECK (aggregate_function IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE')),
-      FOREIGN KEY (connection_id) REFERENCES connections(id)
+      aggregate_function TEXT NOT NULL CHECK (aggregate_function IN (
+        'SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE'
+      )),
+      FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
+      UNIQUE (connection_id, name)
     )
-  `);
+  `,
 
-  // Dimensions table
-  await db.run(`
+  dimensions: `
     CREATE TABLE IF NOT EXISTS dimensions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       connection_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       table_name TEXT NOT NULL,
       column_name TEXT NOT NULL,
-      FOREIGN KEY (connection_id) REFERENCES connections(id)
+      FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
+      UNIQUE (connection_id, name)
     )
-  `);
+  `,
 
-  // Fact-Dimensions mapping table
-  await db.run(`
+  fact_dimensions: `
     CREATE TABLE IF NOT EXISTS fact_dimensions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       fact_id INTEGER NOT NULL,
@@ -74,13 +77,13 @@ export async function initializeDatabase() {
       join_table TEXT NOT NULL,
       fact_column TEXT NOT NULL,
       dimension_column TEXT NOT NULL,
-      FOREIGN KEY (fact_id) REFERENCES facts(id),
-      FOREIGN KEY (dimension_id) REFERENCES dimensions(id)
+      FOREIGN KEY (fact_id) REFERENCES facts(id) ON DELETE CASCADE,
+      FOREIGN KEY (dimension_id) REFERENCES dimensions(id) ON DELETE CASCADE,
+      UNIQUE (fact_id, dimension_id)
     )
-  `);
+  `,
 
-  // KPIs table
-  await db.run(`
+  kpis: `
     CREATE TABLE IF NOT EXISTS kpis (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       connection_id INTEGER NOT NULL,
@@ -90,12 +93,12 @@ export async function initializeDatabase() {
       created_by INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (created_by) REFERENCES users(id),
-      FOREIGN KEY (connection_id) REFERENCES connections(id)
+      FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
+      UNIQUE (connection_id, name)
     )
-  `);
+  `,
 
-  // Dashboards table
-  await db.run(`
+  dashboards: `
     CREATE TABLE IF NOT EXISTS dashboards (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -106,13 +109,12 @@ export async function initializeDatabase() {
       is_public BOOLEAN DEFAULT FALSE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_modified DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id),
-      FOREIGN KEY(connection_id) REFERENCES connections(id)
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
     )
-  `);
+  `,
 
-  // Charts table
-  await db.run(`
+  charts: `
     CREATE TABLE IF NOT EXISTS charts (
       id TEXT PRIMARY KEY,
       dashboard_id INTEGER NOT NULL,
@@ -120,37 +122,147 @@ export async function initializeDatabase() {
       y_axis_facts TEXT NOT NULL,
       group_by_dimension_id INTEGER,
       chart_type TEXT NOT NULL CHECK (chart_type IN ('bar', 'line', 'pie')),
-      aggregation_type TEXT NOT NULL CHECK (aggregation_type IN ('SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE')),
+      aggregation_type TEXT NOT NULL CHECK (aggregation_type IN (
+        'SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'STDDEV', 'VARIANCE'
+      )),
       stacked BOOLEAN DEFAULT FALSE,
       title TEXT,
       description TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_modified DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(dashboard_id) REFERENCES dashboards(id),
-      FOREIGN KEY(x_axis_dimension_id) REFERENCES dimensions(id),
-      FOREIGN KEY(group_by_dimension_id) REFERENCES dimensions(id)
+      FOREIGN KEY (dashboard_id) REFERENCES dashboards(id) ON DELETE CASCADE,
+      FOREIGN KEY (x_axis_dimension_id) REFERENCES dimensions(id),
+      FOREIGN KEY (group_by_dimension_id) REFERENCES dimensions(id)
     )
-  `);
+  `,
 
-  await db.run(`CREATE TABLE IF NOT EXISTS connection_designations (
+  connection_designations: `
+    CREATE TABLE IF NOT EXISTS connection_designations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       connection_id INTEGER NOT NULL,
-      designation TEXT NOT NULL,
+      designation TEXT NOT NULL CHECK (designation IN (
+        'Business Analyst',
+        'Data Scientist',
+        'Operations Manager',
+        'Finance Manager',
+        'Consumer Insights Manager',
+        'Store / Regional Manager'
+      )),
       UNIQUE (connection_id, designation),
-      FOREIGN KEY (connection_id) REFERENCES connections(id)
+      FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
     )
-  `);
+  `,
+};
 
-  // Seed default admin user
-  const admin = await db.get(`SELECT id FROM users WHERE username = 'admin'`);
-  if (!admin) {
-    const hash = await bcrypt.hash("admin", 10);
+// Indexes to be created after tables
+const INDEXES = [
+  // users indexes
+  "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
+  "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
+  "CREATE INDEX IF NOT EXISTS idx_users_is_ad_user ON users(is_ad_user)",
+
+  // connections indexes
+  "CREATE INDEX IF NOT EXISTS idx_connections_user ON connections(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_connections_name ON connections(connection_name)",
+
+  // facts indexes
+  "CREATE INDEX IF NOT EXISTS idx_facts_connection ON facts(connection_id)",
+  "CREATE INDEX IF NOT EXISTS idx_facts_name ON facts(name)",
+
+  // dimensions indexes
+  "CREATE INDEX IF NOT EXISTS idx_dimensions_connection ON dimensions(connection_id)",
+  "CREATE INDEX IF NOT EXISTS idx_dimensions_name ON dimensions(name)",
+
+  // fact_dimensions indexes
+  "CREATE INDEX IF NOT EXISTS idx_fact_dimensions_fact ON fact_dimensions(fact_id)",
+  "CREATE INDEX IF NOT EXISTS idx_fact_dimensions_dimension ON fact_dimensions(dimension_id)",
+
+  // kpis indexes
+  "CREATE INDEX IF NOT EXISTS idx_kpis_connection ON kpis(connection_id)",
+  "CREATE INDEX IF NOT EXISTS idx_kpis_created_by ON kpis(created_by)",
+
+  // dashboards indexes
+  "CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_dashboards_connection ON dashboards(connection_id)",
+
+  // charts indexes
+  "CREATE INDEX IF NOT EXISTS idx_charts_dashboard ON charts(dashboard_id)",
+
+  // connection_designations indexes
+  "CREATE INDEX IF NOT EXISTS idx_connection_designations_connection ON connection_designations(connection_id)",
+  "CREATE INDEX IF NOT EXISTS idx_connection_designations_designation ON connection_designations(designation)",
+];
+
+// Seed Data
+const SEED_ADMIN = async (db) => {
+  const adminExists = await db.get(
+    "SELECT id FROM users WHERE username = 'admin'"
+  );
+
+  if (!adminExists) {
+    const hash = await bcrypt.hash("admin", SALT_ROUNDS);
     await db.run(
-      `INSERT INTO users (username, password, role, designation) VALUES (?, ?, ?, ?)`,
-      ["admin", hash, "admin", "Business Analyst"]
+      `INSERT INTO users (username, password, role, designation, is_ad_user) 
+       VALUES (?, ?, ?, ?, ?)`,
+      ["admin", hash, "admin", "Business Analyst", false]
     );
     console.log(
-      "Seeded default admin user: admin / admin with designation Business Analyst"
+      "✅ Seeded default admin user: username 'admin' / password 'admin'"
     );
+    console.log("   Role: admin, Designation: Business Analyst");
+  } else {
+    console.log("ℹ️  Admin user already exists, skipping seed");
   }
-}
+};
+
+// Main initialization function
+export const initializeDatabase = async () => {
+  const db = await dbPromise;
+
+  try {
+    console.log("🔄 Initializing database schema...");
+
+    // Create all tables
+    for (const [tableName, schema] of Object.entries(SCHEMAS)) {
+      await db.run(schema);
+      console.log(`✅ Created/verified table: ${tableName}`);
+    }
+
+    // Create all indexes
+    console.log("🔄 Creating indexes...");
+    for (const [i, indexStatement] of INDEXES.entries()) {
+      try {
+        await db.run(indexStatement);
+        if (i % 3 === 0 || i === INDEXES.length - 1) {
+          console.log(
+            `✅ Created ${Math.min(i + 1, INDEXES.length)}/${
+              INDEXES.length
+            } indexes`
+          );
+        }
+      } catch (indexError) {
+        // Ignore index creation errors (index might already exist)
+        if (!indexError.message.includes("already exists")) {
+          console.warn(`⚠️  Warning creating index: ${indexError.message}`);
+        }
+      }
+    }
+
+    // Seed admin user
+    await SEED_ADMIN(db);
+
+    // Verify schema integrity
+    const tables = await db.all(
+      "SELECT name FROM sqlite_master WHERE type='table'"
+    );
+    console.log(`📊 Database initialized with ${tables.length} tables`);
+
+    console.log("🎉 Database initialization complete!");
+  } catch (error) {
+    console.error("❌ Database initialization failed:", error.message);
+    throw error;
+  }
+};
+
+// Export for testing
+export default { initializeDatabase, SCHEMAS, SEED_ADMIN };

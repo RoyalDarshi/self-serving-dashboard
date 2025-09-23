@@ -88,7 +88,7 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
     return colors[(index + 2) % colors.length];
   };
 
-  // Table columns configuration
+  // Table columns configuration - INCLUDING S.No
   const tableColumns = useMemo(() => {
     const columns: {
       key: string;
@@ -97,6 +97,15 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
       type: string;
       colorScheme: any;
     }[] = [];
+
+    // Always add S.No as the first column
+    columns.push({
+      key: "serial",
+      label: "S.No",
+      isNumeric: true,
+      type: "serial",
+      colorScheme: getColumnColor("serial", 0),
+    });
 
     // Check if the data is grouped based on the `groupByColumn`
     if (groupByColumn || chartData.some((row) => "name" in row)) {
@@ -107,7 +116,7 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
           label: xAxisColumn.label,
           isNumeric: false,
           type: "category",
-          colorScheme: getColumnColor("category", 0),
+          colorScheme: getColumnColor("category", 1),
         });
       }
 
@@ -125,21 +134,19 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
       const sortedGroupKeys = Array.from(uniqueGroupKeys).sort();
 
       // Create a column for each unique group key
-      let colorIndex = 1; // Start from index 1 to not clash with 'Name'
+      let colorIndex = 2; // Start from index 2 (after S.No and Name)
       sortedGroupKeys.forEach((key) => {
-        // Assume all dynamically generated columns are numeric metrics
-        // You might need to adjust this logic based on your actual data types
         columns.push({
           key: key,
-          label: key, // Use the key as the label
-          isNumeric: true, // Assuming aggregated values are numbers
+          label: key,
+          isNumeric: true,
           type: "metric",
           colorScheme: getColumnColor("metric", colorIndex++),
         });
       });
     } else {
       // This is the original logic for non-grouped data
-      let colorIndex = 0;
+      let colorIndex = 1; // Start from 1 (after S.No)
 
       if (xAxisColumn) {
         columns.push({
@@ -193,6 +200,10 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
         const aVal = a[sortConfig.key];
         const bVal = b[sortConfig.key];
 
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return sortConfig.direction === "asc" ? 1 : -1;
+        if (bVal == null) return sortConfig.direction === "asc" ? -1 : 1;
+
         if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
         if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
         return 0;
@@ -211,6 +222,9 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
 
   // Handlers
   const handleSort = (key: string) => {
+    // Don't allow sorting on S.No column
+    if (key === "serial") return;
+
     setSortConfig((current) => ({
       key,
       direction:
@@ -219,11 +233,18 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
   };
 
   const toggleColumnVisibility = (key: string) => {
+    // Don't allow hiding S.No column
+    if (key === "serial") return;
+
     setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const getCellStyle = (value: any, column: any) => {
-    return {};
+    return {
+      backgroundColor: column.colorScheme?.bg,
+      color: column.colorScheme?.text,
+      borderColor: column.colorScheme?.border,
+    };
   };
 
   if (chartData.length === 0 && !xAxisColumn && yAxisColumns.length === 0) {
@@ -248,11 +269,11 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
   );
 
   return (
-    <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+    <div className="bg-gradient-to-br from-white to-slate-50 rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-2 p-2 bg-gradient-to-r from-slate-100 to-gray-100 border-b border-gray-200">
+      <div className="flex flex-wrap items-center gap-2 p-2 bg-gradient-to-r from-slate-100 to-gray-100 border-b border-gray-200 w-full">
         {/* Search */}
-        <div className="relative flex-1 min-w-64">
+        <div className="relative flex-1 min-w-[200px] max-w-[300px]">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-slate-400" />
           <input
             type="text"
@@ -267,7 +288,7 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
         <select
           value={pageSize}
           onChange={(e) => setPageSize(Number(e.target.value))}
-          className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+          className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all min-w-[80px]"
         >
           <option value={5} className="text-slate-700">
             5 rows
@@ -284,10 +305,10 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
         </select>
 
         {/* Column Visibility */}
-        <div className="relative">
+        <div className="relative min-w-[150px]">
           <select
             onChange={(e) => toggleColumnVisibility(e.target.value)}
-            className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
             value=""
           >
             <option value="" className="text-slate-700">
@@ -295,35 +316,44 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
             </option>
             {tableColumns.map((col) => (
               <option key={col.key} value={col.key} className="text-slate-700">
-                {columnVisibility[col.key] ? "✓" : "○"} {col.label}
+                {col.key === "serial"
+                  ? "✓"
+                  : columnVisibility[col.key]
+                  ? "✓"
+                  : "○"}{" "}
+                {col.label}
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <div className="max-h-96 overflow-y-auto">
-          <table className="min-w-full">
-            <thead className="sticky top-0 z-10">
+      {/* Table Container - FIXED HORIZONTAL SCROLL */}
+      <div className="w-full relative">
+        {/* Table Scroll Container */}
+        <div className="overflow-x-auto max-h-[400px] overflow-y-auto border-b border-gray-200">
+          <table className="min-w-full w-max">
+            <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="bg-gradient-to-r from-slate-100 to-gray-100">
-                {/* Serial Number Header */}
-                <th className="px-4 py-3 border-b border-gray-200">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-bold text-slate-700 uppercase tracking-wider">
-                      S.No
-                    </span>
-                  </div>
-                </th>
                 {visibleColumns.map((col) => (
                   <th
                     key={col.key}
-                    className="px-6 py-3 text-left text-sm font-bold uppercase tracking-wider cursor-pointer transition-colors hover:bg-slate-200 border-b border-gray-200 text-slate-700"
+                    className={`px-6 py-3 text-left text-sm font-bold uppercase tracking-wider cursor-pointer transition-colors hover:bg-slate-200 border-b border-gray-200 sticky left-0 z-30 ${
+                      col.key === "serial"
+                        ? "bg-white shadow-sm border-r border-gray-200"
+                        : ""
+                    }`}
                     onClick={() => handleSort(col.key)}
+                    style={{
+                      backgroundColor: col.colorScheme?.bg || "white",
+                      color: col.colorScheme?.text || "slate-700",
+                      borderColor: col.colorScheme?.border || "gray-200",
+                    }}
                   >
                     <div className="flex items-center space-x-2">
-                      <span className="truncate">{col.label}</span>
+                      <span className="truncate max-w-[150px]">
+                        {col.label}
+                      </span>
                       <div className="flex flex-col ml-auto text-slate-400">
                         {sortConfig?.key === col.key ? (
                           sortConfig.direction === "asc" ? (
@@ -340,35 +370,44 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-100">
               {paginatedData.map((row, rowIndex) => (
                 <tr
                   key={rowIndex}
-                  className={`${
-                    rowIndex % 2 === 0 ? "bg-white" : "bg-slate-50"
-                  } border-b border-gray-100 hover:bg-blue-50`}
+                  className="hover:bg-blue-50 transition-colors"
                 >
-                  {/* Serial Number Cell */}
-                  <td className="px-4 py-4 text-center">
-                    <span className="text-sm font-medium text-slate-600">
-                      {(currentPage - 1) * pageSize + rowIndex + 1}
-                    </span>
-                  </td>
                   {visibleColumns.map((col) => (
                     <td
                       key={`${rowIndex}-${col.key}`}
-                      className={`px-6 py-4 text-sm text-slate-900`}
-                      style={getCellStyle(row[col.key], col)}
+                      className={`px-6 py-4 text-sm min-w-[120px] max-w-[200px] border-r border-gray-100 ${
+                        col.key === "serial"
+                          ? "sticky left-0 z-10 shadow-sm"
+                          : ""
+                      }`}
+                      style={{
+                        ...getCellStyle(row[col.key], col),
+                        backgroundColor:
+                          rowIndex % 2 === 0
+                            ? col.colorScheme?.bg || "white"
+                            : col.key === "serial"
+                            ? col.colorScheme?.bg || "white"
+                            : `color-mix(in srgb, ${
+                                col.colorScheme?.bg || "white"
+                              } 90%, slate-50 10%)`,
+                        color: col.colorScheme?.text || "slate-900",
+                      }}
                     >
                       <div className="flex items-center space-x-2">
                         <span
                           className={`${
                             col.isNumeric ? "font-bold" : "font-medium"
-                          }`}
+                          } truncate`}
                         >
-                          {col.isNumeric && valueFormatter
+                          {col.key === "serial"
+                            ? (currentPage - 1) * pageSize + rowIndex + 1
+                            : col.isNumeric && valueFormatter
                             ? valueFormatter(row[col.key])
-                            : row[col.key]}
+                            : row[col.key] || ""}
                         </span>
                       </div>
                     </td>
@@ -378,10 +417,13 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Scrollbar Shadow Effect */}
+        <div className="absolute top-0 right-0 h-full w-2 bg-gradient-to-r from-transparent to-white pointer-events-none z-30"></div>
       </div>
 
       {/* Footer with Pagination */}
-      <div className="px-6 py-4 bg-gradient-to-r from-slate-100 to-gray-50 border-t border-gray-200">
+      <div className="px-6 py-4 bg-gradient-to-r from-slate-100 to-gray-50 border-t border-gray-200 w-full">
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium text-slate-700">
             Showing{" "}
@@ -424,6 +466,19 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Empty State for No Data After Filtering */}
+      {processedData.length === 0 && searchTerm && (
+        <div className="flex items-center justify-center py-12 text-center">
+          <div className="text-slate-500">
+            <Search className="mx-auto h-12 w-12 mb-4 text-slate-400" />
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              No results found
+            </h3>
+            <p className="text-sm">Try adjusting your search terms</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,7 +1,7 @@
-// Updated api.ts (minor changes to include designation in responses where relevant)
 // api.ts
-const API_BASE = "http://localhost:3001/api"; // Adjust to your backend URL
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
+// Interfaces
 export interface Fact {
   id: number;
   name: string;
@@ -98,25 +98,23 @@ export interface Kpi {
   created_by?: number;
 }
 
+export type Role = "admin" | "user" | "designer";
+export type Designation =
+  | "Business Analyst"
+  | "Data Scientist"
+  | "Operations Manager"
+  | "Finance Manager"
+  | "Consumer Insights Manager"
+  | "Store / Regional Manager"
+  | null;
+
 export interface User {
   id: number;
   username: string;
-  role: "admin" | "user" | "designer";
-  designation?:
-    | "Business Analyst"
-    | "Data Scientist"
-    | "Operations Manager"
-    | "Finance Manager"
-    | "Consumer Insights Manager"
-    | "Store / Regional Manager"
-    | null;
+  role: Role;
+  designation?: Designation;
   created_at: string;
-}
-
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
+  is_ad_user: boolean;
 }
 
 export interface ConnectionDesignation {
@@ -125,12 +123,32 @@ export interface ConnectionDesignation {
   designation: string;
 }
 
-async function apiFetch<T>(
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: {
+    id: number;
+    role: Role;
+    designation?: string | null;
+  };
+}
+
+export interface ImportUsersResponse {
+  importedCount: number;
+}
+
+// Utility Functions
+const createApiFetch = <T = unknown>(
   endpoint: string,
   method: string = "GET",
   body?: any,
   requiresAuth: boolean = true
-): Promise<ApiResponse<T>> {
+): Promise<ApiResponse<T>> => {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   };
@@ -138,292 +156,254 @@ async function apiFetch<T>(
   if (requiresAuth) {
     const token = localStorage.getItem("token");
     if (!token) {
-      return { success: false, error: "No authentication token found" };
+      return Promise.resolve({
+        success: false,
+        error: "No authentication token found",
+      });
     }
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  try {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+  const config: RequestInit = {
+    method,
+    headers,
+    ...(body && { body: JSON.stringify(body) }),
+  };
 
-    const data = await response.json();
-    if (!response.ok) {
-      return { success: false, error: data.error || "Request failed" };
-    }
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, error: (error as Error).message };
-  }
-}
+  return fetch(`${API_BASE}${endpoint}`, config)
+    .then(async (response) => {
+      const data = await response.json();
 
+      if (!response.ok) {
+        return { success: false, error: data.error || "Request failed" };
+      }
+
+      return { success: true, data };
+    })
+    .catch((error) => ({
+      success: false,
+      error: error instanceof Error ? error.message : "Network error",
+    }));
+};
+
+// API Service
 export const apiService = {
-  // User Authentication
-  async login(
+  // Authentication
+  login: (
     username: string,
     password: string
-  ): Promise<
-    ApiResponse<{
-      token: string;
-      user: { id: number; role: string; designation?: string | null };
-    }>
-  > {
-    return apiFetch("/auth/login", "POST", { username, password }, false);
-  },
+  ): Promise<ApiResponse<AuthResponse>> =>
+    createApiFetch("/auth/login", "POST", { username, password }, false),
 
-  async validateToken(): Promise<
+  adLogin: (
+    username: string,
+    password: string
+  ): Promise<ApiResponse<AuthResponse>> =>
+    createApiFetch("/auth/ad-login", "POST", { username, password }, false),
+
+  validateToken: (): Promise<
     ApiResponse<{
-      user: { id: number; role: string; designation?: string | null };
+      user: { id: number; role: Role; designation?: string | null };
     }>
-  > {
-    return apiFetch("/auth/validate", "GET");
-  },
+  > => createApiFetch("/auth/validate"),
 
   // User Management
-  async createUser(
+  createUser: (
     username: string,
     password: string,
-    role: "admin" | "user" | "designer",
-    designation?:
-      | "Business Analyst"
-      | "Data Scientist"
-      | "Operations Manager"
-      | "Finance Manager"
-      | "Consumer Insights Manager"
-      | "Store / Regional Manager"
-      | null
-  ): Promise<ApiResponse<{ user: User }>> {
-    return apiFetch("/semantic/users", "POST", {
+    role: Role,
+    designation?: Designation
+  ): Promise<ApiResponse<{ user: User }>> =>
+    createApiFetch("/semantic/users", "POST", {
       username,
       password,
       role,
       designation,
-    });
-  },
+    }),
 
-  async getUsers(): Promise<User[]> {
-    const response = await apiFetch<User[]>("/semantic/users", "GET");
-    return response.success ? response.data || [] : [];
-  },
+  getUsers: (): Promise<User[]> =>
+    createApiFetch<User[]>("/semantic/users", "GET").then((response) =>
+      response.success ? response.data || [] : []
+    ),
 
-  async getUser(id: number): Promise<ApiResponse<User>> {
-    return apiFetch(`/semantic/users/${id}`, "GET");
-  },
+  getUser: (id: number): Promise<ApiResponse<User>> =>
+    createApiFetch(`/semantic/users/${id}`),
 
-  async updateUser(
+  updateUser: (
     id: number,
-    user: Partial<Omit<User, "id" | "created_at">>
-  ): Promise<ApiResponse<User>> {
-    return apiFetch(`/semantic/users/${id}`, "PUT", user);
-  },
+    user: Partial<Omit<User, "id" | "created_at" | "is_ad_user">>
+  ): Promise<ApiResponse<User>> =>
+    createApiFetch(`/semantic/users/${id}`, "PUT", user),
 
-  async deleteUser(id: number): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/users/${id}`, "DELETE");
-  },
+  deleteUser: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/users/${id}`, "DELETE"),
+
+  importUsersFromAD: (): Promise<ApiResponse<ImportUsersResponse>> =>
+    createApiFetch("/semantic/import-ldap-users", "POST"),
 
   // Connection Management
-  async getConnections(): Promise<Connection[]> {
-    const response = await apiFetch<Connection[]>(
-      "/semantic/connections",
-      "GET"
-    );
-    return response.success ? response.data || [] : [];
-  },
+  getConnections: (): Promise<Connection[]> =>
+    createApiFetch<Connection[]>("/semantic/connections", "GET").then(
+      (response) => (response.success ? response.data || [] : [])
+    ),
 
-  async createConnection(
+  createConnection: (
     connection: Omit<Connection, "id" | "created_at">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch("/semantic/connections", "POST", connection);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch("/semantic/connections", "POST", connection),
 
-  async updateConnection(
+  updateConnection: (
     id: number,
     connection: Omit<Connection, "id" | "created_at">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/connections/${id}`, "PUT", connection);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/connections/${id}`, "PUT", connection),
 
-  async deleteConnection(id: number): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/connections/${id}`, "DELETE");
-  },
+  deleteConnection: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/connections/${id}`, "DELETE"),
 
-  async testConnection(
+  testConnection: (
     connection: Omit<Connection, "id" | "created_at">
-  ): Promise<ApiResponse<{ success: boolean; message?: string }>> {
-    return apiFetch("/semantic/connections/test", "POST", connection);
-  },
+  ): Promise<ApiResponse<{ success: boolean; message?: string }>> =>
+    createApiFetch("/semantic/connections/test", "POST", connection),
 
-  async getConnectionDesignations(
+  getConnectionDesignations: (
     connectionId?: number
-  ): Promise<ConnectionDesignation[]> {
+  ): Promise<ConnectionDesignation[]> => {
     const query = connectionId ? `?connection_id=${connectionId}` : "";
-    const response = await apiFetch<ConnectionDesignation[]>(
+    return createApiFetch<ConnectionDesignation[]>(
       `/semantic/connection-designations${query}`,
       "GET"
-    );
-    return response.success ? response.data || [] : [];
+    ).then((response) => (response.success ? response.data || [] : []));
   },
 
-  async addConnectionDesignation(
+  addConnectionDesignation: (
     connectionId: number,
     designation: string
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch("/semantic/connection-designations", "POST", {
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch("/semantic/connection-designations", "POST", {
       connection_id: connectionId,
       designation,
-    });
-  },
+    }),
 
-  async deleteConnectionDesignation(id: number): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/connection-designations/${id}`, "DELETE");
-  },
+  deleteConnectionDesignation: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/connection-designations/${id}`, "DELETE"),
 
   // Schema Management
-  async getSchemas(connectionId: number): Promise<Schema[]> {
-    const response = await apiFetch<Schema[]>(
+  getSchemas: (connectionId: number): Promise<Schema[]> =>
+    createApiFetch<Schema[]>(
       `/database/schemas?connection_id=${connectionId}`,
       "GET"
-    );
-    return response.success ? response.data || [] : [];
-  },
+    ).then((response) => (response.success ? response.data || [] : [])),
 
   // Facts and Dimensions
-  async getFacts(connectionId: number): Promise<Fact[]> {
-    const response = await apiFetch<Fact[]>(
+  getFacts: (connectionId: number): Promise<Fact[]> =>
+    createApiFetch<Fact[]>(
       `/semantic/facts?connection_id=${connectionId}`,
       "GET"
-    );
-    return response.success ? response.data || [] : [];
-  },
+    ).then((response) => (response.success ? response.data || [] : [])),
 
-  async createFact(fact: Omit<Fact, "id">): Promise<ApiResponse<unknown>> {
-    return apiFetch("/semantic/facts", "POST", fact);
-  },
+  createFact: (fact: Omit<Fact, "id">): Promise<ApiResponse<unknown>> =>
+    createApiFetch("/semantic/facts", "POST", fact),
 
-  async updateFact(
+  updateFact: (
     id: number,
     fact: Omit<Fact, "id">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/facts/${id}`, "PUT", fact);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/facts/${id}`, "PUT", fact),
 
-  async deleteFact(id: number): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/facts/${id}`, "DELETE");
-  },
+  deleteFact: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/facts/${id}`, "DELETE"),
 
-  async getDimensions(connectionId: number): Promise<Dimension[]> {
-    const response = await apiFetch<Dimension[]>(
+  getDimensions: (connectionId: number): Promise<Dimension[]> =>
+    createApiFetch<Dimension[]>(
       `/semantic/dimensions?connection_id=${connectionId}`,
       "GET"
-    );
-    return response.success ? response.data || [] : [];
-  },
+    ).then((response) => (response.success ? response.data || [] : [])),
 
-  async createDimension(
+  createDimension: (
     dimension: Omit<Dimension, "id">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch("/semantic/dimensions", "POST", dimension);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch("/semantic/dimensions", "POST", dimension),
 
-  async updateDimension(
+  updateDimension: (
     id: number,
     dimension: Omit<Dimension, "id">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/dimensions/${id}`, "PUT", dimension);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/dimensions/${id}`, "PUT", dimension),
 
-  async deleteDimension(id: number): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/dimensions/${id}`, "DELETE");
-  },
+  deleteDimension: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/dimensions/${id}`, "DELETE"),
 
-  async getFactDimensions(connectionId: number): Promise<FactDimension[]> {
-    const response = await apiFetch<FactDimension[]>(
-      `/semantic/auto-map`,
-      "POST",
-      { connection_id: connectionId }
-    );
-    return response.success ? response.data || [] : [];
-  },
+  getFactDimensions: (connectionId: number): Promise<FactDimension[]> =>
+    createApiFetch<FactDimension[]>(`/semantic/auto-map`, "POST", {
+      connection_id: connectionId,
+    }).then((response) => (response.success ? response.data || [] : [])),
 
-  async createFactDimension(
+  createFactDimension: (
     factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch("/semantic/fact-dimensions", "POST", factDimension);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch("/semantic/fact-dimensions", "POST", factDimension),
 
-  async updateFactDimension(
+  updateFactDimension: (
     id: number,
     factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/fact-dimensions/${id}`, "PUT", factDimension);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/fact-dimensions/${id}`, "PUT", factDimension),
 
-  async deleteFactDimension(id: number): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/fact-dimensions/${id}`, "DELETE");
-  },
+  deleteFactDimension: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/fact-dimensions/${id}`, "DELETE"),
 
-  async getKpis(connectionId: number): Promise<Kpi[]> {
-    const response = await apiFetch<Kpi[]>(
+  // KPIs
+  getKpis: (connectionId: number): Promise<Kpi[]> =>
+    createApiFetch<Kpi[]>(
       `/semantic/kpis?connection_id=${connectionId}`,
       "GET"
-    );
-    return response.success ? response.data || [] : [];
-  },
+    ).then((response) => (response.success ? response.data || [] : [])),
 
-  async createKpi(
+  createKpi: (
     kpi: Omit<Kpi, "id" | "created_by">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch("/semantic/kpis", "POST", kpi);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch("/semantic/kpis", "POST", kpi),
 
-  async updateKpi(
+  updateKpi: (
     id: number,
     kpi: Omit<Kpi, "id" | "connection_id" | "created_by">
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/kpis/${id}`, "PUT", kpi);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/kpis/${id}`, "PUT", kpi),
 
-  async deleteKpi(id: number): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/semantic/kpis/${id}`, "DELETE");
-  },
+  deleteKpi: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/kpis/${id}`, "DELETE"),
 
   // Query Execution
-  async runQuery(body: {
+  runQuery: (body: {
     connection_id: number;
     factIds: number[];
     dimensionIds: number[];
     aggregation: string;
-  }): Promise<AggregationResponse> {
-    const response = await apiFetch<AggregationResponse>(
-      "/analytics/query",
-      "POST",
-      body
-    );
-    return response.success
-      ? response.data || {}
-      : { error: response.error || "Failed to run query" };
-  },
+  }): Promise<AggregationResponse> =>
+    createApiFetch<AggregationResponse>("/analytics/query", "POST", body).then(
+      (response) =>
+        response.success
+          ? response.data || {}
+          : { error: response.error || "Failed to run query" }
+    ),
 
   // Dashboard Management
-  async saveDashboard(dashboard: {
+  saveDashboard: (dashboard: {
     name: string;
     description?: string;
     connection_id: number;
     charts: ChartConfig[];
     layout: any[];
-  }): Promise<ApiResponse<{ dashboardId: string }>> {
-    return apiFetch("/dashboard/save", "POST", dashboard);
-  },
+  }): Promise<ApiResponse<{ dashboardId: string }>> =>
+    createApiFetch("/dashboard/save", "POST", dashboard),
 
-  async getDashboards(): Promise<DashboardData[]> {
-    const response = await apiFetch<DashboardData[]>("/dashboard/list", "GET");
-    return response.success ? response.data || [] : [];
-  },
+  getDashboards: (): Promise<DashboardData[]> =>
+    createApiFetch<DashboardData[]>("/dashboard/list", "GET").then((response) =>
+      response.success ? response.data || [] : []
+    ),
 
-  async updateDashboard(
+  updateDashboard: (
     id: string,
     dashboard: {
       name: string;
@@ -431,17 +411,14 @@ export const apiService = {
       charts: ChartConfig[];
       layout: any[];
     }
-  ): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/dashboard/${id}`, "PUT", dashboard);
-  },
+  ): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/dashboard/${id}`, "PUT", dashboard),
 
-  async deleteDashboard(id: string): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/dashboard/${id}`, "DELETE");
-  },
+  deleteDashboard: (id: string): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/dashboard/${id}`, "DELETE"),
 
-  async deleteChart(chartId: string): Promise<ApiResponse<unknown>> {
-    return apiFetch(`/dashboard/chart/${chartId}`, "DELETE");
-  },
+  deleteChart: (chartId: string): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/dashboard/chart/${chartId}`, "DELETE"),
 };
 
 export default apiService;
