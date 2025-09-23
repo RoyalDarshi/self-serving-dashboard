@@ -1,4 +1,4 @@
-// Updated auth.js
+// updated: auth.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -17,6 +17,7 @@ router.post("/login", async (req, res) => {
   }
 
   try {
+    // Updated SELECT to get access_level
     const user = await db.get(
       "SELECT * FROM users WHERE username = ?",
       username
@@ -30,13 +31,26 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid username or password" });
     }
 
+    // Updated JWT payload
     const token = jwt.sign(
-      { userId: user.id, role: user.role, designation: user.designation },
+      {
+        userId: user.id,
+        role: user.role,
+        designation: user.designation,
+        accessLevel: user.access_level, // Added access_level
+      },
       JWT_SECRET
     );
+
+    // Updated user object in response
     res.json({
       token,
-      user: { id: user.id, role: user.role, designation: user.designation },
+      user: {
+        id: user.id,
+        role: user.role,
+        designation: user.designation,
+        accessLevel: user.access_level, // Added access_level
+      },
     });
   } catch (error) {
     console.error("Login error:", error.message);
@@ -56,8 +70,9 @@ router.get("/validate", async (req, res) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = await dbPromise;
+    // Updated SELECT to get access_level
     const user = await db.get(
-      "SELECT id, username, role, designation FROM users WHERE id = ?",
+      "SELECT id, username, role, designation, access_level FROM users WHERE id = ?",
       decoded.userId
     );
 
@@ -65,7 +80,9 @@ router.get("/validate", async (req, res) => {
       return res.status(401).json({ error: "Invalid token user" });
     }
 
-    res.json({ user });
+    // Map to a consistent key
+    const formattedUser = { ...user, accessLevel: user.access_level };
+    res.json({ user: formattedUser });
   } catch (err) {
     console.error("Validate token error:", err.message);
     res.status(401).json({ error: "Invalid or expired token" });

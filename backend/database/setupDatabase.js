@@ -1,4 +1,4 @@
-// setupDatabase.js
+// updated: setupDatabase.js
 import { dbPromise } from "./sqliteConnection.js";
 import bcrypt from "bcrypt";
 
@@ -12,6 +12,7 @@ const SCHEMAS = {
       username TEXT UNIQUE NOT NULL COLLATE NOCASE,
       password TEXT,
       role TEXT NOT NULL CHECK (role IN ('admin', 'user', 'designer')),
+      access_level TEXT CHECK (access_level IN ('viewer', 'editor')), -- Added this line
       designation TEXT CHECK (designation IN (
         'Business Analyst',
         'Data Scientist',
@@ -201,10 +202,11 @@ const SEED_ADMIN = async (db) => {
 
   if (!adminExists) {
     const hash = await bcrypt.hash("admin", SALT_ROUNDS);
+    // Updated INSERT to include access_level as NULL for admin
     await db.run(
-      `INSERT INTO users (username, password, role, designation, is_ad_user) 
-       VALUES (?, ?, ?, ?, ?)`,
-      ["admin", hash, "admin", "Business Analyst", false]
+      `INSERT INTO users (username, password, role, designation, access_level, is_ad_user) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      ["admin", hash, "admin", "Business Analyst", null, false]
     );
     console.log(
       "✅ Seeded default admin user: username 'admin' / password 'admin'"
