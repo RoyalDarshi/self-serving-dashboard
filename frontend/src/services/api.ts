@@ -1,4 +1,4 @@
-// api.ts
+// updated: api.ts
 const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 // Interfaces
@@ -99,6 +99,7 @@ export interface Kpi {
 }
 
 export type Role = "admin" | "user" | "designer";
+export type AccessLevel = "viewer" | "editor"; // Added AccessLevel type
 export type Designation =
   | "Business Analyst"
   | "Data Scientist"
@@ -112,6 +113,7 @@ export interface User {
   id: number;
   username: string;
   role: Role;
+  accessLevel?: AccessLevel; // Added optional accessLevel
   designation?: Designation;
   created_at: string;
   is_ad_user: boolean;
@@ -135,6 +137,7 @@ export interface AuthResponse {
     id: number;
     role: Role;
     designation?: string | null;
+    accessLevel?: AccessLevel; // Added optional accessLevel
   };
 }
 
@@ -172,6 +175,10 @@ const createApiFetch = <T = unknown>(
 
   return fetch(`${API_BASE}${endpoint}`, config)
     .then(async (response) => {
+      // Handle cases with no content
+      if (response.status === 204) {
+        return { success: true, data: undefined };
+      }
       const data = await response.json();
 
       if (!response.ok) {
@@ -195,31 +202,24 @@ export const apiService = {
   ): Promise<ApiResponse<AuthResponse>> =>
     createApiFetch("/auth/login", "POST", { username, password }, false),
 
-  adLogin: (
-    username: string,
-    password: string
-  ): Promise<ApiResponse<AuthResponse>> =>
-    createApiFetch("/auth/ad-login", "POST", { username, password }, false),
+  // adLogin was removed as it's now handled by the unified /auth/login endpoint
 
   validateToken: (): Promise<
     ApiResponse<{
-      user: { id: number; role: Role; designation?: string | null };
+      user: {
+        id: number;
+        role: Role;
+        designation?: string | null;
+        accessLevel?: AccessLevel;
+      };
     }>
   > => createApiFetch("/auth/validate"),
 
   // User Management
   createUser: (
-    username: string,
-    password: string,
-    role: Role,
-    designation?: Designation
+    user: Omit<User, "id" | "created_at" | "is_ad_user"> & { password?: string }
   ): Promise<ApiResponse<{ user: User }>> =>
-    createApiFetch("/semantic/users", "POST", {
-      username,
-      password,
-      role,
-      designation,
-    }),
+    createApiFetch("/semantic/users", "POST", user),
 
   getUsers: (): Promise<User[]> =>
     createApiFetch<User[]>("/semantic/users", "GET").then((response) =>
@@ -231,7 +231,9 @@ export const apiService = {
 
   updateUser: (
     id: number,
-    user: Partial<Omit<User, "id" | "created_at" | "is_ad_user">>
+    user: Partial<
+      Omit<User, "id" | "created_at" | "is_ad_user"> & { password?: string }
+    >
   ): Promise<ApiResponse<User>> =>
     createApiFetch(`/semantic/users/${id}`, "PUT", user),
 
