@@ -3,7 +3,7 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import ldap from "ldapjs";
-import fs from "fs";
+// import fs from "fs"; // Removed
 import { dbPromise } from "../database/sqliteConnection.js";
 
 const router = Router();
@@ -16,9 +16,7 @@ const LDAP_CONFIG = {
   baseDN: process.env.LDAP_BASE_DN || "dc=ayd",
   bindDN: process.env.LDAP_BIND_DN || "uid=binduser,ou=People,dc=ayd",
   bindPassword: process.env.LDAP_BIND_PASSWORD || "BindPass123!",
-  caCert: fs.readFileSync(
-    process.env.LDAP_CA_CERT || "C://Users/priya/.ssh/id_rsa"
-  ), // Adjust path as needed
+  // caCert line removed
   attributes: {
     user: ["uid", "cn", "sn"],
   },
@@ -77,7 +75,7 @@ router.post("/login", async (req, res) => {
     try {
       ldapClient = ldap.createClient({
         url: LDAP_CONFIG.url,
-        tlsOptions: { ca: [LDAP_CONFIG.caCert], rejectUnauthorized: false },
+        tlsOptions: { rejectUnauthorized: false }, // Updated: removed caCert
       });
       ldapClient.on("error", (err) =>
         console.error("LDAP Client Background Error:", err)

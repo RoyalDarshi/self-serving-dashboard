@@ -4,7 +4,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { dbPromise } from "../database/sqliteConnection.js";
 import ldap from "ldapjs";
-import fs from "fs";
+// import fs from "fs"; // Removed
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
@@ -16,9 +16,7 @@ const LDAP_CONFIG = {
   baseDN: process.env.LDAP_BASE_DN || "dc=ayd",
   bindDN: process.env.LDAP_BIND_DN || "uid=binduser,ou=People,dc=ayd",
   bindPassword: process.env.LDAP_BIND_PASSWORD || "BindPass123!",
-  caCert: fs.readFileSync(
-    process.env.LDAP_CA_CERT || "C://Users/priya/.ssh/id_rsa"
-  ), // Adjust path as needed
+  // caCert line removed
   attributes: {
     user: ["uid", "cn", "sn"],
   },
@@ -70,8 +68,7 @@ router.post("/auth/ldap-login", async (req, res) => {
     client = ldap.createClient({
       url: LDAP_CONFIG.url,
       tlsOptions: {
-        ca: [LDAP_CONFIG.caCert],
-        rejectUnauthorized: false,
+        rejectUnauthorized: false, // Updated: removed caCert
       },
     });
 
@@ -174,8 +171,7 @@ router.post("/import-ldap-users", requireAdmin, async (req, res) => {
     client = ldap.createClient({
       url: LDAP_CONFIG.url,
       tlsOptions: {
-        ca: [LDAP_CONFIG.caCert],
-        rejectUnauthorized: false,
+        rejectUnauthorized: false, // Updated: removed caCert
       },
     });
 
