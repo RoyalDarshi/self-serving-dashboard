@@ -9,8 +9,14 @@ router.post("/save", async (req, res) => {
   const { user } = req;
   const { name, description, connection_id, charts, layout } = req.body;
 
-  if (user.role === "admin") {
-    return res.status(403).json({ error: "Admins cannot create dashboards" });
+  const canCreate =
+    user.role === "designer" ||
+    (user.role === "user" && user.accessLevel === "editor");
+
+  if (!canCreate) {
+    return res
+      .status(403)
+      .json({ error: "Permission denied to create dashboards" });
   }
 
   if (!name || !connection_id) {
@@ -86,26 +92,30 @@ router.post("/save", async (req, res) => {
   }
 });
 
-// Update an existing dashboard
+// Update an existing dashboard (including other users' dashboards)
 router.put("/:id", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
   const { id } = req.params;
   const { name, description, charts, layout } = req.body;
 
-  if (user.role === "admin") {
-    return res.status(403).json({ error: "Admins cannot update dashboards" });
+  const canUpdate =
+    user.role === "designer" ||
+    (user.role === "user" && user.accessLevel === "editor");
+
+  if (!canUpdate) {
+    return res
+      .status(403)
+      .json({ error: "Permission denied to update dashboards" });
   }
 
-  // Check dashboard ownership and connection access
+  // Check if dashboard exists (ownership check removed to allow editing others' dashboards)
   const dashboard = await db.get(
-    `SELECT connection_id FROM dashboards WHERE id = ? AND user_id = ?`,
-    [id, user.userId]
+    `SELECT connection_id FROM dashboards WHERE id = ?`,
+    [id]
   );
   if (!dashboard) {
-    return res
-      .status(404)
-      .json({ error: "Dashboard not found or access denied" });
+    return res.status(404).json({ error: "Dashboard not found" });
   }
 
   const accessCheck = await db.get(
@@ -122,11 +132,12 @@ router.put("/:id", async (req, res) => {
     await db.run("BEGIN TRANSACTION");
     transactionActive = true;
 
+    // Ownership check removed from WHERE clause
     await db.run(
       `UPDATE dashboards 
        SET name = ?, description = ?, layout = ?, last_modified = CURRENT_TIMESTAMP 
-       WHERE id = ? AND user_id = ?`,
-      [name, description || null, JSON.stringify(layout || []), id, user.userId]
+       WHERE id = ?`,
+      [name, description || null, JSON.stringify(layout || []), id]
     );
 
     await db.run(`DELETE FROM charts WHERE dashboard_id = ?`, [id]);
@@ -174,13 +185,14 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// List all dashboards for a user
+// List all dashboards a user has access to
 router.get("/list", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
 
   try {
     let dashboards;
+    // Admins see an empty list; all other users see dashboards based on designation
     if (user.role === "admin") {
       return res.json([]);
     } else {
@@ -277,25 +289,29 @@ router.get("/list", async (req, res) => {
   }
 });
 
-// Delete a dashboard
+// Delete a dashboard (including other users' dashboards)
 router.delete("/:id", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
   const { id } = req.params;
 
-  if (user.role === "admin") {
-    return res.status(403).json({ error: "Admins cannot delete dashboards" });
+  const canDelete =
+    user.role === "designer" ||
+    (user.role === "user" && user.accessLevel === "editor");
+
+  if (!canDelete) {
+    return res
+      .status(403)
+      .json({ error: "Permission denied to delete dashboards" });
   }
 
-  // Check ownership and access
+  // Check if dashboard exists (ownership check removed)
   const dashboard = await db.get(
-    `SELECT connection_id FROM dashboards WHERE id = ? AND user_id = ?`,
-    [id, user.userId]
+    `SELECT connection_id FROM dashboards WHERE id = ?`,
+    [id]
   );
   if (!dashboard) {
-    return res
-      .status(404)
-      .json({ error: "Dashboard not found or access denied" });
+    return res.status(404).json({ error: "Dashboard not found" });
   }
 
   const accessCheck = await db.get(
@@ -312,14 +328,10 @@ router.delete("/:id", async (req, res) => {
     await db.run("BEGIN TRANSACTION");
     transactionActive = true;
 
-    // Delete related charts
     await db.run(`DELETE FROM charts WHERE dashboard_id = ?`, [id]);
 
-    // Delete the dashboard
-    await db.run(`DELETE FROM dashboards WHERE id = ? AND user_id = ?`, [
-      id,
-      user.userId,
-    ]);
+    // Ownership check removed from WHERE clause
+    await db.run(`DELETE FROM dashboards WHERE id = ?`, [id]);
 
     await db.run("COMMIT");
     transactionActive = false;
@@ -339,29 +351,34 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-// Delete individual chart
+// Delete individual chart (including from other users' dashboards)
 router.delete("/chart/:chartId", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
   const { chartId } = req.params;
 
-  if (user.role === "admin") {
-    return res.status(403).json({ error: "Admins cannot delete charts" });
+  const canDelete =
+    user.role === "designer" ||
+    (user.role === "user" && user.accessLevel === "editor");
+
+  if (!canDelete) {
+    return res
+      .status(403)
+      .json({ error: "Permission denied to delete charts" });
   }
 
   let transactionActive = false;
   try {
+    // Ownership check removed from query
     const chart = await db.get(
       `SELECT c.id, d.connection_id 
        FROM charts c 
        JOIN dashboards d ON c.dashboard_id = d.id 
-       WHERE c.id = ? AND d.user_id = ?`,
-      [chartId, user.userId]
+       WHERE c.id = ?`,
+      [chartId]
     );
     if (!chart) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Chart not found or access denied" });
+      return res.status(404).json({ success: false, error: "Chart not found" });
     }
 
     const accessCheck = await db.get(

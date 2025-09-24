@@ -114,7 +114,7 @@ const App: React.FC = () => {
       // Set initial tab based on role
       if (user.role === "admin") {
         setActiveTab("create-user");
-      } else if (user.role === "designer") {
+      } else if (user.role === "designer" || user.accessLevel === "editor") {
         setActiveTab("chart-builder");
       } else {
         setActiveTab("my-dashboards");

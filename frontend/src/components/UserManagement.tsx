@@ -28,6 +28,7 @@ interface FormData {
   role: Role;
   accessLevel: AccessLevel;
   designation: Designation;
+  is_ad_user: boolean; // Track if the user is from AD
 }
 
 // Utility Functions
@@ -58,7 +59,9 @@ const formatDate = (dateString: string): string =>
 interface UserFormProps {
   isEditing: boolean;
   formData: FormData;
-  handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  handleInputChange: (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => void;
   handleSubmit: (e: React.FormEvent) => void;
   handleCancel: () => void;
 }
@@ -108,7 +111,7 @@ const UserForm: React.FC<UserFormProps> = ({
               name="username"
               value={formData.username}
               onChange={handleInputChange}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:bg-gray-100"
               required
               disabled={isEditing}
             />
@@ -123,9 +126,16 @@ const UserForm: React.FC<UserFormProps> = ({
               name="password"
               value={formData.password}
               onChange={handleInputChange}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors disabled:bg-gray-100 disabled:cursor-not-allowed"
               required={!isEditing}
-              placeholder={isEditing ? "Leave blank to keep current" : ""}
+              placeholder={
+                isEditing
+                  ? formData.is_ad_user
+                    ? "Cannot change for AD user"
+                    : "Leave blank to keep current"
+                  : ""
+              }
+              disabled={isEditing && formData.is_ad_user}
             />
           </div>
 
@@ -217,8 +227,9 @@ const UserManagement: React.FC = () => {
     username: "",
     password: "",
     role: "user",
-    accessLevel: "viewer", // Default access level
+    accessLevel: "viewer",
     designation: null,
+    is_ad_user: false,
   });
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -256,8 +267,8 @@ const UserManagement: React.FC = () => {
       designation: formData.designation || null,
     };
 
-    // Only add password if it's not empty
-    if (formData.password) {
+    // Only add password if it's not empty and not an AD user
+    if (formData.password && !formData.is_ad_user) {
       payload.password = formData.password;
     }
 
@@ -359,8 +370,9 @@ const UserManagement: React.FC = () => {
       username: user.username,
       password: "", // Clear password for editing
       role: user.role,
-      accessLevel: user.accessLevel || "viewer", // Set accessLevel from user data
+      accessLevel: user.accessLevel || "viewer",
       designation: user.designation || null,
+      is_ad_user: user.is_ad_user, // Set the AD user flag
     });
     setIsEditing(true);
     setShowForm(true);
@@ -374,6 +386,7 @@ const UserManagement: React.FC = () => {
       role: "user",
       accessLevel: "viewer",
       designation: null,
+      is_ad_user: false, // Reset the AD user flag
     });
     setIsEditing(false);
   };
@@ -389,13 +402,18 @@ const UserManagement: React.FC = () => {
   };
 
   // Computed Values
-  const filteredUsers = users.filter(
-    (user) =>
-      user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (user.designation &&
-        user.designation.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredUsers = users.filter((user) => {
+    const term = searchTerm.toLowerCase();
+    const userType = user.is_ad_user ? "ad" : "local";
+
+    return (
+      user.username.toLowerCase().includes(term) ||
+      user.role.toLowerCase().includes(term) ||
+      (user.designation && user.designation.toLowerCase().includes(term)) ||
+      (user.accessLevel && user.accessLevel.toLowerCase().includes(term)) ||
+      userType.includes(term)
+    );
+  });
 
   // Sub-Components (Not defined inside render)
   const ErrorMessage: React.FC<{ message: string }> = ({ message }) => (
@@ -655,7 +673,7 @@ const UserManagement: React.FC = () => {
               </div>
               <input
                 type="text"
-                placeholder="Search users by name, role, or designation..."
+                placeholder="Search by name, role, designation, access level, or type (AD/Local)..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
@@ -770,17 +788,8 @@ const UserManagement: React.FC = () => {
                         <div className="flex justify-end space-x-2">
                           <button
                             onClick={() => handleEdit(user)}
-                            disabled={user.is_ad_user}
-                            className={`inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-indigo-600 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors ${
-                              user.is_ad_user
-                                ? "opacity-50 cursor-not-allowed"
-                                : ""
-                            }`}
-                            title={
-                              user.is_ad_user
-                                ? "AD users cannot be edited locally"
-                                : "Edit user"
-                            }
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-indigo-600 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                            title="Edit user"
                           >
                             <svg
                               className="w-4 h-4 mr-1"
