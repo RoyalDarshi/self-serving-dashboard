@@ -70,20 +70,18 @@ const Sidebar: React.FC<SidebarProps> = ({
           <Database className="h-6 w-6" />
         </button>
       )}
-      {user?.role === "designer" ||
-        (user?.role === "user" && user?.accessLevel === "editor" && (
-          <button
-            onClick={() => setActiveTab("chart-builder")}
-            className={`p-2 rounded-md ${
-              activeTab === "chart-builder"
-                ? "bg-blue-600"
-                : "hover:bg-gray-700"
-            }`}
-            title="Chart Builder"
-          >
-            <BarChart3 className="h-6 w-6" />
-          </button>
-        ))}
+      {(user?.role === "designer" ||
+        (user?.role === "user" && user?.accessLevel === "editor")) && (
+        <button
+          onClick={() => setActiveTab("chart-builder")}
+          className={`p-2 rounded-md ${
+            activeTab === "chart-builder" ? "bg-blue-600" : "hover:bg-gray-700"
+          }`}
+          title="Chart Builder"
+        >
+          <BarChart3 className="h-6 w-6" />
+        </button>
+      )}
       {(user?.role === "designer" || user?.role === "user") && (
         <button
           onClick={() => setActiveTab("my-dashboards")}
