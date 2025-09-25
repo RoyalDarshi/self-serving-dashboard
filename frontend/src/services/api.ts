@@ -219,15 +219,15 @@ export const apiService = {
   createUser: (
     user: Omit<User, "id" | "created_at" | "is_ad_user"> & { password?: string }
   ): Promise<ApiResponse<{ user: User }>> =>
-    createApiFetch("/semantic/users", "POST", user),
+    createApiFetch("/user/users", "POST", user),
 
   getUsers: (): Promise<User[]> =>
-    createApiFetch<User[]>("/semantic/users", "GET").then((response) =>
+    createApiFetch<User[]>("/user/users", "GET").then((response) =>
       response.success ? response.data || [] : []
     ),
 
   getUser: (id: number): Promise<ApiResponse<User>> =>
-    createApiFetch(`/semantic/users/${id}`),
+    createApiFetch(`/user/users/${id}`),
 
   updateUser: (
     id: number,
@@ -235,45 +235,45 @@ export const apiService = {
       Omit<User, "id" | "created_at" | "is_ad_user"> & { password?: string }
     >
   ): Promise<ApiResponse<User>> =>
-    createApiFetch(`/semantic/users/${id}`, "PUT", user),
+    createApiFetch(`/user/users/${id}`, "PUT", user),
 
   deleteUser: (id: number): Promise<ApiResponse<unknown>> =>
-    createApiFetch(`/semantic/users/${id}`, "DELETE"),
+    createApiFetch(`/user/users/${id}`, "DELETE"),
 
   importUsersFromAD: (): Promise<ApiResponse<ImportUsersResponse>> =>
-    createApiFetch("/semantic/import-ldap-users", "POST"),
+    createApiFetch("/user/import-ldap-users", "POST"),
 
   // Connection Management
   getConnections: (): Promise<Connection[]> =>
-    createApiFetch<Connection[]>("/semantic/connections", "GET").then(
+    createApiFetch<Connection[]>("/connection/connections", "GET").then(
       (response) => (response.success ? response.data || [] : [])
     ),
 
   createConnection: (
     connection: Omit<Connection, "id" | "created_at">
   ): Promise<ApiResponse<unknown>> =>
-    createApiFetch("/semantic/connections", "POST", connection),
+    createApiFetch("/connection/connections", "POST", connection),
 
   updateConnection: (
     id: number,
     connection: Omit<Connection, "id" | "created_at">
   ): Promise<ApiResponse<unknown>> =>
-    createApiFetch(`/semantic/connections/${id}`, "PUT", connection),
+    createApiFetch(`/connection/connections/${id}`, "PUT", connection),
 
   deleteConnection: (id: number): Promise<ApiResponse<unknown>> =>
-    createApiFetch(`/semantic/connections/${id}`, "DELETE"),
+    createApiFetch(`/connection/connections/${id}`, "DELETE"),
 
   testConnection: (
     connection: Omit<Connection, "id" | "created_at">
   ): Promise<ApiResponse<{ success: boolean; message?: string }>> =>
-    createApiFetch("/semantic/connections/test", "POST", connection),
+    createApiFetch("/connection/connections/test", "POST", connection),
 
   getConnectionDesignations: (
     connectionId?: number
   ): Promise<ConnectionDesignation[]> => {
     const query = connectionId ? `?connection_id=${connectionId}` : "";
     return createApiFetch<ConnectionDesignation[]>(
-      `/semantic/connection-designations${query}`,
+      `/connection/connection-designations${query}`,
       "GET"
     ).then((response) => (response.success ? response.data || [] : []));
   },
@@ -282,13 +282,13 @@ export const apiService = {
     connectionId: number,
     designation: string
   ): Promise<ApiResponse<unknown>> =>
-    createApiFetch("/semantic/connection-designations", "POST", {
+    createApiFetch("/connection/connection-designations", "POST", {
       connection_id: connectionId,
       designation,
     }),
 
   deleteConnectionDesignation: (id: number): Promise<ApiResponse<unknown>> =>
-    createApiFetch(`/semantic/connection-designations/${id}`, "DELETE"),
+    createApiFetch(`/connection/connection-designations/${id}`, "DELETE"),
 
   // Schema Management
   getSchemas: (connectionId: number): Promise<Schema[]> =>

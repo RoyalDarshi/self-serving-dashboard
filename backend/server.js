@@ -5,6 +5,8 @@ import semanticRouter from "./routes/semantic.js";
 import databaseRouter from "./routes/database.js";
 import analyticsRouter from "./routes/analytics.js";
 import dashboardRouter from "./routes/dashboard.js";
+import userRouter from "./routes/users.js";
+import connectionRouter from "./routes/connections.js";
 import authRouter from "./routes/auth.js";
 import { initializeDatabase } from "./database/setupDatabase.js";
 import dotenv from "dotenv";
@@ -36,6 +38,8 @@ app.use("/api/database", databaseRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/dashboard", dashboardRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/user", userRouter);
+app.use("/api/connection", connectionRouter);
 
 (async () => {
   try {
