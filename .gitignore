@@ -3,5 +3,5 @@ start.sh
 stop.sh
 
 .env
-
+.history
 *.sqlite
