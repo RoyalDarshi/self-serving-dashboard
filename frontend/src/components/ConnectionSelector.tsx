@@ -27,8 +27,7 @@ interface ConnectionSelectorProps {
  * Beautiful, accessible, fully-styled connection selector.
  * - Single-select → native <select> with nice styling (matches your original UI)
  * - Multi-select → custom dropdown with checkboxes + search
- * 
- * FIXED: No bugs, reliable single/multi switching, proper state management
+ * * FIXED: No bugs, reliable single/multi switching, proper state management
  */
 export const ConnectionSelector: React.FC<ConnectionSelectorProps> = ({
   connections,
@@ -67,6 +66,7 @@ export const ConnectionSelector: React.FC<ConnectionSelectorProps> = ({
     if (singleSelect) {
       // SINGLE SELECT: Replace current selection with new one
       nextIds = [id];
+      setOpen(false); // Close after selection in single-select mode
     } else {
       // MULTI SELECT: Toggle the specific connection
       nextIds = selectedIds.includes(id)
@@ -188,8 +188,14 @@ export const ConnectionSelector: React.FC<ConnectionSelectorProps> = ({
               filtered.map((connection) => {
                 const isChecked = selectedIds.includes(connection.id);
                 return (
+                  // FIX: Add onClick handler to the label to enable toggling (select/unselect)
                   <label
                     key={connection.id}
+                    onClick={(e) => {
+                      // Prevent closing the dropdown when clicking an item
+                      e.preventDefault(); 
+                      toggle(connection.id);
+                    }}
                     className={`
                       flex items-center gap-3 px-4 py-3 cursor-pointer
                       transition-colors hover:bg-gray-50
