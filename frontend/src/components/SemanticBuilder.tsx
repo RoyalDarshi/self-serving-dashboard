@@ -1,6 +1,6 @@
-// SemanticBuilder.tsx
+// src/components/SemanticBuilder.tsx
 import React, { useState, useEffect } from "react";
-import { Database, BarChart3, Layers, Target, Zap, Table } from "lucide-react";
+import { Database, BarChart3, Layers, Target, Zap, Table, AlertCircle } from "lucide-react";
 import { apiService } from "../services/api";
 import FactForm from "./FactForm";
 import DimensionForm from "./DimensionForm";
@@ -9,19 +9,13 @@ import KPIForm from "./KPIForm";
 import DataList from "./DataList";
 import SchemaVisualizer from "./SchemaVisualizer";
 import ErrorBoundary from "./ErrorBoundary";
-import Button from "./ui/Button";
+import { ConnectionSelector } from "./ConnectionSelector";
 
 // Types
 interface Schema {
   tableName: string;
-  columns: {
-    name: string;
-    type: string;
-    notnull: number;
-    pk: number;
-  }[];
+  columns: { name: string; type: string; notnull: number; pk: number }[];
 }
-
 interface Fact {
   id: number;
   name: string;
@@ -29,14 +23,12 @@ interface Fact {
   column_name: string;
   aggregate_function: string;
 }
-
 interface Dimension {
   id: number;
   name: string;
   table_name: string;
   column_name: string;
 }
-
 interface FactDimension {
   id: number;
   fact_id: number;
@@ -47,14 +39,12 @@ interface FactDimension {
   fact_column: string;
   dimension_column: string;
 }
-
 interface KPI {
   id: number;
   name: string;
   expression: string;
   description?: string;
 }
-
 interface Connection {
   id: number;
   connection_name: string;
@@ -72,16 +62,16 @@ interface Connection {
 
 interface SemanticBuilderProps {
   connections: Connection[];
-  selectedConnectionId: number | null;
-  setSelectedConnectionId: (id: number | null) => void;
+  selectedConnectionIds: number[];
+  setSelectedConnectionIds: (ids: number[]) => void;
 }
 
 const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   connections,
-  selectedConnectionId,
-  setSelectedConnectionId,
+  selectedConnectionIds,
+  setSelectedConnectionIds,
 }) => {
-  const [token, setToken] = useState(localStorage.getItem("token") || "");
+  const [token] = useState(localStorage.getItem("token") || "");
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [facts, setFacts] = useState<Fact[]>([]);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
@@ -94,11 +84,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
 
   // Edit states
   const [editingFact, setEditingFact] = useState<Fact | null>(null);
-  const [editingDimension, setEditingDimension] = useState<Dimension | null>(
-    null
-  );
-  const [editingFactDimension, setEditingFactDimension] =
-    useState<FactDimension | null>(null);
+  const [editingDimension, setEditingDimension] = useState<Dimension | null>(null);
+  const [editingFactDimension, setEditingFactDimension] = useState<FactDimension | null>(null);
   const [editingKPI, setEditingKPI] = useState<KPI | null>(null);
 
   // Form states
@@ -120,70 +107,56 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const [kpiName, setKpiName] = useState("");
   const [kpiExpression, setKpiExpression] = useState("");
   const [kpiDescription, setKpiDescription] = useState("");
-  const [kpiInsertType, setKpiInsertType] = useState<"fact" | "column" | "">(
-    ""
-  );
+  const [kpiInsertType, setKpiInsertType] = useState<"fact" | "column" | "">("");
   const [kpiInsertFactId, setKpiInsertFactId] = useState("");
   const [kpiInsertTable, setKpiInsertTable] = useState("");
   const [kpiInsertColumn, setKpiInsertColumn] = useState("");
 
-  // Fetch data when selectedConnectionId changes
+  const isCreationTab = activeTab === "facts" || activeTab === "dimensions";
+
+  // Fetch data
   useEffect(() => {
-    if (!token || !selectedConnectionId) {
-      setSchemas([]);
-      setFacts([]);
-      setDimensions([]);
-      setFactDimensions([]);
-      setKpis([]);
+    if (!token || selectedConnectionIds.length === 0) {
+      setSchemas([]); setFacts([]); setDimensions([]); setFactDimensions([]); setKpis([]);
       return;
     }
 
-    Promise.all([
-      apiService
-        .getSchemas(selectedConnectionId)
-        .catch((err) => ({ error: err.message })),
-      apiService
-        .getFacts(selectedConnectionId)
-        .catch((err) => ({ error: err.message })),
-      apiService
-        .getDimensions(selectedConnectionId)
-        .catch((err) => ({ error: err.message })),
-      apiService
-        .getKpis(selectedConnectionId)
-        .catch((err) => ({ error: err.message })),
-    ])
-      .then(([schemasRes, factsRes, dimensionsRes, kpisRes]) => {
-        if (schemasRes.error)
-          return setError(`Failed to fetch schemas: ${schemasRes.error}`);
-        if (factsRes.error)
-          return setError(`Failed to fetch facts: ${factsRes.error}`);
-        if (dimensionsRes.error)
-          return setError(`Failed to fetch dimensions: ${dimensionsRes.error}`);
-        if (kpisRes.error)
-          return setError(`Failed to fetch KPIs: ${kpisRes.error}`);
-        setSchemas(schemasRes);
-        setFacts(factsRes);
-        setDimensions(dimensionsRes);
-        setKpis(kpisRes);
-      })
-      .catch((err) => setError(`Failed to fetch data: ${err.message}`));
-  }, [token, selectedConnectionId]);
+    const fetchAll = async () => {
+      setError("");
+      const [sch, fct, dim, kpi] = await Promise.all([
+        Promise.all(selectedConnectionIds.map(id => apiService.getSchemas(id).catch(() => []))),
+        Promise.all(selectedConnectionIds.map(id => apiService.getFacts(id).catch(() => []))),
+        Promise.all(selectedConnectionIds.map(id => apiService.getDimensions(id).catch(() => []))),
+        Promise.all(selectedConnectionIds.map(id => apiService.getKpis(id).catch(() => []))),
+      ]);
 
-  // Clear messages after 5 seconds
+      setSchemas(sch.flat());
+      setFacts(fct.flat());
+      setDimensions(dim.flat());
+      setKpis(kpi.flat());
+
+      if (fct.flat().length && dim.flat().length && selectedConnectionIds[0]) {
+        apiService.getFactDimensions(selectedConnectionIds[0]).then(setFactDimensions).catch(() => setFactDimensions([]));
+      } else {
+        setFactDimensions([]);
+      }
+    };
+
+    fetchAll();
+  }, [token, selectedConnectionIds]);
+
+  // Auto-clear messages
   useEffect(() => {
     if (error || success) {
-      const timer = setTimeout(() => {
-        setError("");
-        setSuccess("");
-      }, 5000);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => { setError(""); setSuccess(""); }, 5000);
+      return () => clearTimeout(t);
     }
   }, [error, success]);
 
-  // Prefill mapping fields when dimension is selected
+  // Prefill mapping
   useEffect(() => {
     if (mappingDimensionId) {
-      const dim = dimensions.find((d) => d.id === Number(mappingDimensionId));
+      const dim = dimensions.find(d => d.id === Number(mappingDimensionId));
       if (dim) {
         setMappingJoinTable(dim.table_name);
         setMappingDimensionColumn(dim.column_name);
@@ -191,11 +164,10 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     }
   }, [mappingDimensionId, dimensions]);
 
-  // Prefill mapping fields when editing fact-dimension
   useEffect(() => {
     if (editingFactDimension) {
-      setMappingFactId(editingFactDimension.fact_id.toString());
-      setMappingDimensionId(editingFactDimension.dimension_id.toString());
+      setMappingFactId(String(editingFactDimension.fact_id));
+      setMappingDimensionId(String(editingFactDimension.dimension_id));
       setMappingJoinTable(editingFactDimension.join_table);
       setMappingFactColumn(editingFactDimension.fact_column);
       setMappingDimensionColumn(editingFactDimension.dimension_column);
@@ -203,429 +175,223 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   }, [editingFactDimension]);
 
   const clearForm = () => {
-    setFactName("");
-    setFactTable("");
-    setFactColumn("");
-    setFactAggregation("SUM");
-    setDimensionName("");
-    setDimensionTable("");
-    setDimensionColumn("");
-    setMappingFactId("");
-    setMappingDimensionId("");
-    setMappingJoinTable("");
-    setMappingFactColumn("");
-    setMappingDimensionColumn("");
-    setKpiName("");
-    setKpiExpression("");
-    setKpiDescription("");
-    setKpiInsertType("");
-    setKpiInsertFactId("");
-    setKpiInsertTable("");
-    setKpiInsertColumn("");
-    setEditingFact(null);
-    setEditingDimension(null);
-    setEditingFactDimension(null);
-    setEditingKPI(null);
+    setFactName(""); setFactTable(""); setFactColumn(""); setFactAggregation("SUM");
+    setDimensionName(""); setDimensionTable(""); setDimensionColumn("");
+    setMappingFactId(""); setMappingDimensionId(""); setMappingJoinTable("");
+    setMappingFactColumn(""); setMappingDimensionColumn("");
+    setKpiName(""); setKpiExpression(""); setKpiDescription("");
+    setKpiInsertType(""); setKpiInsertFactId(""); setKpiInsertTable(""); setKpiInsertColumn("");
+    setEditingFact(null); setEditingDimension(null); setEditingFactDimension(null); setEditingKPI(null);
   };
 
-  // Fact CRUD operations
+  const selectedConnId = selectedConnectionIds[0] ?? null;
+
+  // CRUD Handlers
   const handleCreateFact = async () => {
-    if (!selectedConnectionId)
-      return setError("Please select a connection first.");
-    if (!factName || !factTable || !factColumn)
-      return setError("All fact fields are required");
-    try {
-      const response = await apiService.createFact({
-        connection_id: selectedConnectionId,
-        name: factName,
-        table_name: factTable,
-        column_name: factColumn,
-        aggregate_function: factAggregation,
-      });
-      if (response.success && response.data) {
-        setFacts([...facts, response.data]);
-        clearForm();
-        setSuccess(`Fact "${response.data.name}" created successfully`);
-      } else {
-        setError(response.error || "Failed to create fact");
-      }
-    } catch (err) {
-      setError(`Failed to create fact: ${(err as Error).message}`);
-    }
-  };
-
-  const handleEditFact = (fact: Fact) => {
-    setEditingFact(fact);
-    setFactName(fact.name);
-    setFactTable(fact.table_name);
-    setFactColumn(fact.column_name);
-    setFactAggregation(fact.aggregate_function);
+    if (!selectedConnId) return setError("Select a connection");
+    if (!factName || !factTable || !factColumn) return setError("All fields required");
+    const r = await apiService.createFact({
+      connection_id: selectedConnId,
+      name: factName,
+      table_name: factTable,
+      column_name: factColumn,
+      aggregate_function: factAggregation,
+    });
+    if (r.success) { setFacts(p => [...p, r.data!]); clearForm(); setSuccess(`Fact created`); }
+    else setError(r.error ?? "Failed");
   };
 
   const handleUpdateFact = async () => {
-    if (!editingFact || !factName || !factTable || !factColumn)
-      return setError("All fact fields are required");
-    try {
-      const response = await apiService.updateFact(editingFact.id, {
-        connection_id: selectedConnectionId!,
-        name: factName,
-        table_name: factTable,
-        column_name: factColumn,
-        aggregate_function: factAggregation,
-      });
-      if (response.success && response.data) {
-        setFacts(
-          facts.map((f) => (f.id === editingFact.id ? response.data : f))
-        );
-        clearForm();
-        setSuccess(`Fact "${response.data.name}" updated successfully`);
-      } else {
-        setError(response.error || "Failed to update fact");
-      }
-    } catch (err) {
-      setError(`Failed to update fact: ${(err as Error).message}`);
-    }
+    if (!editingFact || !selectedConnId) return setError("Missing data");
+    const r = await apiService.updateFact(editingFact.id, {
+      connection_id: selectedConnId,
+      name: factName,
+      table_name: factTable,
+      column_name: factColumn,
+      aggregate_function: factAggregation,
+    });
+    if (r.success) { setFacts(p => p.map(f => f.id === editingFact.id ? r.data! : f)); clearForm(); setSuccess(`Updated`); }
+    else setError(r.error ?? "Failed");
   };
 
   const handleDeleteFact = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete the fact "${name}"?`)) return;
-    try {
-      const response = await apiService.deleteFact(id);
-      if (response.success) {
-        setFacts(facts.filter((f) => f.id !== id));
-        setSuccess(`Fact "${name}" deleted successfully`);
-      } else {
-        setError(response.error || "Failed to delete fact");
-      }
-    } catch (err) {
-      setError(`Failed to delete fact: ${(err as Error).message}`);
-    }
+    if (!confirm(`Delete fact "${name}"?`)) return;
+    const r = await apiService.deleteFact(id);
+    if (r.success) { setFacts(p => p.filter(f => f.id !== id)); setSuccess(`Deleted`); }
+    else setError(r.error ?? "Failed");
   };
 
-  // Dimension CRUD operations
+  const startEditFact = (f: Fact) => {
+    setEditingFact(f);
+    setFactName(f.name);
+    setFactTable(f.table_name);
+    setFactColumn(f.column_name);
+    setFactAggregation(f.aggregate_function);
+  };
+
+  // Dimension handlers (same pattern)
   const handleCreateDimension = async () => {
-    if (!selectedConnectionId)
-      return setError("Please select a connection first.");
-    if (!dimensionName || !dimensionTable || !dimensionColumn)
-      return setError("All dimension fields are required");
-    try {
-      const response = await apiService.createDimension({
-        connection_id: selectedConnectionId,
-        name: dimensionName,
-        table_name: dimensionTable,
-        column_name: dimensionColumn,
-      });
-      if (response.success && response.data) {
-        setDimensions([...dimensions, response.data]);
-        clearForm();
-        setSuccess(`Dimension "${response.data.name}" created successfully`);
-      } else {
-        setError(response.error || "Failed to create dimension");
-      }
-    } catch (err) {
-      setError(`Failed to create dimension: ${(err as Error).message}`);
-    }
-  };
-
-  const handleEditDimension = (dim: Dimension) => {
-    setEditingDimension(dim);
-    setDimensionName(dim.name);
-    setDimensionTable(dim.table_name);
-    setDimensionColumn(dim.column_name);
+    if (!selectedConnId) return setError("Select a connection");
+    if (!dimensionName || !dimensionTable || !dimensionColumn) return setError("All fields required");
+    const r = await apiService.createDimension({
+      connection_id: selectedConnId,
+      name: dimensionName,
+      table_name: dimensionTable,
+      column_name: dimensionColumn,
+    });
+    if (r.success) { setDimensions(p => [...p, r.data!]); clearForm(); setSuccess(`Dimension created`); }
+    else setError(r.error ?? "Failed");
   };
 
   const handleUpdateDimension = async () => {
-    if (
-      !editingDimension ||
-      !dimensionName ||
-      !dimensionTable ||
-      !dimensionColumn
-    )
-      return setError("All dimension fields are required");
-    try {
-      const response = await apiService.updateDimension(editingDimension.id, {
-        connection_id: selectedConnectionId!,
-        name: dimensionName,
-        table_name: dimensionTable,
-        column_name: dimensionColumn,
-      });
-      if (response.success && response.data) {
-        setDimensions(
-          dimensions.map((d) =>
-            d.id === editingDimension.id ? response.data : d
-          )
-        );
-        clearForm();
-        setSuccess(`Dimension "${response.data.name}" updated successfully`);
-      } else {
-        setError(response.error || "Failed to update dimension");
-      }
-    } catch (err) {
-      setError(`Failed to update dimension: ${(err as Error).message}`);
-    }
+    if (!editingDimension || !selectedConnId) return setError("Missing data");
+    const r = await apiService.updateDimension(editingDimension.id, {
+      connection_id: selectedConnId,
+      name: dimensionName,
+      table_name: dimensionTable,
+      column_name: dimensionColumn,
+    });
+    if (r.success) { setDimensions(p => p.map(d => d.id === editingDimension.id ? r.data! : d)); clearForm(); setSuccess(`Updated`); }
+    else setError(r.error ?? "Failed");
   };
 
   const handleDeleteDimension = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete the dimension "${name}"?`))
-      return;
-    try {
-      const response = await apiService.deleteDimension(id);
-      if (response.success) {
-        setDimensions(dimensions.filter((d) => d.id !== id));
-        setSuccess(`Dimension "${name}" deleted successfully`);
-      } else {
-        setError(response.error || "Failed to delete dimension");
-      }
-    } catch (err) {
-      setError(`Failed to delete dimension: ${(err as Error).message}`);
-    }
+    if (!confirm(`Delete dimension "${name}"?`)) return;
+    const r = await apiService.deleteDimension(id);
+    if (r.success) { setDimensions(p => p.filter(d => d.id !== id)); setSuccess(`Deleted`); }
+    else setError(r.error ?? "Failed");
   };
 
-  // Fact-Dimension Mapping CRUD operations
-  const handleCreateFactDimension = async () => {
-    if (
-      !mappingFactId ||
-      !mappingDimensionId ||
-      !mappingJoinTable ||
-      !mappingFactColumn ||
-      !mappingDimensionColumn
-    )
-      return setError("All mapping fields are required");
-    try {
-      const response = await apiService.createFactDimension({
-        fact_id: Number(mappingFactId),
-        dimension_id: Number(mappingDimensionId),
-        join_table: mappingJoinTable,
-        fact_column: mappingFactColumn,
-        dimension_column: mappingDimensionColumn,
-      });
-      if (response.success && response.data) {
-        setFactDimensions([...factDimensions, response.data]);
-        clearForm();
-        setSuccess("Mapping created successfully");
-      } else {
-        setError(response.error || "Failed to create mapping");
-      }
-    } catch (err) {
-      setError(`Failed to create mapping: ${(err as Error).message}`);
-    }
+  const startEditDimension = (d: Dimension) => {
+    setEditingDimension(d);
+    setDimensionName(d.name);
+    setDimensionTable(d.table_name);
+    setDimensionColumn(d.column_name);
   };
 
-  const handleEditFactDimension = (fd: FactDimension) => {
-    setEditingFactDimension(fd);
+  // Mapping handlers
+  const handleCreateMapping = async () => {
+    if (!mappingFactId || !mappingDimensionId || !mappingJoinTable || !mappingFactColumn || !mappingDimensionColumn)
+      return setError("Fill all mapping fields");
+    const r = await apiService.createFactDimension({
+      fact_id: Number(mappingFactId),
+      dimension_id: Number(mappingDimensionId),
+      join_table: mappingJoinTable,
+      fact_column: mappingFactColumn,
+      dimension_column: mappingDimensionColumn,
+    });
+    if (r.success) { setFactDimensions(p => [...p, r.data!]); clearForm(); setSuccess(`Mapping created`); }
+    else setError(r.error ?? "Failed");
   };
 
-  const handleUpdateFactDimension = async () => {
-    if (
-      !editingFactDimension ||
-      !mappingFactId ||
-      !mappingDimensionId ||
-      !mappingJoinTable ||
-      !mappingFactColumn ||
-      !mappingDimensionColumn
-    )
-      return setError("All mapping fields are required");
-    try {
-      const response = await apiService.updateFactDimension(
-        editingFactDimension.id,
-        {
-          fact_id: Number(mappingFactId),
-          dimension_id: Number(mappingDimensionId),
-          join_table: mappingJoinTable,
-          fact_column: mappingFactColumn,
-          dimension_column: mappingDimensionColumn,
-        }
-      );
-      if (response.success && response.data) {
-        setFactDimensions(
-          factDimensions.map((fd) =>
-            fd.id === editingFactDimension.id ? response.data : fd
-          )
-        );
-        clearForm();
-        setSuccess("Mapping updated successfully");
-      } else {
-        setError(response.error || "Failed to update mapping");
-      }
-    } catch (err) {
-      setError(`Failed to update mapping: ${(err as Error).message}`);
-    }
+  const handleUpdateMapping = async () => {
+    if (!editingFactDimension) return setError("No mapping selected");
+    const r = await apiService.updateFactDimension(editingFactDimension.id, {
+      fact_id: Number(mappingFactId),
+      dimension_id: Number(mappingDimensionId),
+      join_table: mappingJoinTable,
+      fact_column: mappingFactColumn,
+      dimension_column: mappingDimensionColumn,
+    });
+    if (r.success) { setFactDimensions(p => p.map(m => m.id === editingFactDimension.id ? r.data! : m)); clearForm(); setSuccess(`Updated`); }
+    else setError(r.error ?? "Failed");
   };
 
-  const handleDeleteFactDimension = async (
-    id: number,
-    factName: string,
-    dimName: string
-  ) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete the mapping between "${factName}" and "${dimName}"?`
-      )
-    )
-      return;
-    try {
-      const response = await apiService.deleteFactDimension(id);
-      if (response.success) {
-        setFactDimensions(factDimensions.filter((fd) => fd.id !== id));
-        setSuccess(
-          `Mapping between "${factName}" and "${dimName}" deleted successfully`
-        );
-      } else {
-        setError(response.error || "Failed to delete mapping");
-      }
-    } catch (err) {
-      setError(`Failed to delete mapping: ${(err as Error).message}`);
-    }
+  const handleDeleteMapping = async (id: number, fact: string, dim: string) => {
+    if (!confirm(`Delete mapping ${fact} to ${dim}?`)) return;
+    const r = await apiService.deleteFactDimension(id);
+    if (r.success) { setFactDimensions(p => p.filter(m => m.id !== id)); setSuccess(`Deleted`); }
+    else setError(r.error ?? "Failed");
   };
+
+  const startEditMapping = (m: FactDimension) => setEditingFactDimension(m);
 
   const handleAutoMap = async () => {
-    if (!selectedConnectionId)
-      return setError("Please select a connection first.");
-    try {
-      const response = await apiService.autoMap(selectedConnectionId);
-      if (response.success && response.data) {
-        setFactDimensions(response.data);
-        setSuccess(`Auto-mapped ${response.data.length} relationships`);
-      } else {
-        setError(response.error || "Failed to auto-map");
-      }
-    } catch (err) {
-      setError(`Failed to auto-map: ${(err as Error).message}`);
+    if (!selectedConnectionIds.length) return setError("Select at least one connection");
+    const all: FactDimension[] = [];
+    let ok = 0, err = 0;
+    for (const id of selectedConnectionIds) {
+      const r = await apiService.autoMap(id);
+      if (r.success && r.data) { all.push(...r.data); ok++; } else err++;
     }
+    setFactDimensions(all);
+    setSuccess(ok ? `Auto-mapped ${all.length} relations` : "");
+    if (err) setError(`${err} connection(s) failed`);
   };
 
-  // KPI CRUD operations
+  // KPI handlers
   const handleCreateKPI = async () => {
-    if (!selectedConnectionId)
-      return setError("Please select a connection first.");
-    if (!kpiName || !kpiExpression)
-      return setError("Name and expression are required");
-    try {
-      const response = await apiService.createKpi({
-        connection_id: selectedConnectionId,
-        name: kpiName,
-        expression: kpiExpression,
-        description: kpiDescription,
-      });
-      if (response.success && response.data) {
-        setKpis([...kpis, response.data]);
-        clearForm();
-        setSuccess(`KPI "${response.data.name}" created successfully`);
-      } else {
-        setError(response.error || "Failed to create KPI");
-      }
-    } catch (err) {
-      setError(`Failed to create KPI: ${(err as Error).message}`);
-    }
-  };
-
-  const handleEditKPI = (kpi: KPI) => {
-    setEditingKPI(kpi);
-    setKpiName(kpi.name);
-    setKpiExpression(kpi.expression);
-    setKpiDescription(kpi.description || "");
+    if (!selectedConnId) return setError("Select a connection");
+    if (!kpiName || !kpiExpression) return setError("Name & expression required");
+    const r = await apiService.createKpi({
+      connection_id: selectedConnId,
+      name: kpiName,
+      expression: kpiExpression,
+      description: kpiDescription,
+    });
+    if (r.success) { setKpis(p => [...p, r.data!]); clearForm(); setSuccess(`KPI created`); }
+    else setError(r.error ?? "Failed");
   };
 
   const handleUpdateKPI = async () => {
-    if (!editingKPI || !kpiName || !kpiExpression)
-      return setError("Name and expression are required");
-    try {
-      const response = await apiService.updateKpi(editingKPI.id, {
-        name: kpiName,
-        expression: kpiExpression,
-        description: kpiDescription,
-      });
-      if (response.success && response.data) {
-        setKpis(kpis.map((k) => (k.id === editingKPI.id ? response.data : k)));
-        clearForm();
-        setSuccess(`KPI "${response.data.name}" updated successfully`);
-      } else {
-        setError(response.error || "Failed to update KPI");
-      }
-    } catch (err) {
-      setError(`Failed to update KPI: ${(err as Error).message}`);
-    }
+    if (!editingKPI) return setError("No KPI selected");
+    const r = await apiService.updateKpi(editingKPI.id, {
+      name: kpiName,
+      expression: kpiExpression,
+      description: kpiDescription,
+    });
+    if (r.success) { setKpis(p => p.map(k => k.id === editingKPI.id ? r.data! : k)); clearForm(); setSuccess(`Updated`); }
+    else setError(r.error ?? "Failed");
   };
 
   const handleDeleteKPI = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete the KPI "${name}"?`)) return;
-    try {
-      const response = await apiService.deleteKpi(id);
-      if (response.success) {
-        setKpis(kpis.filter((k) => k.id !== id));
-        setSuccess(`KPI "${name}" deleted successfully`);
-      } else {
-        setError(response.error || "Failed to delete KPI");
-      }
-    } catch (err) {
-      setError(`Failed to delete KPI: ${(err as Error).message}`);
-    }
+    if (!confirm(`Delete KPI "${name}"?`)) return;
+    const r = await apiService.deleteKpi(id);
+    if (r.success) { setKpis(p => p.filter(k => k.id !== id)); setSuccess(`Deleted`); }
+    else setError(r.error ?? "Failed");
   };
 
-  const filteredFacts = facts.filter((f) =>
-    f.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  const filteredDimensions = dimensions.filter((d) =>
-    d.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  const filteredFactDimensions = factDimensions.filter((fd) =>
-    `${fd.fact_name} ${fd.dimension_name}`
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  );
-  const filteredKpis = kpis.filter((k) =>
-    k.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const startEditKPI = (k: KPI) => {
+    setEditingKPI(k);
+    setKpiName(k.name);
+    setKpiExpression(k.expression);
+    setKpiDescription(k.description ?? "");
+  };
 
-  const insertIntoKpiExpression = () => {
-    let insertText = "";
+  const insertIntoKpi = () => {
+    let txt = "";
     if (kpiInsertType === "fact" && kpiInsertFactId) {
-      const fact = facts.find((f) => f.id === Number(kpiInsertFactId));
-      if (fact) {
-        insertText = `${fact.aggregate_function}(${fact.table_name}.${fact.column_name})`;
-      }
-    } else if (
-      kpiInsertType === "column" &&
-      kpiInsertTable &&
-      kpiInsertColumn
-    ) {
-      insertText = `${kpiInsertTable}.${kpiInsertColumn}`;
+      const f = facts.find(f => f.id === Number(kpiInsertFactId));
+      if (f) txt = `${f.aggregate_function}(${f.table_name}.${f.column_name})`;
+    } else if (kpiInsertType === "column" && kpiInsertTable && kpiInsertColumn) {
+      txt = `${kpiInsertTable}.${kpiInsertColumn}`;
     }
-    if (insertText) {
-      setKpiExpression((prev) => prev + " " + insertText);
-    }
-    setKpiInsertType("");
-    setKpiInsertFactId("");
-    setKpiInsertTable("");
-    setKpiInsertColumn("");
+    if (txt) setKpiExpression(p => p + " " + txt);
+    setKpiInsertType(""); setKpiInsertFactId(""); setKpiInsertTable(""); setKpiInsertColumn("");
   };
+
+  // Filtering
+  const filteredFacts = facts.filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredDimensions = dimensions.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredMappings = factDimensions.filter(m =>
+    `${m.fact_name} ${m.dimension_name}`.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const filteredKpis = kpis.filter(k => k.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
         <div className="container mx-auto p-2">
+          {/* Header + Selector */}
           <div className="flex justify-between items-center mb-2">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Semantic Builder
-            </h1>
-            <div className="w-64">
-              <select
-                value={selectedConnectionId || ""}
-                onChange={(e) =>
-                  setSelectedConnectionId(Number(e.target.value) || null)
-                }
-                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-              >
-                <option value="" disabled>
-                  Select a connection
-                </option>
-                {connections.map((conn) => (
-                  <option key={conn.id} value={conn.id}>
-                    {conn.connection_name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <h1 className="text-3xl font-bold text-gray-900">Semantic Builder</h1>
+            <ConnectionSelector
+              connections={connections}
+              selectedIds={selectedConnectionIds}
+              onChange={setSelectedConnectionIds}
+              singleSelect={isCreationTab}
+              placeholder="Select connection(s)"
+            />
           </div>
 
           {/* Tabs */}
@@ -676,7 +442,6 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                     onCancel={clearForm}
                   />
                 )}
-
                 {activeTab === "dimensions" && (
                   <DimensionForm
                     schemas={schemas}
@@ -692,13 +457,11 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                     onCancel={clearForm}
                   />
                 )}
-
                 {activeTab === "mappings" && (
                   <MappingForm
                     schemas={schemas}
                     facts={facts}
                     dimensions={dimensions}
-                    editingFactDimension={editingFactDimension}
                     mappingFactId={mappingFactId}
                     mappingDimensionId={mappingDimensionId}
                     mappingJoinTable={mappingJoinTable}
@@ -709,13 +472,13 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                     setMappingJoinTable={setMappingJoinTable}
                     setMappingFactColumn={setMappingFactColumn}
                     setMappingDimensionColumn={setMappingDimensionColumn}
-                    onCreate={handleCreateFactDimension}
-                    onUpdate={handleUpdateFactDimension}
+                    onCreate={handleCreateMapping}
+                    onUpdate={handleUpdateMapping}
                     onCancel={clearForm}
                     onAutoMap={handleAutoMap}
+                    selectedConnectionIds={selectedConnectionIds}
                   />
                 )}
-
                 {activeTab === "kpis" && (
                   <KPIForm
                     schemas={schemas}
@@ -738,7 +501,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                     onCreate={handleCreateKPI}
                     onUpdate={handleUpdateKPI}
                     onCancel={clearForm}
-                    onInsert={insertIntoKpiExpression}
+                    onInsert={insertIntoKpi}
                   />
                 )}
               </div>
@@ -748,18 +511,18 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                 facts={facts}
                 dimensions={dimensions}
                 factDimensions={factDimensions}
-                filteredFactDimensions={filteredFactDimensions}
+                filteredFactDimensions={filteredMappings}
                 kpis={kpis}
                 filteredFacts={filteredFacts}
                 filteredDimensions={filteredDimensions}
                 filteredKpis={filteredKpis}
-                onEditFact={handleEditFact}
+                onEditFact={startEditFact}
                 onDeleteFact={handleDeleteFact}
-                onEditDimension={handleEditDimension}
+                onEditDimension={startEditDimension}
                 onDeleteDimension={handleDeleteDimension}
-                onEditFactDimension={handleEditFactDimension}
-                onDeleteFactDimension={handleDeleteFactDimension}
-                onEditKPI={handleEditKPI}
+                onEditFactDimension={startEditMapping}
+                onDeleteFactDimension={handleDeleteMapping}
+                onEditKPI={startEditKPI}
                 onDeleteKPI={handleDeleteKPI}
               />
             </div>
@@ -769,6 +532,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
             <div className="fixed bottom-4 right-4 z-50">
               {error && (
                 <div className="bg-red-500 text-white px-6 py-4 rounded-xl shadow-lg mb-2 flex items-center space-x-3 animate-slide-up">
+                  <AlertCircle className="w-5 h-5" />
                   <span>{error}</span>
                 </div>
               )}

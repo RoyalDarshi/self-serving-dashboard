@@ -1,4 +1,4 @@
-// App.tsx
+// src/App.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { apiService } from "./services/api";
 import Login from "./components/Login";
@@ -9,10 +9,9 @@ import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilde
 import DragDropProvider from "./components/DragDropProvider";
 import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
 import Dashboard from "./components/Dashboard";
-import SemanticBuilder from "./components/SemanticBuilder"; // New component for designer
+import SemanticBuilder from "./components/SemanticBuilder";
 import ConnectionDesignationManager from "./components/ConnectionDesignationManager";
 
-// Types from DynamicSemanticChartBuilder
 interface Fact {
   id: number;
   name: string;
@@ -58,7 +57,6 @@ interface DashboardData {
   layout: any[];
 }
 
-// Updated user interface to include designation
 interface User {
   role: string;
   designation?: string | null;
@@ -72,9 +70,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [dashboards, setDashboards] = useState<DashboardData[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<
-    number | null
-  >(null);
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState<number[]>([]);
 
   useEffect(() => {
     const validateUser = async () => {
@@ -89,63 +85,51 @@ const App: React.FC = () => {
               id: response.data.user.id,
               accessLevel: response.data.user.accessLevel,
             });
-            console.log(response.data);
           } else {
             localStorage.removeItem("token");
           }
         } catch (err) {
-          console.error("Token validation error:", err);
           localStorage.removeItem("token");
         }
       }
       setLoading(false);
     };
-
     validateUser();
   }, []);
 
   useEffect(() => {
     if (user) {
-      apiService.getConnections().then((connections) => {
-        setConnections(connections);
-      });
+      apiService.getConnections().then(setConnections);
       fetchDashboards();
 
-      // Set initial tab based on role
-      if (user.role === "admin") {
-        setActiveTab("create-user");
-      } else if (user.role === "designer" || user.accessLevel === "editor") {
-        setActiveTab("chart-builder");
-      } else {
-        setActiveTab("my-dashboards");
-      }
+      if (user.role === "admin") setActiveTab("create-user");
+      else if (user.role === "designer" || user.accessLevel === "editor") setActiveTab("chart-builder");
+      else setActiveTab("my-dashboards");
     }
   }, [user]);
 
   useEffect(() => {
-    if (connections.length > 0 && selectedConnectionId === null) {
-      setSelectedConnectionId(connections[0].id);
+    if (connections.length > 0 && selectedConnectionIds.length === 0) {
+      setSelectedConnectionIds([connections[0].id]);
     }
-  }, [connections, selectedConnectionId]);
+  }, [connections, selectedConnectionIds.length]);
 
   const fetchDashboards = useCallback(async () => {
     try {
       const dashboards = await apiService.getDashboards();
       const synchronizedDashboards = dashboards.map((dashboard) => ({
         ...dashboard,
-        layout: (dashboard.layout || [])
-          .map((item) => ({
-            ...item,
-            x: Number(item.x) || 0,
-            y: Number(item.y) || 0,
-            w: Number(item.w) || 6,
-            h: Number(item.h) || 7,
-            minW: Number(item.minW) || 3,
-            minH: Number(item.minH) || 3,
-          }))
-          .filter((item) =>
-            dashboard.charts.some((chart) => chart.id === item.i)
-          ),
+        layout: (dashboard.layout || []).map((item: any) => ({
+          ...item,
+          x: Number(item.x) || 0,
+          y: Number(item.y) || 0,
+          w: Number(item.w) || 6,
+          h: Number(item.h) || 7,
+          minW: Number(item.minW) || 3,
+          minH: Number(item.minH) || 3,
+        })).filter((item: any) =>
+          dashboard.charts.some((chart: any) => chart.id === item.i)
+        ),
       }));
       setDashboards(synchronizedDashboards);
     } catch (error) {
@@ -155,44 +139,35 @@ const App: React.FC = () => {
 
   const addNewDashboard = useCallback(
     async (name: string, description?: string): Promise<string> => {
-      if (!selectedConnectionId) {
-        throw new Error("No connection selected");
+      if (selectedConnectionIds.length === 0) throw new Error("No connection selected");
+      const response = await apiService.saveDashboard({
+        name,
+        description,
+        connection_id: selectedConnectionIds[0],
+        charts: [],
+        layout: [],
+      });
+      if (response.success && response.data) {
+        await fetchDashboards();
+        return response.data.data.dashboardId;
       }
-      try {
-        const response = await apiService.saveDashboard({
-          name,
-          description,
-          connection_id: selectedConnectionId,
-          charts: [],
-          layout: [],
-        });
-        if (response.success && response.data) {
-          await fetchDashboards();
-          return response.data.data.dashboardId;
-        }
-        throw new Error(response.error || "Failed to create dashboard");
-      } catch (error) {
-        console.error("Error creating dashboard:", error);
-        throw error;
-      }
+      throw new Error(response.error || "Failed to create dashboard");
     },
-    [selectedConnectionId, fetchDashboards]
+    [selectedConnectionIds, fetchDashboards]
   );
 
   const handleConnectionsUpdate = useCallback(
     (updatedConnections: Connection[]) => {
       setConnections(updatedConnections);
-      if (updatedConnections.length > 0 && selectedConnectionId === null) {
-        setSelectedConnectionId(updatedConnections[0].id);
+      if (updatedConnections.length > 0 && selectedConnectionIds.length === 0) {
+        setSelectedConnectionIds([updatedConnections[0].id]);
       }
     },
-    [selectedConnectionId]
+    [selectedConnectionIds.length]
   );
 
   const handleDashboardsUpdate = useCallback(
-    (updatedDashboards: DashboardData[]) => {
-      setDashboards(updatedDashboards);
-    },
+    (updatedDashboards: DashboardData[]) => setDashboards(updatedDashboards),
     []
   );
 
@@ -202,82 +177,64 @@ const App: React.FC = () => {
     setActiveTab("dashboard");
     setDashboards([]);
     setConnections([]);
-    setSelectedConnectionId(null);
+    setSelectedConnectionIds([]);
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center min-h-screen text-gray-600">
-        Loading...
-      </div>
-    );
+  if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-600">Loading...</div>;
 
   return (
     <div className="bg-gray-100">
       {user ? (
         <div className="flex min-h-screen">
-          <Sidebar
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            user={user}
-            onLogout={handleLogout}
-          />
+          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onLogout={handleLogout} />
           <div className="flex-1 ml-16">
-            {activeTab === "create-user" && user.role === "admin" && (
-              <UserManagement />
-            )}
+            {activeTab === "create-user" && user.role === "admin" && <UserManagement />}
             {activeTab === "admin-panel" && user.role === "admin" && (
-              <ConnectionManager
-                onConnectionsUpdate={handleConnectionsUpdate}
-              />
+              <ConnectionManager onConnectionsUpdate={handleConnectionsUpdate} />
             )}
-            {activeTab === "connection-designations" &&
-              user.role === "admin" && (
-                <ConnectionDesignationManager connections={connections} />
-              )}
-            {activeTab === "chart-builder" &&
-              (user.role === "designer" ||
-                (user.role === "user" && user.accessLevel === "editor")) && (
-                <DragDropProvider>
-                  <div className="flex gap-4 p-4 h-screen">
-                    <div className="w-1/4">
-                      <DynamicSemanticPanel
-                        connections={connections}
-                        selectedConnectionId={selectedConnectionId}
-                        setSelectedConnectionId={setSelectedConnectionId}
-                      />
-                    </div>
-                    <div className="w-3/4">
-                      <DynamicSemanticChartBuilder
-                        dashboards={dashboards}
-                        addNewDashboard={addNewDashboard}
-                        selectedConnectionId={selectedConnectionId}
-                        refreshDashboards={fetchDashboards}
-                      />
-                    </div>
+            {activeTab === "connection-designations" && user.role === "admin" && (
+              <ConnectionDesignationManager connections={connections} />
+            )}
+            {activeTab === "chart-builder" && (user.role === "designer" || (user.role === "user" && user.accessLevel === "editor")) && (
+              <DragDropProvider>
+                <div className="flex gap-4 p-4 h-screen">
+                  <div className="w-1/4">
+                    <DynamicSemanticPanel
+                      connections={connections}
+                      selectedConnectionId={selectedConnectionIds[0] ?? null}
+                      setSelectedConnectionId={(id) => setSelectedConnectionIds(id ? [id] : [])}
+                    />
                   </div>
-                </DragDropProvider>
-              )}
+                  <div className="w-3/4">
+                    <DynamicSemanticChartBuilder
+                      dashboards={dashboards}
+                      addNewDashboard={addNewDashboard}
+                      selectedConnectionId={selectedConnectionIds[0] ?? null}
+                      refreshDashboards={fetchDashboards}
+                    />
+                  </div>
+                </div>
+              </DragDropProvider>
+            )}
             {activeTab === "semantic-builder" && user.role === "designer" && (
               <SemanticBuilder
                 connections={connections}
-                selectedConnectionId={selectedConnectionId}
-                setSelectedConnectionId={setSelectedConnectionId}
+                selectedConnectionIds={selectedConnectionIds}
+                setSelectedConnectionIds={setSelectedConnectionIds}
               />
             )}
-            {activeTab === "my-dashboards" &&
-              (user.role === "designer" || user.role === "user") && (
-                <Dashboard
-                  dashboards={dashboards}
-                  setDashboards={setDashboards}
-                  addNewDashboard={addNewDashboard}
-                  selectedConnectionId={selectedConnectionId}
-                  setSelectedConnectionId={setSelectedConnectionId}
-                  connections={connections}
-                  onDashboardsUpdate={handleDashboardsUpdate}
-                  user={user}
-                />
-              )}
+            {activeTab === "my-dashboards" && (user.role === "designer" || user.role === "user") && (
+              <Dashboard
+                dashboards={dashboards}
+                setDashboards={setDashboards}
+                addNewDashboard={addNewDashboard}
+                selectedConnectionId={selectedConnectionIds[0] ?? null}
+                setSelectedConnectionId={(id) => setSelectedConnectionIds(id ? [id] : [])}
+                connections={connections}
+                onDashboardsUpdate={handleDashboardsUpdate}
+                user={user}
+              />
+            )}
           </div>
         </div>
       ) : (
