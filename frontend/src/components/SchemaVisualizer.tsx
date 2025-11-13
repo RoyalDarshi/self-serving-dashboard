@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
+// SchemaVisualizer.tsx (Updated with Schema Selector Integration)
+import React, { useCallback, useEffect, useState, useMemo } from "react";
 import ReactFlow, {
   addEdge,
   MiniMap,
@@ -6,18 +7,30 @@ import ReactFlow, {
   Background,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  Node,
+  Edge,
 } from "react-flow-renderer";
-
+// Import the custom node and selector
+import TableNode from "./TableNode";
+import { SchemaSelector } from "./SchemaSelector";
+import { getUniqueSchemaList } from "../components/schemaUtils";
 import { Search } from "lucide-react";
 
+/* Schema interface definition (kept for context) */
 interface Schema {
+  schema: string;
   tableName: string;
   columns: {
     name: string;
     type: string;
-    notnull: number;
-    pk: number;
-    fk?: string; // Optional foreign key reference (table.column)
+    isNullable: boolean;
+    isPk: boolean;
+    fk?: {
+      schema: string;
+      table: string;
+      column: string;
+    } | null;
   }[];
 }
 
@@ -27,196 +40,222 @@ interface SchemaVisualizerProps {
   setSearchTerm: (term: string) => void;
 }
 
+const SCHEMA_COLORS: Record<string, string> = {
+  staging: "#fef3c7",
+  tx: "#dbeafe",
+  dw: "#ede9fe",
+  public: "#f3f4f6",
+};
+
+const nodeTypes = {
+  tableNode: TableNode,
+};
+
 const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
   schemas,
   searchTerm,
   setSearchTerm,
 }) => {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNode, setSelectedNode] = React.useState<string | null>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
+  const { fitView } = useReactFlow();
   const [flowHeight, setFlowHeight] = useState("500px");
 
+  // NEW STATE: State to hold the IDs of selected schemas
+  const [selectedSchemaIds, setSelectedSchemaIds] = useState<number[]>([]);
+
+  // Memoize the list of available schemas for the selector
+  const availableSchemas = useMemo(
+    () => getUniqueSchemaList(schemas),
+    [schemas]
+  );
+
   const onConnect = useCallback(
-    (params: any) =>
-      setEdges((eds) =>
-        addEdge(
-          {
-            ...params,
-            style: { stroke: "#4f46e5" },
-          },
-          eds
-        )
-      ),
+    (params: any) => setEdges((eds) => addEdge(params, eds)),
     []
   );
 
-  // Set height based on screen height
+  /* Auto-select all schemas when data first loads */
   useEffect(() => {
-    const updateHeight = () => {
-      const screenHeight = window.innerHeight || 500; // Fallback to 500px
-      const calculatedHeight = Math.max(screenHeight * 0.7, 400); // 70% of screen height, min 400px
-      setFlowHeight(`${calculatedHeight}px`);
-    };
+    // Only run if schemas are available and nothing is currently selected
+    if (availableSchemas.length > 0 && selectedSchemaIds.length === 0) {
+      setSelectedSchemaIds(availableSchemas.map((s) => s.id));
+    }
+  }, [availableSchemas, selectedSchemaIds.length]);
 
-    updateHeight();
-    window.addEventListener("resize", updateHeight);
-    return () => window.removeEventListener("resize", updateHeight);
-  }, []);
+  /* MAIN ENGINE: Build nodes + edges */
+  useEffect(() => {
+    // 1. Get the names of the selected schemas from their IDs
+    const selectedSchemaNames = availableSchemas
+      .filter((s) => selectedSchemaIds.includes(s.id))
+      .map((s) => s.connection_name);
 
-  // Transform schemas into nodes and edges
-  React.useEffect(() => {
-    const filteredSchemas = schemas.filter((schema) =>
-      schema.tableName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Optimization: If no schemas are selected, show nothing.
+    if (selectedSchemaNames.length === 0 && schemas.length > 0) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
 
-    const newNodes = filteredSchemas.map((schema, index) => ({
-      id: schema.tableName,
-      type: "default",
-      position: { x: (index % 3) * 450, y: Math.floor(index / 3) * 300 },
-      data: {
-        label: (
-          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg shadow-lg border border-indigo-100 w-80">
-            <h3 className="text-lg font-bold text-indigo-800 mb-3">
-              {schema.tableName}
-            </h3>
-            <ul className="space-y-2">
-              {schema.columns.map((col) => (
-                <li
-                  key={col.name}
-                  className={`text-sm py-1 px-2 rounded ${
-                    col.pk
-                      ? "text-purple-600 font-semibold bg-purple-50"
-                      : col.fk
-                      ? "text-blue-600 bg-blue-50"
-                      : col.notnull
-                      ? "text-green-600 bg-green-50"
-                      : "text-gray-600"
-                  }`}
-                  data-column-id={`${schema.tableName}.${col.name}`}
-                >
-                  {col.name} ({col.type})
-                  {col.pk
-                    ? " [PK]"
-                    : col.fk
-                    ? ` [FK → ${col.fk}]`
-                    : col.notnull
-                    ? " [NN]"
-                    : ""}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ),
-      },
-    }));
+    // 2. Apply both search term and schema filter
+    const filtered = schemas.filter((s) => {
+      const passesSchemaFilter = selectedSchemaNames.includes(s.schema);
+      const passesSearchFilter = `${s.schema}.${s.tableName}`
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
 
-    // Create edges based on PK/FK relationships and same column names
-    const newEdges = [];
-    const columnNameMap: {
-      [key: string]: { table: string; column: string }[];
-    } = {};
-
-    // Build column name map for finding matching columns
-    filteredSchemas.forEach((schema) => {
-      schema.columns.forEach((col) => {
-        if (!columnNameMap[col.name]) {
-          columnNameMap[col.name] = [];
-        }
-        columnNameMap[col.name].push({
-          table: schema.tableName,
-          column: col.name,
-        });
-      });
+      return passesSchemaFilter && passesSearchFilter;
     });
 
-    filteredSchemas.forEach((source, i) => {
-      source.columns.forEach((col) => {
-        // FK-based connections
-        if (col.fk) {
-          const [targetTable, targetColumn] = col.fk.split(".");
-          if (
-            filteredSchemas.some((s) => s.tableName === targetTable) &&
-            source.tableName !== targetTable
-          ) {
-            newEdges.push({
-              id: `${source.tableName}.${col.name}-${targetTable}.${targetColumn}`,
-              source: source.tableName,
-              target: targetTable,
-              sourceHandle: `${source.tableName}.${col.name}`,
-              targetHandle: `${targetTable}.${targetColumn}`,
-              animated: true,
-              label: `${col.name} → ${targetColumn}`,
-              labelBgStyle: { fill: "#e0e7ff", stroke: "#4f46e5" },
-              style: { stroke: "#4f46e5" },
-              markerEnd: { type: "arrowclosed", color: "#4f46e5" },
-            });
-          }
-        }
+    // --- (Layout & Node/Edge Creation Logic) ---
 
-        // Same column name connections
-        if (columnNameMap[col.name]?.length > 1) {
-          columnNameMap[col.name].forEach((target) => {
-            if (target.table !== source.tableName && !col.fk) {
-              // Avoid duplicate edges
-              const existingEdge = newEdges.find(
-                (e) =>
-                  (e.source === source.tableName &&
-                    e.target === target.table &&
-                    e.sourceHandle === `${source.tableName}.${col.name}` &&
-                    e.targetHandle === `${target.table}.${target.column}`) ||
-                  (e.source === target.table &&
-                    e.target === source.tableName &&
-                    e.sourceHandle === `${target.table}.${target.column}` &&
-                    e.targetHandle === `${source.tableName}.${col.name}`)
-              );
-              if (!existingEdge) {
-                newEdges.push({
-                  id: `${source.tableName}.${col.name}-${target.table}.${target.column}`,
-                  source: source.tableName,
-                  target: target.table,
-                  sourceHandle: `${source.tableName}.${col.name}`,
-                  targetHandle: `${target.table}.${target.column}`,
-                  animated: false,
-                  label: `Shared: ${col.name}`,
-                  labelBgStyle: { fill: "#fef3c7", stroke: "#d97706" },
-                  style: { stroke: "#d97706" },
-                  markerEnd: { type: "arrow", color: "#d97706" },
-                });
-              }
-            }
-          });
-        }
+    const schemaGroups: Record<string, Schema[]> = {};
+    filtered.forEach((s) => {
+      if (!schemaGroups[s.schema]) schemaGroups[s.schema] = [];
+      schemaGroups[s.schema].push(s);
+    });
+
+    const newNodes: Node[] = [];
+    const newEdges: Edge[] = [];
+
+    let yOffset = 80;
+
+    Object.entries(schemaGroups).forEach(([schemaName, tables], groupIndex) => {
+      const groupColor = SCHEMA_COLORS[schemaName] ?? "#e5e7eb";
+
+      // Schema label node
+      newNodes.push({
+        id: `label-${schemaName}`,
+        type: "default",
+        position: { x: 20, y: yOffset - 50 },
+        selectable: false,
+        draggable: false,
+        style: { border: "none", padding: 0 },
+        data: {
+          label: (
+            <div className="font-extrabold text-2xl text-indigo-700">
+              {schemaName.toUpperCase()} SCHEMA
+            </div>
+          ),
+        },
       });
+
+      tables.forEach((schema, index) => {
+        const nodeId = `${schema.schema}.${schema.tableName}`;
+
+        newNodes.push({
+          id: nodeId,
+          type: "tableNode",
+          position: {
+            x: 40 + (index % 3) * 400,
+            y: yOffset + Math.floor(index / 3) * 280,
+          },
+          data: {
+            ...schema,
+            groupColor,
+          },
+        });
+
+        /* FK-based edges */
+        schema.columns.forEach((col) => {
+          if (col.fk) {
+            const targetId = `${col.fk.schema}.${col.fk.table}`;
+
+            // Only draw edges to tables that are currently displayed/filtered AND selected
+            const isTargetSelected = selectedSchemaNames.includes(
+              col.fk.schema
+            );
+
+            if (
+              filtered.some((s) => `${s.schema}.${s.tableName}` === targetId) &&
+              isTargetSelected
+            ) {
+              newEdges.push({
+                id: `${nodeId}.${col.name}→${targetId}.${col.fk.column}`,
+                source: nodeId,
+                target: targetId,
+                sourceHandle: "s",
+                targetHandle: "t",
+                animated: true,
+                type: "smoothstep",
+                label: col.name,
+                style: { stroke: "#4f46e5", strokeWidth: 2 },
+                markerEnd: { type: "arrowclosed" },
+              });
+            }
+          }
+        });
+      });
+
+      yOffset += Math.ceil(tables.length / 3) * 300 + 100;
     });
 
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [schemas, searchTerm, setNodes, setEdges]);
+
+    setTimeout(() => fitView({ padding: 40, duration: 400 }), 200);
+  }, [
+    schemas,
+    searchTerm,
+    selectedSchemaIds,
+    availableSchemas,
+    setNodes,
+    setEdges,
+    fitView,
+  ]);
 
   return (
-    <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl shadow-xl border border-gray-200">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        fitView
+    <div className="bg-white rounded-2xl shadow-xl border border-gray-300 p-2">
+      <div className="p-4 flex gap-4 items-center border-b border-gray-200">
+        {/* Schema Selector */}
+        <SchemaSelector
+          connections={availableSchemas}
+          selectedIds={selectedSchemaIds}
+          onChange={setSelectedSchemaIds}
+          placeholder="Select Schemas to display"
+          className="w-80"
+        />
+
+        {/* Table Search Input (Optional: Integrate here for better UX) */}
+        <div className="relative flex-grow">
+          <input
+            type="text"
+            placeholder="Search tables (e.g., public.users)"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-3 text-sm border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+
+      <div
         style={{
-          background: "#f1f5f9",
+          background: "#f8fafc",
           height: flowHeight,
           borderRadius: "1rem",
         }}
       >
-        <MiniMap
-          nodeColor={(node) => "#4f46e5"}
-          nodeStrokeColor={(node) => "#312e81"}
-          maskColor="#e0e7ff"
-        />
-        <Controls />
-        <Background color="#94a3b8" gap={16} variant="dots" />
-      </ReactFlow>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          fitView
+          nodeTypes={nodeTypes}
+        >
+          <MiniMap
+            nodeColor={(n) => {
+              const schemaName = n.id.split(".")[0];
+              return SCHEMA_COLORS[schemaName] ?? "#ddd";
+            }}
+            maskColor="#e0e7ff"
+          />
+          <Controls position="top-right" />
+          <Background color="#cbd5e1" gap={18} variant="dots" />
+        </ReactFlow>
+      </div>
     </div>
   );
 };

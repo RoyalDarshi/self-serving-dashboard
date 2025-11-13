@@ -186,36 +186,49 @@ const App: React.FC = () => {
     <div className="bg-gray-100">
       {user ? (
         <div className="flex min-h-screen">
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} user={user} onLogout={handleLogout} />
+          <Sidebar
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            user={user}
+            onLogout={handleLogout}
+          />
           <div className="flex-1 ml-16">
-            {activeTab === "create-user" && user.role === "admin" && <UserManagement />}
+            {activeTab === "create-user" && user.role === "admin" && (
+              <UserManagement />
+            )}
             {activeTab === "admin-panel" && user.role === "admin" && (
-              <ConnectionManager onConnectionsUpdate={handleConnectionsUpdate} />
+              <ConnectionManager
+                onConnectionsUpdate={handleConnectionsUpdate}
+              />
             )}
-            {activeTab === "connection-designations" && user.role === "admin" && (
-              <ConnectionDesignationManager connections={connections} />
-            )}
-            {activeTab === "chart-builder" && (user.role === "designer" || (user.role === "user" && user.accessLevel === "editor")) && (
-              <DragDropProvider>
-                <div className="flex gap-4 p-4 h-screen">
-                  <div className="w-1/4">
-                    <DynamicSemanticPanel
-                      connections={connections}
-                      selectedConnectionId={selectedConnectionIds[0] ?? null}
-                      setSelectedConnectionId={(id) => setSelectedConnectionIds(id ? [id] : [])}
-                    />
+            {activeTab === "connection-designations" &&
+              user.role === "admin" && (
+                <ConnectionDesignationManager connections={connections} />
+              )}
+            {activeTab === "chart-builder" &&
+              (user.role === "designer" ||
+                (user.role === "user" && user.accessLevel === "editor")) && (
+                <DragDropProvider>
+                  <div className="flex gap-4 p-4 h-screen">
+                    <div className="w-1/4">
+                      {/* 💥 FIX 1: Pass the correct, updated multi-select props */}
+                      <DynamicSemanticPanel
+                        connections={connections}
+                        selectedConnectionIds={selectedConnectionIds} // Correct prop name
+                        setSelectedConnectionIds={setSelectedConnectionIds} // Correct prop name
+                      />
+                    </div>
+                    <div className="w-3/4">
+                      <DynamicSemanticChartBuilder
+                        dashboards={dashboards}
+                        addNewDashboard={addNewDashboard}
+                        selectedConnectionId={selectedConnectionIds[0] ?? null}
+                        refreshDashboards={fetchDashboards}
+                      />
+                    </div>
                   </div>
-                  <div className="w-3/4">
-                    <DynamicSemanticChartBuilder
-                      dashboards={dashboards}
-                      addNewDashboard={addNewDashboard}
-                      selectedConnectionId={selectedConnectionIds[0] ?? null}
-                      refreshDashboards={fetchDashboards}
-                    />
-                  </div>
-                </div>
-              </DragDropProvider>
-            )}
+                </DragDropProvider>
+              )}
             {activeTab === "semantic-builder" && user.role === "designer" && (
               <SemanticBuilder
                 connections={connections}
@@ -223,18 +236,23 @@ const App: React.FC = () => {
                 setSelectedConnectionIds={setSelectedConnectionIds}
               />
             )}
-            {activeTab === "my-dashboards" && (user.role === "designer" || user.role === "user") && (
-              <Dashboard
-                dashboards={dashboards}
-                setDashboards={setDashboards}
-                addNewDashboard={addNewDashboard}
-                selectedConnectionId={selectedConnectionIds[0] ?? null}
-                setSelectedConnectionId={(id) => setSelectedConnectionIds(id ? [id] : [])}
-                connections={connections}
-                onDashboardsUpdate={handleDashboardsUpdate}
-                user={user}
-              />
-            )}
+            {activeTab === "my-dashboards" &&
+              (user.role === "designer" || user.role === "user") && (
+                <Dashboard
+                  dashboards={dashboards}
+                  setDashboards={setDashboards}
+                  addNewDashboard={addNewDashboard}
+                  // NOTE: Dashboard still expects a single ID, which is fine for now
+                  selectedConnectionId={selectedConnectionIds[0] ?? null}
+                  // NOTE: Dashboard still uses a single-select setter, which is fine for now
+                  setSelectedConnectionId={(id) =>
+                    setSelectedConnectionIds(id ? [id] : [])
+                  }
+                  connections={connections}
+                  onDashboardsUpdate={handleDashboardsUpdate}
+                  user={user}
+                />
+              )}
           </div>
         </div>
       ) : (

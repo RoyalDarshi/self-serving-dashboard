@@ -10,6 +10,7 @@ import DataList from "./DataList";
 import SchemaVisualizer from "./SchemaVisualizer";
 import ErrorBoundary from "./ErrorBoundary";
 import { ConnectionSelector } from "./ConnectionSelector";
+import { ReactFlowProvider } from "react-flow-renderer";
 
 // Types
 interface Schema {
@@ -84,8 +85,11 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
 
   // Edit states
   const [editingFact, setEditingFact] = useState<Fact | null>(null);
-  const [editingDimension, setEditingDimension] = useState<Dimension | null>(null);
-  const [editingFactDimension, setEditingFactDimension] = useState<FactDimension | null>(null);
+  const [editingDimension, setEditingDimension] = useState<Dimension | null>(
+    null
+  );
+  const [editingFactDimension, setEditingFactDimension] =
+    useState<FactDimension | null>(null);
   const [editingKPI, setEditingKPI] = useState<KPI | null>(null);
 
   // Form states
@@ -107,7 +111,9 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const [kpiName, setKpiName] = useState("");
   const [kpiExpression, setKpiExpression] = useState("");
   const [kpiDescription, setKpiDescription] = useState("");
-  const [kpiInsertType, setKpiInsertType] = useState<"fact" | "column" | "">("");
+  const [kpiInsertType, setKpiInsertType] = useState<"fact" | "column" | "">(
+    ""
+  );
   const [kpiInsertFactId, setKpiInsertFactId] = useState("");
   const [kpiInsertTable, setKpiInsertTable] = useState("");
   const [kpiInsertColumn, setKpiInsertColumn] = useState("");
@@ -117,17 +123,37 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   // Fetch data
   useEffect(() => {
     if (!token || selectedConnectionIds.length === 0) {
-      setSchemas([]); setFacts([]); setDimensions([]); setFactDimensions([]); setKpis([]);
+      setSchemas([]);
+      setFacts([]);
+      setDimensions([]);
+      setFactDimensions([]);
+      setKpis([]);
       return;
     }
 
     const fetchAll = async () => {
       setError("");
       const [sch, fct, dim, kpi] = await Promise.all([
-        Promise.all(selectedConnectionIds.map(id => apiService.getSchemas(id).catch(() => []))),
-        Promise.all(selectedConnectionIds.map(id => apiService.getFacts(id).catch(() => []))),
-        Promise.all(selectedConnectionIds.map(id => apiService.getDimensions(id).catch(() => []))),
-        Promise.all(selectedConnectionIds.map(id => apiService.getKpis(id).catch(() => []))),
+        Promise.all(
+          selectedConnectionIds.map((id) =>
+            apiService.getSchemas(id).catch(() => [])
+          )
+        ),
+        Promise.all(
+          selectedConnectionIds.map((id) =>
+            apiService.getFacts(id).catch(() => [])
+          )
+        ),
+        Promise.all(
+          selectedConnectionIds.map((id) =>
+            apiService.getDimensions(id).catch(() => [])
+          )
+        ),
+        Promise.all(
+          selectedConnectionIds.map((id) =>
+            apiService.getKpis(id).catch(() => [])
+          )
+        ),
       ]);
 
       setSchemas(sch.flat());
@@ -136,7 +162,10 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       setKpis(kpi.flat());
 
       if (fct.flat().length && dim.flat().length && selectedConnectionIds[0]) {
-        apiService.getFactDimensions(selectedConnectionIds[0]).then(setFactDimensions).catch(() => setFactDimensions([]));
+        apiService
+          .getFactDimensions(selectedConnectionIds[0])
+          .then(setFactDimensions)
+          .catch(() => setFactDimensions([]));
       } else {
         setFactDimensions([]);
       }
@@ -148,7 +177,10 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   // Auto-clear messages
   useEffect(() => {
     if (error || success) {
-      const t = setTimeout(() => { setError(""); setSuccess(""); }, 5000);
+      const t = setTimeout(() => {
+        setError("");
+        setSuccess("");
+      }, 5000);
       return () => clearTimeout(t);
     }
   }, [error, success]);
@@ -156,7 +188,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   // Prefill mapping
   useEffect(() => {
     if (mappingDimensionId) {
-      const dim = dimensions.find(d => d.id === Number(mappingDimensionId));
+      const dim = dimensions.find((d) => d.id === Number(mappingDimensionId));
       if (dim) {
         setMappingJoinTable(dim.table_name);
         setMappingDimensionColumn(dim.column_name);
@@ -175,13 +207,29 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   }, [editingFactDimension]);
 
   const clearForm = () => {
-    setFactName(""); setFactTable(""); setFactColumn(""); setFactAggregation("SUM");
-    setDimensionName(""); setDimensionTable(""); setDimensionColumn("");
-    setMappingFactId(""); setMappingDimensionId(""); setMappingJoinTable("");
-    setMappingFactColumn(""); setMappingDimensionColumn("");
-    setKpiName(""); setKpiExpression(""); setKpiDescription("");
-    setKpiInsertType(""); setKpiInsertFactId(""); setKpiInsertTable(""); setKpiInsertColumn("");
-    setEditingFact(null); setEditingDimension(null); setEditingFactDimension(null); setEditingKPI(null);
+    setFactName("");
+    setFactTable("");
+    setFactColumn("");
+    setFactAggregation("SUM");
+    setDimensionName("");
+    setDimensionTable("");
+    setDimensionColumn("");
+    setMappingFactId("");
+    setMappingDimensionId("");
+    setMappingJoinTable("");
+    setMappingFactColumn("");
+    setMappingDimensionColumn("");
+    setKpiName("");
+    setKpiExpression("");
+    setKpiDescription("");
+    setKpiInsertType("");
+    setKpiInsertFactId("");
+    setKpiInsertTable("");
+    setKpiInsertColumn("");
+    setEditingFact(null);
+    setEditingDimension(null);
+    setEditingFactDimension(null);
+    setEditingKPI(null);
   };
 
   const selectedConnId = selectedConnectionIds[0] ?? null;
@@ -189,7 +237,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   // CRUD Handlers
   const handleCreateFact = async () => {
     if (!selectedConnId) return setError("Select a connection");
-    if (!factName || !factTable || !factColumn) return setError("All fields required");
+    if (!factName || !factTable || !factColumn)
+      return setError("All fields required");
     const r = await apiService.createFact({
       connection_id: selectedConnId,
       name: factName,
@@ -197,8 +246,11 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       column_name: factColumn,
       aggregate_function: factAggregation,
     });
-    if (r.success) { setFacts(p => [...p, r.data!]); clearForm(); setSuccess(`Fact created`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setFacts((p) => [...p, r.data!]);
+      clearForm();
+      setSuccess(`Fact created`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleUpdateFact = async () => {
@@ -210,15 +262,20 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       column_name: factColumn,
       aggregate_function: factAggregation,
     });
-    if (r.success) { setFacts(p => p.map(f => f.id === editingFact.id ? r.data! : f)); clearForm(); setSuccess(`Updated`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setFacts((p) => p.map((f) => (f.id === editingFact.id ? r.data! : f)));
+      clearForm();
+      setSuccess(`Updated`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleDeleteFact = async (id: number, name: string) => {
     if (!confirm(`Delete fact "${name}"?`)) return;
     const r = await apiService.deleteFact(id);
-    if (r.success) { setFacts(p => p.filter(f => f.id !== id)); setSuccess(`Deleted`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setFacts((p) => p.filter((f) => f.id !== id));
+      setSuccess(`Deleted`);
+    } else setError(r.error ?? "Failed");
   };
 
   const startEditFact = (f: Fact) => {
@@ -232,15 +289,19 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   // Dimension handlers (same pattern)
   const handleCreateDimension = async () => {
     if (!selectedConnId) return setError("Select a connection");
-    if (!dimensionName || !dimensionTable || !dimensionColumn) return setError("All fields required");
+    if (!dimensionName || !dimensionTable || !dimensionColumn)
+      return setError("All fields required");
     const r = await apiService.createDimension({
       connection_id: selectedConnId,
       name: dimensionName,
       table_name: dimensionTable,
       column_name: dimensionColumn,
     });
-    if (r.success) { setDimensions(p => [...p, r.data!]); clearForm(); setSuccess(`Dimension created`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setDimensions((p) => [...p, r.data!]);
+      clearForm();
+      setSuccess(`Dimension created`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleUpdateDimension = async () => {
@@ -251,15 +312,22 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       table_name: dimensionTable,
       column_name: dimensionColumn,
     });
-    if (r.success) { setDimensions(p => p.map(d => d.id === editingDimension.id ? r.data! : d)); clearForm(); setSuccess(`Updated`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setDimensions((p) =>
+        p.map((d) => (d.id === editingDimension.id ? r.data! : d))
+      );
+      clearForm();
+      setSuccess(`Updated`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleDeleteDimension = async (id: number, name: string) => {
     if (!confirm(`Delete dimension "${name}"?`)) return;
     const r = await apiService.deleteDimension(id);
-    if (r.success) { setDimensions(p => p.filter(d => d.id !== id)); setSuccess(`Deleted`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setDimensions((p) => p.filter((d) => d.id !== id));
+      setSuccess(`Deleted`);
+    } else setError(r.error ?? "Failed");
   };
 
   const startEditDimension = (d: Dimension) => {
@@ -271,7 +339,13 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
 
   // Mapping handlers
   const handleCreateMapping = async () => {
-    if (!mappingFactId || !mappingDimensionId || !mappingJoinTable || !mappingFactColumn || !mappingDimensionColumn)
+    if (
+      !mappingFactId ||
+      !mappingDimensionId ||
+      !mappingJoinTable ||
+      !mappingFactColumn ||
+      !mappingDimensionColumn
+    )
       return setError("Fill all mapping fields");
     const r = await apiService.createFactDimension({
       fact_id: Number(mappingFactId),
@@ -280,8 +354,11 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       fact_column: mappingFactColumn,
       dimension_column: mappingDimensionColumn,
     });
-    if (r.success) { setFactDimensions(p => [...p, r.data!]); clearForm(); setSuccess(`Mapping created`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setFactDimensions((p) => [...p, r.data!]);
+      clearForm();
+      setSuccess(`Mapping created`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleUpdateMapping = async () => {
@@ -293,26 +370,38 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       fact_column: mappingFactColumn,
       dimension_column: mappingDimensionColumn,
     });
-    if (r.success) { setFactDimensions(p => p.map(m => m.id === editingFactDimension.id ? r.data! : m)); clearForm(); setSuccess(`Updated`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setFactDimensions((p) =>
+        p.map((m) => (m.id === editingFactDimension.id ? r.data! : m))
+      );
+      clearForm();
+      setSuccess(`Updated`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleDeleteMapping = async (id: number, fact: string, dim: string) => {
     if (!confirm(`Delete mapping ${fact} to ${dim}?`)) return;
     const r = await apiService.deleteFactDimension(id);
-    if (r.success) { setFactDimensions(p => p.filter(m => m.id !== id)); setSuccess(`Deleted`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setFactDimensions((p) => p.filter((m) => m.id !== id));
+      setSuccess(`Deleted`);
+    } else setError(r.error ?? "Failed");
   };
 
   const startEditMapping = (m: FactDimension) => setEditingFactDimension(m);
 
   const handleAutoMap = async () => {
-    if (!selectedConnectionIds.length) return setError("Select at least one connection");
+    if (!selectedConnectionIds.length)
+      return setError("Select at least one connection");
     const all: FactDimension[] = [];
-    let ok = 0, err = 0;
+    let ok = 0,
+      err = 0;
     for (const id of selectedConnectionIds) {
       const r = await apiService.autoMap(id);
-      if (r.success && r.data) { all.push(...r.data); ok++; } else err++;
+      if (r.success && r.data) {
+        all.push(...r.data);
+        ok++;
+      } else err++;
     }
     setFactDimensions(all);
     setSuccess(ok ? `Auto-mapped ${all.length} relations` : "");
@@ -322,15 +411,19 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   // KPI handlers
   const handleCreateKPI = async () => {
     if (!selectedConnId) return setError("Select a connection");
-    if (!kpiName || !kpiExpression) return setError("Name & expression required");
+    if (!kpiName || !kpiExpression)
+      return setError("Name & expression required");
     const r = await apiService.createKpi({
       connection_id: selectedConnId,
       name: kpiName,
       expression: kpiExpression,
       description: kpiDescription,
     });
-    if (r.success) { setKpis(p => [...p, r.data!]); clearForm(); setSuccess(`KPI created`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setKpis((p) => [...p, r.data!]);
+      clearForm();
+      setSuccess(`KPI created`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleUpdateKPI = async () => {
@@ -340,15 +433,20 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       expression: kpiExpression,
       description: kpiDescription,
     });
-    if (r.success) { setKpis(p => p.map(k => k.id === editingKPI.id ? r.data! : k)); clearForm(); setSuccess(`Updated`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setKpis((p) => p.map((k) => (k.id === editingKPI.id ? r.data! : k)));
+      clearForm();
+      setSuccess(`Updated`);
+    } else setError(r.error ?? "Failed");
   };
 
   const handleDeleteKPI = async (id: number, name: string) => {
     if (!confirm(`Delete KPI "${name}"?`)) return;
     const r = await apiService.deleteKpi(id);
-    if (r.success) { setKpis(p => p.filter(k => k.id !== id)); setSuccess(`Deleted`); }
-    else setError(r.error ?? "Failed");
+    if (r.success) {
+      setKpis((p) => p.filter((k) => k.id !== id));
+      setSuccess(`Deleted`);
+    } else setError(r.error ?? "Failed");
   };
 
   const startEditKPI = (k: KPI) => {
@@ -361,22 +459,37 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const insertIntoKpi = () => {
     let txt = "";
     if (kpiInsertType === "fact" && kpiInsertFactId) {
-      const f = facts.find(f => f.id === Number(kpiInsertFactId));
+      const f = facts.find((f) => f.id === Number(kpiInsertFactId));
       if (f) txt = `${f.aggregate_function}(${f.table_name}.${f.column_name})`;
-    } else if (kpiInsertType === "column" && kpiInsertTable && kpiInsertColumn) {
+    } else if (
+      kpiInsertType === "column" &&
+      kpiInsertTable &&
+      kpiInsertColumn
+    ) {
       txt = `${kpiInsertTable}.${kpiInsertColumn}`;
     }
-    if (txt) setKpiExpression(p => p + " " + txt);
-    setKpiInsertType(""); setKpiInsertFactId(""); setKpiInsertTable(""); setKpiInsertColumn("");
+    if (txt) setKpiExpression((p) => p + " " + txt);
+    setKpiInsertType("");
+    setKpiInsertFactId("");
+    setKpiInsertTable("");
+    setKpiInsertColumn("");
   };
 
   // Filtering
-  const filteredFacts = facts.filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  const filteredDimensions = dimensions.filter(d => d.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  const filteredMappings = factDimensions.filter(m =>
-    `${m.fact_name} ${m.dimension_name}`.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredFacts = facts.filter((f) =>
+    f.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  const filteredKpis = kpis.filter(k => k.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredDimensions = dimensions.filter((d) =>
+    d.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  const filteredMappings = factDimensions.filter((m) =>
+    `${m.fact_name} ${m.dimension_name}`
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase())
+  );
+  const filteredKpis = kpis.filter((k) =>
+    k.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <ErrorBoundary>
@@ -384,7 +497,9 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
         <div className="container mx-auto p-2">
           {/* Header + Selector */}
           <div className="flex justify-between items-center mb-2">
-            <h1 className="text-3xl font-bold text-gray-900">Semantic Builder</h1>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Semantic Builder
+            </h1>
             <ConnectionSelector
               connections={connections}
               selectedIds={selectedConnectionIds}
@@ -419,7 +534,13 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
           </div>
 
           {activeTab === "schemas" && (
-            <SchemaVisualizer schemas={schemas} searchTerm={searchTerm} />
+            <ReactFlowProvider>
+              <SchemaVisualizer
+                schemas={schemas}
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+              />
+            </ReactFlowProvider>
           )}
 
           {["facts", "dimensions", "mappings", "kpis"].includes(activeTab) && (

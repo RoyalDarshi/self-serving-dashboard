@@ -3,6 +3,7 @@ import { apiService } from "../services/api";
 import DraggableFact from "./DraggableFact";
 import DraggableDimension from "./DraggableDimension";
 import { Search, Database, ChevronDown, ChevronUp } from "lucide-react";
+import { ConnectionSelector } from "./ConnectionSelector";
 
 interface Fact {
   id: number;
@@ -35,22 +36,28 @@ interface Connection {
 
 interface DynamicSemanticPanelProps {
   connections: Connection[];
-  selectedConnectionId: number | null;
-  setSelectedConnectionId: (id: number | null) => void;
+  selectedConnectionIds: number[];
+  setSelectedConnectionIds: (ids: number[]) => void;
 }
 
 const DynamicSemanticPanel: React.FC<DynamicSemanticPanelProps> = ({
   connections,
-  selectedConnectionId,
-  setSelectedConnectionId,
+  // FIX: Added default value [] to prevent "Cannot read properties of undefined (reading 'length')"
+  selectedConnectionIds = [],
+  setSelectedConnectionIds,
 }) => {
   const [facts, setFacts] = useState<Fact[]>([]);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [isExpanded, setIsExpanded] = useState(true);
 
+  // Derive a single connection ID for fetching facts/dimensions, typically the first one
+  const selectedConnectionId =
+    selectedConnectionIds.length > 0 ? selectedConnectionIds[0] : null;
+
   useEffect(() => {
     const fetchData = async () => {
+      // Logic relies on the first selected ID
       if (!selectedConnectionId) {
         setFacts([]);
         setDimensions([]);
@@ -70,7 +77,7 @@ const DynamicSemanticPanel: React.FC<DynamicSemanticPanelProps> = ({
     };
 
     fetchData();
-  }, [selectedConnectionId]);
+  }, [selectedConnectionIds, selectedConnectionId]);
 
   const sortedAndFilteredFacts = useMemo(() => {
     return facts
@@ -114,24 +121,17 @@ const DynamicSemanticPanel: React.FC<DynamicSemanticPanelProps> = ({
             {connections.length > 0 ? (
               <div className="mb-4">
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Select Connection
+                  Select Connections
                 </label>
-                <select
-                  value={selectedConnectionId || ""}
-                  onChange={(e) =>
-                    setSelectedConnectionId(parseInt(e.target.value) || null)
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm shadow-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="" disabled>
-                    Select a connection
-                  </option>
-                  {connections.map((conn) => (
-                    <option key={conn.id} value={conn.id}>
-                      {conn.connection_name}
-                    </option>
-                  ))}
-                </select>
+                {/* ConnectionSelector for multi-select */}
+                <ConnectionSelector
+                  connections={connections}
+                  selectedIds={selectedConnectionIds}
+                  onChange={setSelectedConnectionIds}
+                  singleSelect={false} // Enables multi-select
+                  placeholder="Select one or more connections"
+                  className="w-full"
+                />
               </div>
             ) : (
               <div className="py-4 text-center text-sm text-slate-500">
