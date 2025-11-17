@@ -1,4 +1,4 @@
-// SchemaVisualizer.tsx (Schema display removed everywhere in UI)
+// SchemaVisualizer.tsx (Fully Fixed)
 import React, { useCallback, useEffect, useState, useMemo } from "react";
 import ReactFlow, {
   addEdge,
@@ -17,7 +17,6 @@ import { SchemaSelector } from "./SchemaSelector";
 import { getUniqueSchemaList } from "../components/schemaUtils";
 import { Search } from "lucide-react";
 
-/* Schema interface definition */
 interface Schema {
   schema: string;
   tableName: string;
@@ -40,7 +39,6 @@ interface SchemaVisualizerProps {
   setSearchTerm: (term: string) => void;
 }
 
-// Colors kept to prevent crash — but no longer displayed in UI
 const SCHEMA_COLORS: Record<string, string> = {
   staging: "#fef3c7",
   tx: "#dbeafe",
@@ -48,9 +46,7 @@ const SCHEMA_COLORS: Record<string, string> = {
   public: "#f3f4f6",
 };
 
-const nodeTypes = {
-  tableNode: TableNode,
-};
+const nodeTypes = { tableNode: TableNode };
 
 const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
   schemas,
@@ -75,12 +71,12 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
     []
   );
 
-  // Auto-select all schemas
+  // Auto-select schemas
   useEffect(() => {
     if (availableSchemas.length > 0 && selectedSchemaIds.length === 0) {
       setSelectedSchemaIds(availableSchemas.map((s) => s.id));
     }
-  }, [availableSchemas, selectedSchemaIds.length]);
+  }, [availableSchemas, selectedSchemaIds]);
 
   /* BUILD NODES + EDGES */
   useEffect(() => {
@@ -88,20 +84,19 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
       .filter((s) => selectedSchemaIds.includes(s.id))
       .map((s) => s.connection_name);
 
-    if (selectedSchemaNames.length === 0 && schemas.length > 0) {
+    if (selectedSchemaNames.length === 0) {
       setNodes([]);
       setEdges([]);
       return;
     }
 
-    // Filter tables by schema selection + search
+    // Filter by schema + search
     const filtered = schemas.filter((s) => {
-      const passesSchemaFilter = selectedSchemaNames.includes(s.schema);
-      const passesSearchFilter = s.tableName
+      const matchSchema = selectedSchemaNames.includes(s.schema);
+      const matchSearch = s.tableName
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
-
-      return passesSchemaFilter && passesSearchFilter;
+      return matchSchema && matchSearch;
     });
 
     const schemaGroups: Record<string, Schema[]> = {};
@@ -118,10 +113,9 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
     Object.entries(schemaGroups).forEach(([schemaName, tables]) => {
       const groupColor = SCHEMA_COLORS[schemaName] ?? "#e5e7eb";
 
-      // ❌ REMOVED SCHEMA LABEL NODE (this removes background schema names)
-
       tables.forEach((schema, index) => {
-        const nodeId = schema.tableName; // ❗ schema removed visually
+        // FIX 1: UNIQUE NODE ID
+        const nodeId = `${schema.schema}.${schema.tableName}`;
 
         newNodes.push({
           id: nodeId,
@@ -133,36 +127,43 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
           data: {
             ...schema,
             groupColor,
+            // Determine if the node participates in any FK relationship
+            isConnected: schema.columns.some((c) => c.fk),
           },
         });
 
         // Build FK edges
         schema.columns.forEach((col) => {
-          if (col.fk) {
-            const targetId = col.fk.table; // ❗ schema removed visually
+          if (!col.fk) return;
 
-            const isTargetSelected = selectedSchemaNames.includes(
-              col.fk.schema
-            );
+          const targetId = `${col.fk.schema}.${col.fk.table}`;
 
-            if (
-              filtered.some((s) => s.tableName === col.fk.table) &&
-              isTargetSelected
-            ) {
-              newEdges.push({
-                id: `${nodeId}.${col.name}→${targetId}.${col.fk.column}`,
-                source: nodeId,
-                target: targetId,
-                sourceHandle: "s",
-                targetHandle: "t",
-                animated: true,
-                type: "smoothstep",
-                label: col.name,
-                style: { stroke: "#4f46e5", strokeWidth: 2 },
-                markerEnd: { type: "arrowclosed" },
-              });
-            }
-          }
+          // Only draw edges if the target table is selected
+          const targetExists = filtered.some(
+            (s) => s.schema === col.fk.schema && s.tableName === col.fk.table
+          );
+
+          if (!targetExists) return;
+
+          // FIX 2: USE UPDATED HANDLE IDS
+          const sourceHandle = `source-${schema.schema}-${schema.tableName}`;
+          const targetHandle = `target-${col.fk.schema}-${col.fk.table}`;
+
+          // FIX 3: UNIQUE EDGE ID
+          const edgeId = `${nodeId}.${col.name}→${targetId}.${col.fk.column}`;
+
+          newEdges.push({
+            id: edgeId,
+            source: nodeId,
+            target: targetId,
+            sourceHandle,
+            targetHandle,
+            animated: true,
+            type: "smoothstep",
+            label: col.name,
+            style: { stroke: "#4f46e5", strokeWidth: 2 },
+            markerEnd: { type: "arrowclosed" },
+          });
         });
       });
 
@@ -222,9 +223,7 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
           fitView
           nodeTypes={nodeTypes}
         >
-          {/* Minimap now uses DEFAULT COLOR */}
           <MiniMap maskColor="#e0e7ff" />
-
           <Controls position="top-right" />
           <Background color="#cbd5e1" gap={18} variant="dots" />
         </ReactFlow>
