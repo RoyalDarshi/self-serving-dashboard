@@ -1,4 +1,4 @@
-// SchemaVisualizer.tsx (Updated with Schema Selector Integration)
+// SchemaVisualizer.tsx (Schema display removed everywhere in UI)
 import React, { useCallback, useEffect, useState, useMemo } from "react";
 import ReactFlow, {
   addEdge,
@@ -11,13 +11,13 @@ import ReactFlow, {
   Node,
   Edge,
 } from "react-flow-renderer";
-// Import the custom node and selector
+
 import TableNode from "./TableNode";
 import { SchemaSelector } from "./SchemaSelector";
 import { getUniqueSchemaList } from "../components/schemaUtils";
 import { Search } from "lucide-react";
 
-/* Schema interface definition (kept for context) */
+/* Schema interface definition */
 interface Schema {
   schema: string;
   tableName: string;
@@ -40,6 +40,7 @@ interface SchemaVisualizerProps {
   setSearchTerm: (term: string) => void;
 }
 
+// Colors kept to prevent crash — but no longer displayed in UI
 const SCHEMA_COLORS: Record<string, string> = {
   staging: "#fef3c7",
   tx: "#dbeafe",
@@ -59,12 +60,11 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node[]>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge[]>([]);
   const { fitView } = useReactFlow();
-  const [flowHeight, setFlowHeight] = useState("500px");
 
-  // NEW STATE: State to hold the IDs of selected schemas
+  const [flowHeight] = useState("500px");
+
   const [selectedSchemaIds, setSelectedSchemaIds] = useState<number[]>([]);
 
-  // Memoize the list of available schemas for the selector
   const availableSchemas = useMemo(
     () => getUniqueSchemaList(schemas),
     [schemas]
@@ -75,39 +75,34 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
     []
   );
 
-  /* Auto-select all schemas when data first loads */
+  // Auto-select all schemas
   useEffect(() => {
-    // Only run if schemas are available and nothing is currently selected
     if (availableSchemas.length > 0 && selectedSchemaIds.length === 0) {
       setSelectedSchemaIds(availableSchemas.map((s) => s.id));
     }
   }, [availableSchemas, selectedSchemaIds.length]);
 
-  /* MAIN ENGINE: Build nodes + edges */
+  /* BUILD NODES + EDGES */
   useEffect(() => {
-    // 1. Get the names of the selected schemas from their IDs
     const selectedSchemaNames = availableSchemas
       .filter((s) => selectedSchemaIds.includes(s.id))
       .map((s) => s.connection_name);
 
-    // Optimization: If no schemas are selected, show nothing.
     if (selectedSchemaNames.length === 0 && schemas.length > 0) {
       setNodes([]);
       setEdges([]);
       return;
     }
 
-    // 2. Apply both search term and schema filter
+    // Filter tables by schema selection + search
     const filtered = schemas.filter((s) => {
       const passesSchemaFilter = selectedSchemaNames.includes(s.schema);
-      const passesSearchFilter = `${s.schema}.${s.tableName}`
+      const passesSearchFilter = s.tableName
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
 
       return passesSchemaFilter && passesSearchFilter;
     });
-
-    // --- (Layout & Node/Edge Creation Logic) ---
 
     const schemaGroups: Record<string, Schema[]> = {};
     filtered.forEach((s) => {
@@ -120,28 +115,13 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
 
     let yOffset = 80;
 
-    Object.entries(schemaGroups).forEach(([schemaName, tables], groupIndex) => {
+    Object.entries(schemaGroups).forEach(([schemaName, tables]) => {
       const groupColor = SCHEMA_COLORS[schemaName] ?? "#e5e7eb";
 
-      // Schema label node
-      newNodes.push({
-        id: `label-${schemaName}`,
-        type: "default",
-        position: { x: 20, y: yOffset - 50 },
-        selectable: false,
-        draggable: false,
-        style: { border: "none", padding: 0 },
-        data: {
-          label: (
-            <div className="font-extrabold text-2xl text-indigo-700">
-              {schemaName.toUpperCase()} SCHEMA
-            </div>
-          ),
-        },
-      });
+      // ❌ REMOVED SCHEMA LABEL NODE (this removes background schema names)
 
       tables.forEach((schema, index) => {
-        const nodeId = `${schema.schema}.${schema.tableName}`;
+        const nodeId = schema.tableName; // ❗ schema removed visually
 
         newNodes.push({
           id: nodeId,
@@ -156,18 +136,17 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
           },
         });
 
-        /* FK-based edges */
+        // Build FK edges
         schema.columns.forEach((col) => {
           if (col.fk) {
-            const targetId = `${col.fk.schema}.${col.fk.table}`;
+            const targetId = col.fk.table; // ❗ schema removed visually
 
-            // Only draw edges to tables that are currently displayed/filtered AND selected
             const isTargetSelected = selectedSchemaNames.includes(
               col.fk.schema
             );
 
             if (
-              filtered.some((s) => `${s.schema}.${s.tableName}` === targetId) &&
+              filtered.some((s) => s.tableName === col.fk.table) &&
               isTargetSelected
             ) {
               newEdges.push({
@@ -207,7 +186,6 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-300 p-2">
       <div className="p-4 flex gap-4 items-center border-b border-gray-200">
-        {/* Schema Selector */}
         <SchemaSelector
           connections={availableSchemas}
           selectedIds={selectedSchemaIds}
@@ -216,11 +194,10 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
           className="w-80"
         />
 
-        {/* Table Search Input (Optional: Integrate here for better UX) */}
         <div className="relative flex-grow">
           <input
             type="text"
-            placeholder="Search tables (e.g., public.users)"
+            placeholder="Search tables (e.g., users)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-10 pr-4 py-3 text-sm border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -245,13 +222,9 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({
           fitView
           nodeTypes={nodeTypes}
         >
-          <MiniMap
-            nodeColor={(n) => {
-              const schemaName = n.id.split(".")[0];
-              return SCHEMA_COLORS[schemaName] ?? "#ddd";
-            }}
-            maskColor="#e0e7ff"
-          />
+          {/* Minimap now uses DEFAULT COLOR */}
+          <MiniMap maskColor="#e0e7ff" />
+
           <Controls position="top-right" />
           <Background color="#cbd5e1" gap={18} variant="dots" />
         </ReactFlow>
