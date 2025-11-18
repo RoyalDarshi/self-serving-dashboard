@@ -1,6 +1,6 @@
 // src/components/MappingForm.tsx
 import React, { useMemo } from "react";
-import { Zap, Target, Plus, Lightbulb } from "lucide-react";
+import { Zap, Target, Plus, Lightbulb, Save, X } from "lucide-react"; // Import Save and X
 import Card from "./ui/Card";
 import Button from "./ui/Button";
 import Select from "./ui/Select";
@@ -27,10 +27,22 @@ interface Dimension {
   table_name: string;
 }
 
+interface FactDimension {
+  id: number;
+  fact_id: number;
+  fact_name: string;
+  dimension_id: number;
+  dimension_name: string;
+  join_table: string;
+  fact_column: string;
+  dimension_column: string;
+}
+
 interface MappingFormProps {
   schemas: Schema[];
   facts: Fact[];
   dimensions: Dimension[];
+  editingFactDimension: FactDimension | null; // Added
   mappingFactId: string;
   mappingDimensionId: string;
   mappingJoinTable: string;
@@ -42,6 +54,8 @@ interface MappingFormProps {
   setMappingFactColumn: (value: string) => void;
   setMappingDimensionColumn: (value: string) => void;
   onCreate: () => void;
+  onUpdate: () => void; // Added
+  onCancel: () => void; // Added
   onAutoMap: () => void;
   selectedConnectionIds: number[];
 }
@@ -50,6 +64,7 @@ const MappingForm: React.FC<MappingFormProps> = ({
   schemas,
   facts,
   dimensions,
+  editingFactDimension, // Used here
   mappingFactId,
   mappingDimensionId,
   mappingJoinTable,
@@ -61,6 +76,8 @@ const MappingForm: React.FC<MappingFormProps> = ({
   setMappingFactColumn,
   setMappingDimensionColumn,
   onCreate,
+  onUpdate, // Used here
+  onCancel, // Used here
   onAutoMap,
   selectedConnectionIds,
 }) => {
@@ -220,7 +237,9 @@ const MappingForm: React.FC<MappingFormProps> = ({
             <Target className="w-5 h-5 text-yellow-600" />
           </div>
           <div>
-            <h3 className="font-semibold text-lg">Create Mapping</h3>
+            <h3 className="font-semibold text-lg">
+              {editingFactDimension ? "Edit Mapping" : "Create Mapping"}
+            </h3>
             <p className="text-sm text-gray-500">Link facts with dimensions</p>
           </div>
         </div>
@@ -230,6 +249,7 @@ const MappingForm: React.FC<MappingFormProps> = ({
           <Select
             value={mappingFactId}
             onChange={(e) => setMappingFactId(e.target.value)}
+            disabled={!!editingFactDimension} // Disable editing fact in update mode
           >
             <option value="">Select Fact</option>
             {facts.map((f) => (
@@ -243,6 +263,7 @@ const MappingForm: React.FC<MappingFormProps> = ({
           <Select
             value={mappingDimensionId}
             onChange={(e) => setMappingDimensionId(e.target.value)}
+            disabled={!!editingFactDimension} // Disable editing dimension in update mode
           >
             <option value="">Select Dimension</option>
             {dimensions.map((d) => (
@@ -252,8 +273,8 @@ const MappingForm: React.FC<MappingFormProps> = ({
             ))}
           </Select>
 
-          {/* VALID SUGGESTIONS */}
-          {mappingFactId && mappingDimensionId && (
+          {/* VALID SUGGESTIONS (Only show in creation mode for simplicity) */}
+          {!editingFactDimension && mappingFactId && mappingDimensionId && (
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <Lightbulb className="w-4 h-4 text-blue-600" />
@@ -346,9 +367,28 @@ const MappingForm: React.FC<MappingFormProps> = ({
             </Select>
           )}
 
-          <Button onClick={onCreate} className="w-full" variant="warning">
-            <Plus className="w-4 h-4" /> Create Mapping
-          </Button>
+          <div className="flex space-x-2">
+            <Button
+              onClick={editingFactDimension ? onUpdate : onCreate}
+              className="flex-1"
+              variant="warning"
+            >
+              {editingFactDimension ? (
+                <>
+                  <Save className="w-4 h-4" /> Update Mapping
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" /> Create Mapping
+                </>
+              )}
+            </Button>
+            {editingFactDimension && (
+              <Button onClick={onCancel} variant="secondary">
+                <X className="w-4 h-4" /> Cancel
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
     </>

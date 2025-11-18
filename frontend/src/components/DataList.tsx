@@ -33,6 +33,9 @@ interface FactDimension {
   join_table: string;
   fact_column: string;
   dimension_column: string;
+  // Added for use in mapping list UI (from SemanticBuilder's state)
+  fact_name: string;
+  dimension_name: string;
 }
 
 interface KPI {
@@ -46,15 +49,21 @@ interface DataListProps {
   activeTab: string;
   facts: Fact[];
   dimensions: Dimension[];
+  // All Mappings (used for the total count)
   factDimensions: FactDimension[];
   kpis: KPI[];
+  // Filtered lists (used for rendering)
   filteredFacts: Fact[];
   filteredDimensions: Dimension[];
+  // Use filteredFactDimensions for mappings
+  filteredFactDimensions: FactDimension[];
   filteredKpis: KPI[];
   onEditFact: (fact: Fact) => void;
   onDeleteFact: (id: number, name: string) => void;
   onEditDimension: (dimension: Dimension) => void;
   onDeleteDimension: (id: number, name: string) => void;
+  onEditFactDimension: (mapping: FactDimension) => void; // Added edit handler
+  onDeleteFactDimension: (id: number, fact: string, dim: string) => void; // Added delete handler
   onEditKPI: (kpi: KPI) => void;
   onDeleteKPI: (id: number, name: string) => void;
 }
@@ -67,11 +76,14 @@ const DataList: React.FC<DataListProps> = ({
   kpis,
   filteredFacts,
   filteredDimensions,
+  filteredFactDimensions, // Use this for filtered display
   filteredKpis,
   onEditFact,
   onDeleteFact,
   onEditDimension,
   onDeleteDimension,
+  onEditFactDimension, // Used here
+  onDeleteFactDimension, // Used here
   onEditKPI,
   onDeleteKPI,
 }) => (
@@ -82,7 +94,9 @@ const DataList: React.FC<DataListProps> = ({
           {activeTab === "facts" && `Facts (${filteredFacts.length})`}
           {activeTab === "dimensions" &&
             `Dimensions (${filteredDimensions.length})`}
-          {activeTab === "mappings" && `Mappings (${factDimensions.length})`}
+          {/* Changed count to filtered list length */}
+          {activeTab === "mappings" &&
+            `Mappings (${filteredFactDimensions.length})`}
           {activeTab === "kpis" && `KPIs (${filteredKpis.length})`}
         </h3>
         <div className="flex items-center space-x-2 text-sm text-gray-500">
@@ -154,25 +168,47 @@ const DataList: React.FC<DataListProps> = ({
               </div>
             </div>
           ))}
+        {/* Updated Mappings Rendering */}
         {activeTab === "mappings" &&
-          factDimensions.map((mapping) => (
-            <div key={mapping.id} className="p-4 bg-gray-50 rounded-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <h4 className="font-medium text-gray-900">
-                    {facts.find((f) => f.id === mapping.fact_id)?.name ||
-                      "Unknown Fact"}{" "}
-                    →{" "}
-                    {dimensions.find((d) => d.id === mapping.dimension_id)
-                      ?.name || "Unknown Dimension"}
-                  </h4>
-                  <p className="text-sm text-gray-600">
-                    {mapping.join_table}.{mapping.dimension_column} ={" "}
-                    {facts.find((f) => f.id === mapping.fact_id)?.table_name ||
-                      "Unknown Table"}
-                    .{mapping.fact_column}
-                  </p>
-                </div>
+          filteredFactDimensions.map((mapping) => (
+            <div
+              key={mapping.id}
+              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+            >
+              <div className="flex-1">
+                <h4 className="font-medium text-gray-900">
+                  {/* Using fact_name/dimension_name passed from SemanticBuilder */}
+                  {mapping.fact_name || "Unknown Fact"} →{" "}
+                  {mapping.dimension_name || "Unknown Dimension"}
+                </h4>
+                <p className="text-sm text-gray-600">
+                  {mapping.join_table}.{mapping.dimension_column} ={" "}
+                  {facts.find((f) => f.id === mapping.fact_id)?.table_name ||
+                    "Unknown Table"}
+                  .{mapping.fact_column}
+                </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={() => onEditFactDimension(mapping)}
+                  variant="secondary"
+                  size="sm"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </Button>
+                <Button
+                  onClick={() =>
+                    onDeleteFactDimension(
+                      mapping.id,
+                      mapping.fact_name || "Unknown",
+                      mapping.dimension_name || "Unknown"
+                    )
+                  }
+                  variant="danger"
+                  size="sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           ))}
@@ -228,7 +264,8 @@ const DataList: React.FC<DataListProps> = ({
           </p>
         </div>
       )}
-      {activeTab === "mappings" && factDimensions.length === 0 && (
+      {/* Changed factDimensions.length to filteredFactDimensions.length */}
+      {activeTab === "mappings" && filteredFactDimensions.length === 0 && (
         <div className="text-center py-12">
           <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-500">

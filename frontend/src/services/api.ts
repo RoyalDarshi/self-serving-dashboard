@@ -304,13 +304,15 @@ export const apiService = {
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
-  createFact: (fact: Omit<Fact, "id">): Promise<ApiResponse<unknown>> =>
+  createFact: (
+    fact: Omit<Fact, "id">
+  ): Promise<ApiResponse<Fact>> => // Changed return type to Fact
     createApiFetch("/semantic/facts", "POST", fact),
 
   updateFact: (
     id: number,
     fact: Omit<Fact, "id">
-  ): Promise<ApiResponse<unknown>> =>
+  ): Promise<ApiResponse<Fact>> => // Changed return type to Fact
     createApiFetch(`/semantic/facts/${id}`, "PUT", fact),
 
   deleteFact: (id: number): Promise<ApiResponse<unknown>> =>
@@ -324,32 +326,40 @@ export const apiService = {
 
   createDimension: (
     dimension: Omit<Dimension, "id">
-  ): Promise<ApiResponse<unknown>> =>
+  ): Promise<ApiResponse<Dimension>> => // Changed return type to Dimension
     createApiFetch("/semantic/dimensions", "POST", dimension),
 
   updateDimension: (
     id: number,
     dimension: Omit<Dimension, "id">
-  ): Promise<ApiResponse<unknown>> =>
+  ): Promise<ApiResponse<Dimension>> => // Changed return type to Dimension
     createApiFetch(`/semantic/dimensions/${id}`, "PUT", dimension),
 
   deleteDimension: (id: number): Promise<ApiResponse<unknown>> =>
     createApiFetch(`/semantic/dimensions/${id}`, "DELETE"),
 
+  // FIX: This function now retrieves SAVED mappings using a GET request
   getFactDimensions: (connectionId: number): Promise<FactDimension[]> =>
-    createApiFetch<FactDimension[]>(`/semantic/auto-map`, "POST", {
+    createApiFetch<FactDimension[]>(
+      `/semantic/fact-dimensions?connection_id=${connectionId}`, // Adjusted endpoint for GET
+      "GET"
+    ).then((response) => (response.success ? response.data || [] : [])),
+
+  // New function for auto-mapping
+  autoMap: (connectionId: number): Promise<ApiResponse<FactDimension[]>> =>
+    createApiFetch(`/semantic/auto-map`, "POST", {
       connection_id: connectionId,
-    }).then((response) => (response.success ? response.data || [] : [])),
+    }),
 
   createFactDimension: (
     factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<unknown>> =>
+  ): Promise<ApiResponse<FactDimension>> => // Changed return type to FactDimension
     createApiFetch("/semantic/fact-dimensions", "POST", factDimension),
 
   updateFactDimension: (
     id: number,
     factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<unknown>> =>
+  ): Promise<ApiResponse<FactDimension>> => // Changed return type to FactDimension
     createApiFetch(`/semantic/fact-dimensions/${id}`, "PUT", factDimension),
 
   deleteFactDimension: (id: number): Promise<ApiResponse<unknown>> =>
@@ -364,13 +374,12 @@ export const apiService = {
 
   createKpi: (
     kpi: Omit<Kpi, "id" | "created_by">
-  ): Promise<ApiResponse<unknown>> =>
-    createApiFetch("/semantic/kpis", "POST", kpi),
+  ): Promise<ApiResponse<Kpi>> => createApiFetch("/semantic/kpis", "POST", kpi), // Changed return type to Kpi
 
   updateKpi: (
     id: number,
     kpi: Omit<Kpi, "id" | "connection_id" | "created_by">
-  ): Promise<ApiResponse<unknown>> =>
+  ): Promise<ApiResponse<Kpi>> => // Changed return type to Kpi
     createApiFetch(`/semantic/kpis/${id}`, "PUT", kpi),
 
   deleteKpi: (id: number): Promise<ApiResponse<unknown>> =>
@@ -421,6 +430,6 @@ export const apiService = {
 
   deleteChart: (chartId: string): Promise<ApiResponse<unknown>> =>
     createApiFetch(`/dashboard/chart/${chartId}`, "DELETE"),
-};
+};  
 
 export default apiService;

@@ -133,6 +133,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
 
     const fetchAll = async () => {
       setError("");
+
+      // Fetch schemas, facts, dimensions, and KPIs for ALL selected connections
       const [sch, fct, dim, kpi] = await Promise.all([
         Promise.all(
           selectedConnectionIds.map((id) =>
@@ -156,23 +158,49 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
         ),
       ]);
 
+      const allFacts = fct.flat();
+      const allDimensions = dim.flat();
+
       setSchemas(sch.flat());
-      setFacts(fct.flat());
-      setDimensions(dim.flat());
+      setFacts(allFacts);
+      setDimensions(allDimensions);
       setKpis(kpi.flat());
 
-      if (fct.flat().length && dim.flat().length && selectedConnectionIds[0]) {
-        apiService
-          .getFactDimensions(selectedConnectionIds[0])
-          .then(setFactDimensions)
-          .catch(() => setFactDimensions([]));
+      // FIX: Fetch Mappings for ALL selected connections
+      if (allFacts.length && allDimensions.length) {
+        let allMappings: FactDimension[] = [];
+
+        for (const id of selectedConnectionIds) {
+          const mappings = await apiService
+            .getFactDimensions(id)
+            .catch(() => []);
+          // Filter out duplicates if the API returns them across different connection calls
+          const uniqueMappings = mappings.filter(
+            (m) => !allMappings.some((am) => am.id === m.id)
+          );
+          allMappings.push(...uniqueMappings);
+        }
+
+        // Enrich ALL FactDimensions with names for display/filtering
+        const enrichedFactDimensions: FactDimension[] = allMappings.map((m) => {
+          const fact = allFacts.find((f) => f.id === m.fact_id);
+          const dimension = allDimensions.find((d) => d.id === m.dimension_id);
+          return {
+            ...m,
+            // Ensure fact_name and dimension_name are set, even if fact/dimension is null
+            fact_name: fact?.name ?? "Unknown Fact",
+            dimension_name: dimension?.name ?? "Unknown Dimension",
+          };
+        });
+
+        setFactDimensions(enrichedFactDimensions);
       } else {
         setFactDimensions([]);
       }
     };
 
     fetchAll();
-  }, [token, selectedConnectionIds]);
+  }, [token, selectedConnectionIds]); // Depend on selectedConnectionIds
 
   // Auto-clear messages
   useEffect(() => {
@@ -246,7 +274,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       column_name: factColumn,
       aggregate_function: factAggregation,
     });
-    if (r.success) {
+    if (r.success && r.data) {
+      // Check for r.data existence
       setFacts((p) => [...p, r.data!]);
       clearForm();
       setSuccess(`Fact created`);
@@ -262,7 +291,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       column_name: factColumn,
       aggregate_function: factAggregation,
     });
-    if (r.success) {
+    if (r.success && r.data) {
+      // Check for r.data existence
       setFacts((p) => p.map((f) => (f.id === editingFact.id ? r.data! : f)));
       clearForm();
       setSuccess(`Updated`);
@@ -297,7 +327,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       table_name: dimensionTable,
       column_name: dimensionColumn,
     });
-    if (r.success) {
+    if (r.success && r.data) {
+      // Check for r.data existence
       setDimensions((p) => [...p, r.data!]);
       clearForm();
       setSuccess(`Dimension created`);
@@ -312,7 +343,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       table_name: dimensionTable,
       column_name: dimensionColumn,
     });
-    if (r.success) {
+    if (r.success && r.data) {
+      // Check for r.data existence
       setDimensions((p) =>
         p.map((d) => (d.id === editingDimension.id ? r.data! : d))
       );
@@ -354,8 +386,21 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       fact_column: mappingFactColumn,
       dimension_column: mappingDimensionColumn,
     });
-    if (r.success) {
-      setFactDimensions((p) => [...p, r.data!]);
+    if (r.success && r.data) {
+      // Check for r.data existence
+      // Enrich the new mapping with names before adding to state
+      const fact = facts.find((f) => f.id === Number(mappingFactId));
+      const dimension = dimensions.find(
+        (d) => d.id === Number(mappingDimensionId)
+      );
+
+      const newMapping: FactDimension = {
+        ...r.data!,
+        fact_name: fact?.name ?? "Unknown Fact",
+        dimension_name: dimension?.name ?? "Unknown Dimension",
+      };
+
+      setFactDimensions((p) => [...p, newMapping]);
       clearForm();
       setSuccess(`Mapping created`);
     } else setError(r.error ?? "Failed");
@@ -370,9 +415,22 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       fact_column: mappingFactColumn,
       dimension_column: mappingDimensionColumn,
     });
-    if (r.success) {
+    if (r.success && r.data) {
+      // Check for r.data existence
+      // Enrich the updated mapping with names
+      const fact = facts.find((f) => f.id === Number(mappingFactId));
+      const dimension = dimensions.find(
+        (d) => d.id === Number(mappingDimensionId)
+      );
+
+      const updatedMapping: FactDimension = {
+        ...r.data!,
+        fact_name: fact?.name ?? "Unknown Fact",
+        dimension_name: dimension?.name ?? "Unknown Dimension",
+      };
+
       setFactDimensions((p) =>
-        p.map((m) => (m.id === editingFactDimension.id ? r.data! : m))
+        p.map((m) => (m.id === editingFactDimension.id ? updatedMapping : m))
       );
       clearForm();
       setSuccess(`Updated`);
@@ -393,18 +451,36 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const handleAutoMap = async () => {
     if (!selectedConnectionIds.length)
       return setError("Select at least one connection");
-    const all: FactDimension[] = [];
+    
+    let all: FactDimension[] = [];
     let ok = 0,
       err = 0;
+    const allFacts = facts;
+    const allDimensions = dimensions;
+
     for (const id of selectedConnectionIds) {
       const r = await apiService.autoMap(id);
       if (r.success && r.data) {
-        all.push(...r.data);
+        // Enrich auto-mapped data with names
+        const enriched = r.data.map((m) => {
+          const fact = allFacts.find((f) => f.id === m.fact_id);
+          const dimension = allDimensions.find((d) => d.id === m.dimension_id);
+          return {
+            ...m,
+            fact_name: fact?.name ?? "Unknown Fact",
+            dimension_name: dimension?.name ?? "Unknown Dimension",
+          };
+        });
+        all.push(...enriched);
         ok++;
       } else err++;
     }
-    setFactDimensions(all);
-    setSuccess(ok ? `Auto-mapped ${all.length} relations` : "");
+    // Filter out duplicates based on ID (if multiple connections return the same mapping)
+    const uniqueAll = all.filter(
+      (m, index, self) => index === self.findIndex((t) => t.id === m.id)
+    );
+    setFactDimensions(uniqueAll);
+    setSuccess(ok ? `Auto-mapped ${uniqueAll.length} relations` : "");
     if (err) setError(`${err} connection(s) failed`);
   };
 
@@ -419,7 +495,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       expression: kpiExpression,
       description: kpiDescription,
     });
-    if (r.success) {
+    if (r.success && r.data) {
+      // Check for r.data existence
       setKpis((p) => [...p, r.data!]);
       clearForm();
       setSuccess(`KPI created`);
@@ -433,7 +510,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       expression: kpiExpression,
       description: kpiDescription,
     });
-    if (r.success) {
+    if (r.success && r.data) {
+      // Check for r.data existence
       setKpis((p) => p.map((k) => (k.id === editingKPI.id ? r.data! : k)));
       clearForm();
       setSuccess(`Updated`);
@@ -597,6 +675,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                     onUpdate={handleUpdateMapping}
                     onCancel={clearForm}
                     onAutoMap={handleAutoMap}
+                    editingFactDimension={editingFactDimension}
                     selectedConnectionIds={selectedConnectionIds}
                   />
                 )}
@@ -627,15 +706,16 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                 )}
               </div>
 
+              {/* DataList component renders the list on the right side (col-span-2) */}
               <DataList
                 activeTab={activeTab}
                 facts={facts}
                 dimensions={dimensions}
                 factDimensions={factDimensions}
-                filteredFactDimensions={filteredMappings}
                 kpis={kpis}
                 filteredFacts={filteredFacts}
                 filteredDimensions={filteredDimensions}
+                filteredFactDimensions={filteredMappings}
                 filteredKpis={filteredKpis}
                 onEditFact={startEditFact}
                 onDeleteFact={handleDeleteFact}
