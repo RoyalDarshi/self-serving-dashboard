@@ -16,6 +16,9 @@ import { ReactFlowProvider } from "react-flow-renderer";
 interface Schema {
   tableName: string;
   columns: { name: string; type: string; notnull: number; pk: number }[];
+  // NEW FIELDS for connection context
+  connection_id: number;
+  connection_name: string;
 }
 interface Fact {
   id: number;
@@ -23,12 +26,16 @@ interface Fact {
   table_name: string;
   column_name: string;
   aggregate_function: string;
+  // NEW FIELD
+  connection_name?: string;
 }
 interface Dimension {
   id: number;
   name: string;
   table_name: string;
   column_name: string;
+  // NEW FIELD
+  connection_name?: string;
 }
 interface FactDimension {
   id: number;
@@ -39,6 +46,8 @@ interface FactDimension {
   join_table: string;
   fact_column: string;
   dimension_column: string;
+  // NEW FIELD
+  connection_name?: string;
 }
 interface KPI {
   id: number;
@@ -134,22 +143,50 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     const fetchAll = async () => {
       setError("");
 
-      // Fetch schemas, facts, dimensions, and KPIs for ALL selected connections
+      // Fetch data for ALL selected connections and enrich with connection info
       const [sch, fct, dim, kpi] = await Promise.all([
         Promise.all(
-          selectedConnectionIds.map((id) =>
-            apiService.getSchemas(id).catch(() => [])
-          )
+          selectedConnectionIds.map((id) => {
+            const conn = connections.find((c) => c.id === id);
+            return apiService
+              .getSchemas(id)
+              .then((s) =>
+                s.map((schema) => ({
+                  ...schema,
+                  connection_id: id,
+                  connection_name: conn?.connection_name || `Conn ${id}`, // Enrich schemas
+                }))
+              )
+              .catch(() => []);
+          })
         ),
         Promise.all(
-          selectedConnectionIds.map((id) =>
-            apiService.getFacts(id).catch(() => [])
-          )
+          selectedConnectionIds.map((id) => {
+            const conn = connections.find((c) => c.id === id);
+            return apiService
+              .getFacts(id)
+              .then((f) =>
+                f.map((fact) => ({
+                  ...fact,
+                  connection_name: conn?.connection_name || `Conn ${id}`, // Enrich facts
+                }))
+              )
+              .catch(() => []);
+          })
         ),
         Promise.all(
-          selectedConnectionIds.map((id) =>
-            apiService.getDimensions(id).catch(() => [])
-          )
+          selectedConnectionIds.map((id) => {
+            const conn = connections.find((c) => c.id === id);
+            return apiService
+              .getDimensions(id)
+              .then((d) =>
+                d.map((dimension) => ({
+                  ...dimension,
+                  connection_name: conn?.connection_name || `Conn ${id}`, // Enrich dimensions
+                }))
+              )
+              .catch(() => []);
+          })
         ),
         Promise.all(
           selectedConnectionIds.map((id) =>
@@ -166,30 +203,36 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       setDimensions(allDimensions);
       setKpis(kpi.flat());
 
-      // FIX: Fetch Mappings for ALL selected connections
+      // Fetch and Enrich Mappings
       if (allFacts.length && allDimensions.length) {
         let allMappings: FactDimension[] = [];
 
-        for (const id of selectedConnectionIds) {
-          const mappings = await apiService
-            .getFactDimensions(id)
-            .catch(() => []);
-          // Filter out duplicates if the API returns them across different connection calls
-          const uniqueMappings = mappings.filter(
-            (m) => !allMappings.some((am) => am.id === m.id)
-          );
-          allMappings.push(...uniqueMappings);
-        }
+        const mappingsResults = await Promise.all(
+          selectedConnectionIds.map((id) =>
+            apiService.getFactDimensions(id).catch(() => [])
+          )
+        );
+        allMappings = mappingsResults.flat();
 
-        // Enrich ALL FactDimensions with names for display/filtering
-        const enrichedFactDimensions: FactDimension[] = allMappings.map((m) => {
+        const uniqueAll = allMappings.filter(
+          (m, index, self) => index === self.findIndex((t) => t.id === m.id)
+        );
+
+        const enrichedFactDimensions: FactDimension[] = uniqueAll.map((m) => {
           const fact = allFacts.find((f) => f.id === m.fact_id);
           const dimension = allDimensions.find((d) => d.id === m.dimension_id);
+
+          // Determine the connection name for the mapping display (using the fact's connection is a good proxy)
+          const connection_name =
+            fact?.connection_name ??
+            dimension?.connection_name ??
+            "Unknown Connection";
+
           return {
             ...m,
-            // Ensure fact_name and dimension_name are set, even if fact/dimension is null
             fact_name: fact?.name ?? "Unknown Fact",
             dimension_name: dimension?.name ?? "Unknown Dimension",
+            connection_name: connection_name,
           };
         });
 
@@ -200,7 +243,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     };
 
     fetchAll();
-  }, [token, selectedConnectionIds]); // Depend on selectedConnectionIds
+  }, [token, selectedConnectionIds]);
 
   // Auto-clear messages
   useEffect(() => {
@@ -275,8 +318,14 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       aggregate_function: factAggregation,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
-      setFacts((p) => [...p, r.data!]);
+      setFacts((p) => [
+        ...p,
+        {
+          ...r.data,
+          connection_name: connections.find((c) => c.id === selectedConnId)
+            ?.connection_name,
+        },
+      ]);
       clearForm();
       setSuccess(`Fact created`);
     } else setError(r.error ?? "Failed");
@@ -292,8 +341,13 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       aggregate_function: factAggregation,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
-      setFacts((p) => p.map((f) => (f.id === editingFact.id ? r.data! : f)));
+      setFacts((p) =>
+        p.map((f) =>
+          f.id === editingFact.id
+            ? { ...r.data, connection_name: editingFact.connection_name }
+            : f
+        )
+      );
       clearForm();
       setSuccess(`Updated`);
     } else setError(r.error ?? "Failed");
@@ -328,8 +382,14 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       column_name: dimensionColumn,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
-      setDimensions((p) => [...p, r.data!]);
+      setDimensions((p) => [
+        ...p,
+        {
+          ...r.data,
+          connection_name: connections.find((c) => c.id === selectedConnId)
+            ?.connection_name,
+        },
+      ]);
       clearForm();
       setSuccess(`Dimension created`);
     } else setError(r.error ?? "Failed");
@@ -344,9 +404,12 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       column_name: dimensionColumn,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
       setDimensions((p) =>
-        p.map((d) => (d.id === editingDimension.id ? r.data! : d))
+        p.map((d) =>
+          d.id === editingDimension.id
+            ? { ...r.data, connection_name: editingDimension.connection_name }
+            : d
+        )
       );
       clearForm();
       setSuccess(`Updated`);
@@ -387,17 +450,20 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       dimension_column: mappingDimensionColumn,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
-      // Enrich the new mapping with names before adding to state
       const fact = facts.find((f) => f.id === Number(mappingFactId));
       const dimension = dimensions.find(
         (d) => d.id === Number(mappingDimensionId)
       );
+      const connection_name =
+        fact?.connection_name ??
+        dimension?.connection_name ??
+        "Unknown Connection";
 
       const newMapping: FactDimension = {
         ...r.data!,
         fact_name: fact?.name ?? "Unknown Fact",
         dimension_name: dimension?.name ?? "Unknown Dimension",
+        connection_name: connection_name,
       };
 
       setFactDimensions((p) => [...p, newMapping]);
@@ -416,17 +482,20 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       dimension_column: mappingDimensionColumn,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
-      // Enrich the updated mapping with names
       const fact = facts.find((f) => f.id === Number(mappingFactId));
       const dimension = dimensions.find(
         (d) => d.id === Number(mappingDimensionId)
       );
+      const connection_name =
+        fact?.connection_name ??
+        dimension?.connection_name ??
+        "Unknown Connection";
 
       const updatedMapping: FactDimension = {
         ...r.data!,
         fact_name: fact?.name ?? "Unknown Fact",
         dimension_name: dimension?.name ?? "Unknown Dimension",
+        connection_name: connection_name,
       };
 
       setFactDimensions((p) =>
@@ -451,7 +520,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const handleAutoMap = async () => {
     if (!selectedConnectionIds.length)
       return setError("Select at least one connection");
-    
+
     let all: FactDimension[] = [];
     let ok = 0,
       err = 0;
@@ -461,7 +530,10 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     for (const id of selectedConnectionIds) {
       const r = await apiService.autoMap(id);
       if (r.success && r.data) {
-        // Enrich auto-mapped data with names
+        // Find connection name for enrichment
+        const conn = connections.find((c) => c.id === id);
+        const connection_name = conn?.connection_name ?? `Conn ${id}`;
+
         const enriched = r.data.map((m) => {
           const fact = allFacts.find((f) => f.id === m.fact_id);
           const dimension = allDimensions.find((d) => d.id === m.dimension_id);
@@ -469,13 +541,13 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
             ...m,
             fact_name: fact?.name ?? "Unknown Fact",
             dimension_name: dimension?.name ?? "Unknown Dimension",
+            connection_name: connection_name,
           };
         });
         all.push(...enriched);
         ok++;
       } else err++;
     }
-    // Filter out duplicates based on ID (if multiple connections return the same mapping)
     const uniqueAll = all.filter(
       (m, index, self) => index === self.findIndex((t) => t.id === m.id)
     );
@@ -496,7 +568,6 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       description: kpiDescription,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
       setKpis((p) => [...p, r.data!]);
       clearForm();
       setSuccess(`KPI created`);
@@ -511,7 +582,6 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       description: kpiDescription,
     });
     if (r.success && r.data) {
-      // Check for r.data existence
       setKpis((p) => p.map((k) => (k.id === editingKPI.id ? r.data! : k)));
       clearForm();
       setSuccess(`Updated`);
@@ -561,7 +631,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     d.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
   const filteredMappings = factDimensions.filter((m) =>
-    `${m.fact_name} ${m.dimension_name}`
+    `${m.fact_name} ${m.dimension_name} ${m.connection_name || ""}` // Filter by connection name too
       .toLowerCase()
       .includes(searchTerm.toLowerCase())
   );

@@ -1,6 +1,6 @@
 // src/components/MappingForm.tsx
 import React, { useMemo } from "react";
-import { Zap, Target, Plus, Lightbulb, Save, X } from "lucide-react"; // Import Save and X
+import { Zap, Target, Plus, Lightbulb, Save, X } from "lucide-react";
 import Card from "./ui/Card";
 import Button from "./ui/Button";
 import Select from "./ui/Select";
@@ -13,18 +13,22 @@ interface Schema {
     isPk?: boolean;
     fk?: { table: string; column: string } | null;
   }[];
+  connection_id: number;
+  connection_name: string;
 }
 
 interface Fact {
   id: number;
   name: string;
   table_name: string;
+  connection_name?: string;
 }
 
 interface Dimension {
   id: number;
   name: string;
   table_name: string;
+  connection_name?: string;
 }
 
 interface FactDimension {
@@ -42,9 +46,10 @@ interface MappingFormProps {
   schemas: Schema[];
   facts: Fact[];
   dimensions: Dimension[];
-  editingFactDimension: FactDimension | null; // Added
+  editingFactDimension: FactDimension | null;
   mappingFactId: string;
   mappingDimensionId: string;
+  // NOTE: mappingJoinTable holds the composite key: "connectionId|tableName"
   mappingJoinTable: string;
   mappingFactColumn: string;
   mappingDimensionColumn: string;
@@ -54,17 +59,27 @@ interface MappingFormProps {
   setMappingFactColumn: (value: string) => void;
   setMappingDimensionColumn: (value: string) => void;
   onCreate: () => void;
-  onUpdate: () => void; // Added
-  onCancel: () => void; // Added
+  onUpdate: () => void;
+  onCancel: () => void;
   onAutoMap: () => void;
   selectedConnectionIds: number[];
 }
+
+// Helper to extract table name from composite key
+const getTableNameFromComposite = (compositeKey: string): string => 
+  compositeKey.split('|')[1] || '';
+
+// Helper to extract connection ID from composite key
+const getConnIdFromComposite = (compositeKey: string): number | null => {
+  const parts = compositeKey.split('|');
+  return parts.length > 0 ? Number(parts[0]) : null;
+};
 
 const MappingForm: React.FC<MappingFormProps> = ({
   schemas,
   facts,
   dimensions,
-  editingFactDimension, // Used here
+  editingFactDimension,
   mappingFactId,
   mappingDimensionId,
   mappingJoinTable,
@@ -76,11 +91,14 @@ const MappingForm: React.FC<MappingFormProps> = ({
   setMappingFactColumn,
   setMappingDimensionColumn,
   onCreate,
-  onUpdate, // Used here
-  onCancel, // Used here
+  onUpdate,
+  onCancel,
   onAutoMap,
   selectedConnectionIds,
 }) => {
+  const currentJoinTableName = getTableNameFromComposite(mappingJoinTable);
+  const currentJoinTableConnId = getConnIdFromComposite(mappingJoinTable);
+
   /* ---------------------------------------------------------
         1. RELATIONSHIP GRAPH (ONLY FOREIGN KEYS)
   ----------------------------------------------------------*/
@@ -104,7 +122,7 @@ const MappingForm: React.FC<MappingFormProps> = ({
   }, [schemas]);
 
   /* ---------------------------------------------------------
-      2. VALID SUGGESTIONS (FK ONLY, DEDUPED)
+      2. VALID SUGGESTIONS (FK ONLY, DEDUPED) - MAINTAINED CODE
   ----------------------------------------------------------*/
   const suggestions = useMemo(() => {
     if (!mappingFactId || !mappingDimensionId) return [];
@@ -249,12 +267,12 @@ const MappingForm: React.FC<MappingFormProps> = ({
           <Select
             value={mappingFactId}
             onChange={(e) => setMappingFactId(e.target.value)}
-            disabled={!!editingFactDimension} // Disable editing fact in update mode
+            disabled={!!editingFactDimension}
           >
             <option value="">Select Fact</option>
             {facts.map((f) => (
               <option key={f.id} value={f.id}>
-                {f.name}
+                {f.name} (Connection: {f.connection_name})
               </option>
             ))}
           </Select>
@@ -263,18 +281,18 @@ const MappingForm: React.FC<MappingFormProps> = ({
           <Select
             value={mappingDimensionId}
             onChange={(e) => setMappingDimensionId(e.target.value)}
-            disabled={!!editingFactDimension} // Disable editing dimension in update mode
+            disabled={!!editingFactDimension}
           >
             <option value="">Select Dimension</option>
             {dimensions.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}
+                {d.name} (Connection: {d.connection_name})
               </option>
             ))}
           </Select>
 
-          {/* VALID SUGGESTIONS (Only show in creation mode for simplicity) */}
-          {!editingFactDimension && mappingFactId && mappingDimensionId && (
+          {/* VALID SUGGESTIONS CODE (MAINTAINED) */}
+          {mappingFactId && mappingDimensionId && (
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <Lightbulb className="w-4 h-4 text-blue-600" />
@@ -314,16 +332,20 @@ const MappingForm: React.FC<MappingFormProps> = ({
               )}
             </div>
           )}
+          {/* END VALID SUGGESTIONS CODE */}
 
-          {/* JOIN TABLE */}
+          {/* JOIN TABLE - Uses composite key as value */}
           <Select
             value={mappingJoinTable}
             onChange={(e) => setMappingJoinTable(e.target.value)}
           >
             <option value="">Select Join Table</option>
             {schemas.map((s) => (
-              <option key={s.tableName} value={s.tableName}>
-                {s.tableName}
+              <option
+                key={`${s.connection_id}|${s.tableName}`}
+                value={`${s.connection_id}|${s.tableName}`}
+              >
+                {s.tableName} (Connection: {s.connection_name})
               </option>
             ))}
           </Select>
@@ -335,6 +357,7 @@ const MappingForm: React.FC<MappingFormProps> = ({
               onChange={(e) => setMappingFactColumn(e.target.value)}
             >
               <option value="">Select Fact Column</option>
+              {/* Find the schema using only table name (assuming unique tables across connections OR relying on backend logic) */}
               {schemas
                 .find(
                   (s) =>
@@ -351,14 +374,19 @@ const MappingForm: React.FC<MappingFormProps> = ({
           )}
 
           {/* DIM COLUMN */}
-          {mappingJoinTable && (
+          {currentJoinTableName && (
             <Select
               value={mappingDimensionColumn}
               onChange={(e) => setMappingDimensionColumn(e.target.value)}
             >
               <option value="">Select Dimension Column</option>
+              {/* Find schema using both ID and Name to ensure correct table columns are loaded */}
               {schemas
-                .find((s) => s.tableName === mappingJoinTable)
+                .find(
+                  (s) =>
+                    s.tableName === currentJoinTableName &&
+                    s.connection_id === currentJoinTableConnId
+                )
                 ?.columns.map((c) => (
                   <option key={c.name} value={c.name}>
                     {c.name}

@@ -33,9 +33,10 @@ interface FactDimension {
   join_table: string;
   fact_column: string;
   dimension_column: string;
-  // Added for use in mapping list UI (from SemanticBuilder's state)
   fact_name: string;
   dimension_name: string;
+  // NEW FIELD
+  connection_name?: string;
 }
 
 interface KPI {
@@ -49,21 +50,18 @@ interface DataListProps {
   activeTab: string;
   facts: Fact[];
   dimensions: Dimension[];
-  // All Mappings (used for the total count)
   factDimensions: FactDimension[];
   kpis: KPI[];
-  // Filtered lists (used for rendering)
   filteredFacts: Fact[];
   filteredDimensions: Dimension[];
-  // Use filteredFactDimensions for mappings
   filteredFactDimensions: FactDimension[];
   filteredKpis: KPI[];
   onEditFact: (fact: Fact) => void;
   onDeleteFact: (id: number, name: string) => void;
   onEditDimension: (dimension: Dimension) => void;
   onDeleteDimension: (id: number, name: string) => void;
-  onEditFactDimension: (mapping: FactDimension) => void; // Added edit handler
-  onDeleteFactDimension: (id: number, fact: string, dim: string) => void; // Added delete handler
+  onEditFactDimension: (mapping: FactDimension) => void;
+  onDeleteFactDimension: (id: number, fact: string, dim: string) => void;
   onEditKPI: (kpi: KPI) => void;
   onDeleteKPI: (id: number, name: string) => void;
 }
@@ -76,14 +74,14 @@ const DataList: React.FC<DataListProps> = ({
   kpis,
   filteredFacts,
   filteredDimensions,
-  filteredFactDimensions, // Use this for filtered display
+  filteredFactDimensions,
   filteredKpis,
   onEditFact,
   onDeleteFact,
   onEditDimension,
   onDeleteDimension,
-  onEditFactDimension, // Used here
-  onDeleteFactDimension, // Used here
+  onEditFactDimension,
+  onDeleteFactDimension,
   onEditKPI,
   onDeleteKPI,
 }) => (
@@ -94,7 +92,6 @@ const DataList: React.FC<DataListProps> = ({
           {activeTab === "facts" && `Facts (${filteredFacts.length})`}
           {activeTab === "dimensions" &&
             `Dimensions (${filteredDimensions.length})`}
-          {/* Changed count to filtered list length */}
           {activeTab === "mappings" &&
             `Mappings (${filteredFactDimensions.length})`}
           {activeTab === "kpis" && `KPIs (${filteredKpis.length})`}
@@ -177,12 +174,16 @@ const DataList: React.FC<DataListProps> = ({
             >
               <div className="flex-1">
                 <h4 className="font-medium text-gray-900">
-                  {/* Using fact_name/dimension_name passed from SemanticBuilder */}
                   {mapping.fact_name || "Unknown Fact"} →{" "}
                   {mapping.dimension_name || "Unknown Dimension"}
                 </h4>
-                <p className="text-sm text-gray-600">
-                  {mapping.join_table}.{mapping.dimension_column} ={" "}
+                {mapping.connection_name && (
+                  <p className="text-xs text-blue-600 font-semibold mt-0.5">
+                    Connection: {mapping.connection_name}
+                  </p>
+                )}
+                <p className="text-sm text-gray-600 mt-1">
+                  Join on: {mapping.join_table}.{mapping.dimension_column} ={" "}
                   {facts.find((f) => f.id === mapping.fact_id)?.table_name ||
                     "Unknown Table"}
                   .{mapping.fact_column}
@@ -264,7 +265,6 @@ const DataList: React.FC<DataListProps> = ({
           </p>
         </div>
       )}
-      {/* Changed factDimensions.length to filteredFactDimensions.length */}
       {activeTab === "mappings" && filteredFactDimensions.length === 0 && (
         <div className="text-center py-12">
           <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
