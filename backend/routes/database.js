@@ -1,4 +1,4 @@
-// routes/database.js (SINGLE FILE VERSION)
+// routes/database.js (FULLY FIXED VERSION)
 
 import { Router } from "express";
 import { getPoolForConnection } from "../database/connection.js";
@@ -6,10 +6,9 @@ import { getPoolForConnection } from "../database/connection.js";
 const router = Router();
 
 // ==========================================================
-// 1. SQL QUERIES DEFINITION (Combined from sql_queries.js)
+// 1. SQL QUERIES
 // ==========================================================
 const sqlQueries = {
-  // --- POSTGRES QUERIES ---
   postgres: {
     getTables: `
       SELECT table_schema, table_name
@@ -37,14 +36,13 @@ const sqlQueries = {
         ON kcu.constraint_name = tc.constraint_name
         AND tc.table_schema = c.table_schema
       LEFT JOIN information_schema.constraint_column_usage ccu
-        ON tc.constraint_type = 'FOREIGN KEY' 
-        AND kcu.constraint_name = ccu.constraint_name -- Link FK usage to target column
+        ON tc.constraint_type = 'FOREIGN KEY'
+        AND kcu.constraint_name = ccu.constraint_name
       WHERE c.table_schema = $1 AND c.table_name = $2
       ORDER BY c.ordinal_position;
     `,
   },
 
-  // --- MYSQL QUERIES ---
   mysql: {
     getTables: `
       SELECT table_schema, table_name
@@ -68,7 +66,6 @@ const sqlQueries = {
         ON c.table_schema = kcu.table_schema
         AND c.table_name = kcu.table_name
         AND c.column_name = kcu.column_name
-        AND kcu.referenced_table_name IS NOT NULL -- Filters for Foreign Keys
       WHERE c.table_schema = ? AND c.table_name = ?
       ORDER BY c.ordinal_position;
     `,
@@ -76,10 +73,11 @@ const sqlQueries = {
 };
 
 // ==========================================================
-// 2. ROUTER IMPLEMENTATION
+// 2. ROUTES
 // ==========================================================
 router.get("/schemas", async (req, res) => {
   const { connection_id } = req.query;
+
   if (!connection_id) {
     return res.status(400).json({ error: "connection_id required" });
   }
@@ -92,91 +90,84 @@ router.get("/schemas", async (req, res) => {
 
     const dbQueries = sqlQueries[type];
     if (!dbQueries) {
-      return res
-        .status(501)
-        .json({
-          error: `Database type '${type}' not supported for schema fetching.`,
-        });
+      return res.status(501).json({
+        error: `Database type '${type}' not supported.`,
+      });
     }
 
     const client = await pool.connect();
 
     try {
-      // --- Fetch all tables ---
-      let tablesResult;
-      let tablesParams = [];
-
-      if (type === "mysql") {
-        tablesParams = [selected_db];
-      }
-      tablesResult = await client.query(dbQueries.getTables, tablesParams);
-
+      // 1️⃣ Fetch tables
+      const tableParams = type === "mysql" ? [selected_db] : [];
+      const tablesResult = await client.query(dbQueries.getTables, tableParams);
       const tableRows = tablesResult.rows || tablesResult[0];
-      if (!tableRows) {
-        return res.json([]);
-      }
+      if (!tableRows) return res.json([]);
 
       const schemas = [];
 
-      // --- Loop through tables to fetch columns and key info (PK + FK) ---
+      // 2️⃣ Loop tables → Fetch + merge columns
       for (const { table_schema, table_name } of tableRows) {
-        let columnsResult;
-        let columnsParams;
+        const columnParams =
+          type === "postgres"
+            ? [table_schema, table_name]
+            : [selected_db, table_name];
 
-        if (type === "postgres") {
-          columnsParams = [table_schema, table_name];
-        } else if (type === "mysql") {
-          columnsParams = [selected_db, table_name];
-        }
-
-        columnsResult = await client.query(
+        const columnsResult = await client.query(
           dbQueries.getColumnsAndKeys,
-          columnsParams
+          columnParams
         );
 
-        const columnRows = columnsResult.rows || columnsResult[0];
+        let columnRows = columnsResult.rows || columnsResult[0];
         if (!columnRows) continue;
+
+        // 🔥 3️⃣ Deduplicate and merge constraint rows
+        const columnMap = {};
+
+        columnRows.forEach((col) => {
+          const name = col.column_name;
+
+          if (!columnMap[name]) {
+            columnMap[name] = {
+              name,
+              type: col.data_type?.toUpperCase?.() || col.data_type,
+              isNullable:
+                col.is_nullable === "YES" ||
+                col.is_nullable === "yes" ||
+                col.is_nullable === "YES",
+              isPk: false,
+              fk: null,
+            };
+          }
+
+          // --- Merge PK ---
+          if (type === "postgres" && col.constraint_type === "PRIMARY KEY") {
+            columnMap[name].isPk = true;
+          }
+          if (type === "mysql" && col.column_key === "PRI") {
+            columnMap[name].isPk = true;
+          }
+
+          // --- Merge FK ---
+          const isFk =
+            (type === "postgres" && col.constraint_type === "FOREIGN KEY") ||
+            (type === "mysql" && col.foreign_table);
+
+          if (isFk) {
+            columnMap[name].fk = {
+              schema: col.foreign_schema || table_schema,
+              table: col.foreign_table,
+              column: col.foreign_column,
+            };
+          }
+        });
+
+        const finalColumns = Object.values(columnMap);
 
         schemas.push({
           schema: table_schema,
           tableName: table_name,
-          columns: columnRows.map((col) => {
-            let isPk = false;
-            let fkData = null;
-
-            if (type === "postgres") {
-              // PK detection
-              isPk = col.constraint_type === "PRIMARY KEY";
-              // FK detection
-              if (col.constraint_type === "FOREIGN KEY" && col.foreign_table) {
-                fkData = {
-                  schema: col.foreign_schema,
-                  table: col.foreign_table,
-                  column: col.foreign_column,
-                };
-              }
-            } else if (type === "mysql") {
-              // PK detection
-              isPk = col.column_key === "PRI";
-              // FK detection
-              if (col.foreign_table) {
-                fkData = {
-                  schema: col.foreign_schema || table_schema,
-                  table: col.foreign_table,
-                  column: col.foreign_column,
-                };
-              }
-            }
-
-            return {
-              name: col.column_name,
-              type: col.data_type?.toUpperCase?.() || col.data_type,
-              // Frontend friendly structure
-              isNullable: col.is_nullable === "YES",
-              isPk: isPk,
-              fk: fkData, // Structured FK object (used for drawing connections)
-            };
-          }),
+          columns: finalColumns,
         });
       }
 
@@ -184,8 +175,8 @@ router.get("/schemas", async (req, res) => {
     } finally {
       client.release();
     }
-  } catch (error) {
-    console.error("Error fetching schemas:", error);
+  } catch (err) {
+    console.error("Error fetching schemas:", err);
     res.status(500).json({ error: "Failed to fetch schemas" });
   }
 });
