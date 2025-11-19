@@ -1,27 +1,24 @@
-// users.js
+// fixed: users.js
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { dbPromise } from "../database/sqliteConnection.js";
 import ldap from "ldapjs";
+import { dbPromise } from "../database/sqliteConnection.js";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 const SALT_ROUNDS = 10;
 
-// LDAP Configuration
+// ✅ Correct LDAP configuration
 const LDAP_CONFIG = {
-  url: process.env.LDAP_URL || "ldaps://192.168.29.120:636",
+  url: process.env.LDAP_URL || "ldap://192.168.1.15:389",
   baseDN: process.env.LDAP_BASE_DN || "dc=ayd",
-  bindDN: process.env.LDAP_BIND_DN || "uid=binduser,ou=People,dc=ayd",
-  bindPassword: process.env.LDAP_BIND_PASSWORD || "BindPass123!",
-  attributes: {
-    user: ["uid", "cn", "sn"],
-  },
+  peopleDN: "ou=People,dc=ayd",
+  adminDN: process.env.LDAP_BIND_DN || "cn=admin,dc=ayd",
+  adminPassword: process.env.LDAP_BIND_PASSWORD || "BindPass123!",
+  attributes: ["uid", "cn", "sn", "mail"],
 };
 
-console.log(LDAP_CONFIG);
-// Constants
 const VALID_ROLES = ["admin", "user", "designer"];
 const VALID_ACCESS_LEVELS = ["viewer", "editor"];
 const VALID_DESIGNATIONS = [
@@ -33,12 +30,10 @@ const VALID_DESIGNATIONS = [
   "Store / Regional Manager",
 ];
 
-// Middleware
+// 🔒 Middleware
 const requireAdmin = (req, res, next) => {
   if (req.user?.role !== "admin") {
-    return res
-      .status(403)
-      .json({ error: "Access denied. Admin role required" });
+    return res.status(403).json({ error: "Access denied. Admin required" });
   }
   next();
 };
@@ -51,52 +46,64 @@ const requireAdminOrSelf = (req, res, next) => {
   next();
 };
 
-// Import users from LDAP (admin only)
+//
+// ✅ Import LDAP users into SQLite (Admin-only)
+//
 router.post("/import-ldap-users", requireAdmin, async (req, res) => {
   let client;
   try {
     client = ldap.createClient({
       url: LDAP_CONFIG.url,
-      tlsOptions: {
-        rejectUnauthorized: false,
-      },
+      reconnect: true,
+      timeout: 10000,
+      connectTimeout: 15000,
     });
 
     client.on("error", (err) => {
-      console.error("LDAP Client Background Error:", err);
+      console.error("LDAP client background error:", err);
     });
 
+    // --- Bind as admin ---
     await new Promise((resolve, reject) => {
-      client.bind(LDAP_CONFIG.bindDN, LDAP_CONFIG.bindPassword, (err) => {
-        if (err) return reject(err);
+      client.bind(LDAP_CONFIG.adminDN, LDAP_CONFIG.adminPassword, (err) => {
+        if (err) {
+          console.error("LDAP admin bind failed:", err.message);
+          return reject(new Error("LDAP admin authentication failed"));
+        }
+        console.log("LDAP admin bind successful");
         resolve();
       });
     });
 
+    // --- Search for all inetOrgPerson users under ou=People ---
     const opts = {
       filter: "(objectClass=inetOrgPerson)",
       scope: "sub",
-      attributes: LDAP_CONFIG.attributes.user,
+      attributes: LDAP_CONFIG.attributes,
     };
-    let ldapUsers = [];
+
+    const ldapUsers = [];
     await new Promise((resolve, reject) => {
-      client.search("ou=People,dc=ayd", opts, (err, result) => {
+      client.search(LDAP_CONFIG.peopleDN, opts, (err, res) => {
         if (err) return reject(err);
-        result.on("searchEntry", (entry) => {
+
+        res.on("searchEntry", (entry) => {
           ldapUsers.push(entry.object);
         });
-        result.on("end", () => resolve());
-        result.on("error", (err) => reject(err));
+        res.on("error", reject);
+        res.on("end", resolve);
       });
     });
 
-    if (!ldapUsers || ldapUsers.length === 0) {
-      return res.json({ importedCount: 0 });
-    }
+    console.log(`Found ${ldapUsers.length} LDAP users`);
+
+    if (ldapUsers.length === 0)
+      return res.json({ importedCount: 0, message: "No LDAP users found" });
 
     const db = await dbPromise;
     let importedCount = 0;
 
+    // --- Sync LDAP users into SQLite ---
     for (const ldapUser of ldapUsers) {
       const username = ldapUser.uid;
       if (!username) continue;
@@ -108,7 +115,6 @@ router.post("/import-ldap-users", requireAdmin, async (req, res) => {
         );
 
         if (!existing) {
-          // Defaulting imported users to 'viewer'
           await db.run(
             "INSERT INTO users (username, password, role, designation, access_level, is_ad_user) VALUES (?, ?, ?, ?, ?, ?)",
             [username, null, "user", "Business Analyst", "viewer", true]
@@ -120,52 +126,52 @@ router.post("/import-ldap-users", requireAdmin, async (req, res) => {
       }
     }
 
-    res.json({ importedCount });
+    client.unbind();
+
+    res.json({
+      importedCount,
+      message: `${importedCount} LDAP users successfully imported.`,
+    });
   } catch (err) {
     console.error("LDAP import error:", err.message);
-    res.status(500).json({ error: "Failed to process LDAP import." });
-  } finally {
-    if (client) {
-      client.unbind();
-    }
+    if (client) client.unbind();
+    res.status(500).json({ error: "Failed to import LDAP users." });
   }
 });
 
-// User Management
+//
+// ✅ Create Local User
+//
 router.post("/users", async (req, res) => {
   const { username, password, role, designation, access_level } = req.body;
 
-  if (!username || !password || !role) {
-    return res.status(400).json({
-      error: "Username, password, and role are required",
-    });
-  }
+  if (!username || !password || !role)
+    return res
+      .status(400)
+      .json({ error: "Username, password, and role are required" });
 
-  if (!VALID_ROLES.includes(role)) {
+  if (!VALID_ROLES.includes(role))
     return res.status(400).json({
       error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}`,
     });
-  }
 
   let finalAccessLevel = null;
   if (role === "user") {
-    if (access_level && !VALID_ACCESS_LEVELS.includes(access_level)) {
+    finalAccessLevel = access_level || "viewer";
+    if (!VALID_ACCESS_LEVELS.includes(finalAccessLevel))
       return res.status(400).json({
-        error: `Invalid access level for user role. Must be one of: ${VALID_ACCESS_LEVELS.join(
+        error: `Invalid access level. Must be one of: ${VALID_ACCESS_LEVELS.join(
           ", "
         )}`,
       });
-    }
-    finalAccessLevel = access_level || "viewer";
   }
 
-  if (designation && !VALID_DESIGNATIONS.includes(designation)) {
+  if (designation && !VALID_DESIGNATIONS.includes(designation))
     return res.status(400).json({
       error: `Invalid designation. Must be one of: ${VALID_DESIGNATIONS.join(
         ", "
       )}`,
     });
-  }
 
   try {
     const db = await dbPromise;
@@ -174,9 +180,8 @@ router.post("/users", async (req, res) => {
       [username]
     );
 
-    if (existingUser) {
+    if (existingUser)
       return res.status(400).json({ error: "Username already exists" });
-    }
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await db.run(
@@ -191,33 +196,37 @@ router.post("/users", async (req, res) => {
       ]
     );
 
-    const newUser = {
-      id: result.lastID,
-      username,
-      role,
-      designation: designation || null,
-      accessLevel: finalAccessLevel,
-      is_ad_user: false,
-    };
-
-    res.status(201).json({ user: newUser });
+    res.status(201).json({
+      user: {
+        id: result.lastID,
+        username,
+        role,
+        designation: designation || null,
+        accessLevel: finalAccessLevel,
+        is_ad_user: false,
+      },
+    });
   } catch (err) {
     console.error("Create user error:", err.message);
     res.status(500).json({ error: "Failed to create user" });
   }
 });
 
+//
+// ✅ List Users (Admin only)
+//
 router.get("/users", requireAdmin, async (req, res) => {
   try {
     const db = await dbPromise;
     const users = await db.all(
       "SELECT id, username, role, designation, access_level, created_at, is_ad_user FROM users ORDER BY created_at DESC"
     );
-    const formattedUsers = users.map((u) => ({
-      ...u,
-      accessLevel: u.access_level,
-    }));
-    res.json(formattedUsers);
+    res.json(
+      users.map((u) => ({
+        ...u,
+        accessLevel: u.access_level,
+      }))
+    );
   } catch (err) {
     console.error("List users error:", err.message);
     res.status(500).json({ error: "Failed to fetch users" });
