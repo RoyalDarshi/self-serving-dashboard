@@ -6,8 +6,7 @@ import {
   AlertCircle,
   CheckCircle,
   Settings,
-  Server,
-  Activity,
+  Edit3,
 } from "lucide-react";
 import { apiService } from "../services/api";
 import ConnectionForm from "./ConnectionForm";
@@ -27,20 +26,25 @@ interface Connection {
   username: string;
   selected_db: string;
   created_at: string;
+  password?: string;
 }
 
 interface ConnectionManagerProps {
   onConnectionsUpdate: (connections: Connection[]) => void;
 }
 
-const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpdate }) => {
+const ConnectionManager: React.FC<ConnectionManagerProps> = ({
+  onConnectionsUpdate,
+}) => {
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [editingConnection, setEditingConnection] = useState<Connection | null>(
+    null
+  );
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Fetch connections on mount if authenticated
   useEffect(() => {
     if (token) {
       fetchConnections();
@@ -63,7 +67,6 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpda
     }
   };
 
-  // Clear messages after 5 seconds
   useEffect(() => {
     if (error || success) {
       const timer = setTimeout(() => {
@@ -73,10 +76,6 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpda
       return () => clearTimeout(timer);
     }
   }, [error, success]);
-
-  const handleRefresh = () => {
-    fetchConnections();
-  };
 
   if (loading) {
     return (
@@ -97,7 +96,6 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpda
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
           <div className="container mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
@@ -120,25 +118,43 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpda
 
         <div className="container mx-auto px-6 py-6">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {/* Create New Connection Card */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
+            {/* Create/Edit Connection Card */}
+            <div
+              className={`bg-white rounded-lg border p-6 ${
+                editingConnection
+                  ? "border-blue-300 ring-1 ring-blue-100"
+                  : "border-gray-200"
+              }`}
+            >
               <div className="flex items-center space-x-3 mb-6">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Plus className="w-5 h-5 text-blue-600" />
+                <div
+                  className={`p-2 rounded-lg ${
+                    editingConnection ? "bg-orange-100" : "bg-blue-100"
+                  }`}
+                >
+                  {editingConnection ? (
+                    <Edit3 className="w-5 h-5 text-orange-600" />
+                  ) : (
+                    <Plus className="w-5 h-5 text-blue-600" />
+                  )}
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">
-                    New Connection
+                    {editingConnection ? "Edit Connection" : "New Connection"}
                   </h2>
                   <p className="text-sm text-gray-600">
-                    Configure database connection
+                    {editingConnection
+                      ? `Editing ${editingConnection.connection_name}`
+                      : "Configure database connection"}
                   </p>
                 </div>
               </div>
 
               <ConnectionForm
+                editingConnection={editingConnection}
                 onSuccess={(message) => {
                   setSuccess(message);
+                  // FIXED: Do NOT close the form here. Only close on Update/Create/Cancel.
                 }}
                 onError={setError}
                 onCreate={(newConn) => {
@@ -152,6 +168,10 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpda
                   );
                   setConnections(updatedConnections);
                   onConnectionsUpdate(updatedConnections);
+                  setEditingConnection(null); // Close form on successful update
+                }}
+                onCancelEdit={() => {
+                  setEditingConnection(null);
                 }}
               />
             </div>
@@ -174,8 +194,12 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpda
 
               <ConnectionsList
                 connections={connections}
-                selectedConnectionId={null}
+                selectedConnectionId={editingConnection?.id || null}
                 setSelectedConnectionId={() => {}}
+                onEdit={(conn) => {
+                  setEditingConnection(conn);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
                 onDelete={(id, name) =>
                   apiService.deleteConnection(id).then((response) => {
                     if (response.success) {
@@ -185,6 +209,9 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({ onConnectionsUpda
                       setConnections(updatedConnections);
                       onConnectionsUpdate(updatedConnections);
                       setSuccess(`Connection "${name}" deleted successfully`);
+                      if (editingConnection?.id === id) {
+                        setEditingConnection(null);
+                      }
                     } else {
                       setError(response.error || "Failed to delete connection");
                     }

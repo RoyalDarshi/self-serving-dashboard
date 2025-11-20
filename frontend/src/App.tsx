@@ -11,6 +11,8 @@ import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
 import Dashboard from "./components/Dashboard";
 import SemanticBuilder from "./components/SemanticBuilder";
 import ConnectionDesignationManager from "./components/ConnectionDesignationManager";
+import ReportLayout from "./components/ReportLayout";
+import ReportBuilder from "./components/ReportBuilder";
 
 interface Fact {
   id: number;
@@ -70,7 +72,9 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [dashboards, setDashboards] = useState<DashboardData[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
-  const [selectedConnectionIds, setSelectedConnectionIds] = useState<number[]>([]);
+  const [selectedConnectionIds, setSelectedConnectionIds] = useState<number[]>(
+    []
+  );
 
   useEffect(() => {
     const validateUser = async () => {
@@ -103,7 +107,8 @@ const App: React.FC = () => {
       fetchDashboards();
 
       if (user.role === "admin") setActiveTab("create-user");
-      else if (user.role === "designer" || user.accessLevel === "editor") setActiveTab("chart-builder");
+      else if (user.role === "designer" || user.accessLevel === "editor")
+        setActiveTab("chart-builder");
       else setActiveTab("my-dashboards");
     }
   }, [user]);
@@ -119,17 +124,19 @@ const App: React.FC = () => {
       const dashboards = await apiService.getDashboards();
       const synchronizedDashboards = dashboards.map((dashboard) => ({
         ...dashboard,
-        layout: (dashboard.layout || []).map((item: any) => ({
-          ...item,
-          x: Number(item.x) || 0,
-          y: Number(item.y) || 0,
-          w: Number(item.w) || 6,
-          h: Number(item.h) || 7,
-          minW: Number(item.minW) || 3,
-          minH: Number(item.minH) || 3,
-        })).filter((item: any) =>
-          dashboard.charts.some((chart: any) => chart.id === item.i)
-        ),
+        layout: (dashboard.layout || [])
+          .map((item: any) => ({
+            ...item,
+            x: Number(item.x) || 0,
+            y: Number(item.y) || 0,
+            w: Number(item.w) || 6,
+            h: Number(item.h) || 7,
+            minW: Number(item.minW) || 3,
+            minH: Number(item.minH) || 3,
+          }))
+          .filter((item: any) =>
+            dashboard.charts.some((chart: any) => chart.id === item.i)
+          ),
       }));
       setDashboards(synchronizedDashboards);
     } catch (error) {
@@ -139,7 +146,8 @@ const App: React.FC = () => {
 
   const addNewDashboard = useCallback(
     async (name: string, description?: string): Promise<string> => {
-      if (selectedConnectionIds.length === 0) throw new Error("No connection selected");
+      if (selectedConnectionIds.length === 0)
+        throw new Error("No connection selected");
       const response = await apiService.saveDashboard({
         name,
         description,
@@ -180,7 +188,12 @@ const App: React.FC = () => {
     setSelectedConnectionIds([]);
   };
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-600">Loading...</div>;
+  if (loading)
+    return (
+      <div className="flex items-center justify-center min-h-screen text-gray-600">
+        Loading...
+      </div>
+    );
 
   return (
     <div className="bg-gray-100">
@@ -253,6 +266,18 @@ const App: React.FC = () => {
                   user={user}
                 />
               )}
+            {activeTab === "reports" && (
+              <ReportLayout connections={connections} />
+            )}
+
+            {activeTab === "report-builder" && (
+              <ReportBuilder
+                connections={connections}
+                onSaved={(id) => {
+                  setActiveTab("reports"); // auto navigate to report page after save
+                }}
+              />
+            )}
           </div>
         </div>
       ) : (

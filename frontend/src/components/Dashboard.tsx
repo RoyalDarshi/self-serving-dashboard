@@ -598,6 +598,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <SavedChart
                 config={chart}
                 connectionId={selectedDashboardData.connectionId}
+                chartId={chart.id}
               />
               {isEditMode && user.role === "designer" && (
                 <button

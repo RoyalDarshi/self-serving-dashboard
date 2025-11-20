@@ -7,6 +7,8 @@ import {
   LayoutDashboard,
   LogOut,
   Link,
+  FileText,
+  ClipboardList,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -93,6 +95,33 @@ const Sidebar: React.FC<SidebarProps> = ({
           <LayoutDashboard className="h-6 w-6" />
         </button>
       )}
+      {/* Reports Tab for all users who can view dashboards */}
+      {(user?.role === "designer" || user?.role === "user") && (
+        <button
+          onClick={() => setActiveTab("reports")}
+          className={`p-2 rounded-md ${
+            activeTab === "reports" ? "bg-blue-600" : "hover:bg-gray-700"
+          }`}
+          title="Reports"
+        >
+          <FileText className="h-6 w-6" />
+        </button>
+      )}
+
+      {/* Report Builder only for designers & editors */}
+      {(user?.role === "designer" ||
+        (user?.role === "user" && user?.accessLevel === "editor")) && (
+        <button
+          onClick={() => setActiveTab("report-builder")}
+          className={`p-2 rounded-md ${
+            activeTab === "report-builder" ? "bg-blue-600" : "hover:bg-gray-700"
+          }`}
+          title="Report Builder"
+        >
+          <ClipboardList className="h-6 w-6" />
+        </button>
+      )}
+
       <button
         onClick={onLogout}
         className="p-2 rounded-md hover:bg-gray-700 mt-auto"

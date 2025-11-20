@@ -58,9 +58,13 @@ router.post("/save", async (req, res) => {
       const yAxisFacts = chart.yAxisFacts || [];
       const chartId = chart.id || null;
       await db.run(
-        `INSERT INTO charts (id, dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
-                             chart_type, aggregation_type, stacked, title, description, created_at, last_modified) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        `INSERT INTO charts (
+           id, dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id,
+           chart_type, aggregation_type, stacked, title, description,
+           is_drill_enabled, drill_target_dashboard_id, drill_mapping_json,
+           created_at, last_modified
+         ) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           chartId,
           dashboardId,
@@ -72,6 +76,11 @@ router.post("/save", async (req, res) => {
           chart.stacked ? 1 : 0,
           chart.title || null,
           chart.description || null,
+          chart.isDrillEnabled ? 1 : 0,
+          chart.drillTargetDashboardId || null,
+          chart.drillMappingJson
+            ? JSON.stringify(chart.drillMappingJson)
+            : null,
         ]
       );
       chartIds.push(chartId);
@@ -147,9 +156,13 @@ router.put("/:id", async (req, res) => {
       const yAxisFacts = chart.yAxisFacts || [];
       const chartId = chart.id || null;
       await db.run(
-        `INSERT INTO charts (id, dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id, 
-                             chart_type, aggregation_type, stacked, title, description, created_at, last_modified) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        `INSERT INTO charts (
+           id, dashboard_id, x_axis_dimension_id, y_axis_facts, group_by_dimension_id,
+           chart_type, aggregation_type, stacked, title, description,
+           is_drill_enabled, drill_target_dashboard_id, drill_mapping_json,
+           created_at, last_modified
+         ) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
         [
           chartId,
           id,
@@ -161,6 +174,11 @@ router.put("/:id", async (req, res) => {
           chart.stacked ? 1 : 0,
           chart.title || null,
           chart.description || null,
+          chart.isDrillEnabled ? 1 : 0,
+          chart.drillTargetDashboardId || null,
+          chart.drillMappingJson
+            ? JSON.stringify(chart.drillMappingJson)
+            : null,
         ]
       );
       chartIds.push(chartId);
@@ -215,6 +233,7 @@ router.get("/list", async (req, res) => {
         const charts = await db.all(
           `SELECT c.id, c.x_axis_dimension_id, c.y_axis_facts, c.group_by_dimension_id,
                   c.chart_type, c.aggregation_type, c.stacked, c.title, c.description,
+                  c.is_drill_enabled, c.drill_target_dashboard_id, c.drill_mapping_json,
                   c.created_at, c.last_modified
            FROM charts c
            WHERE c.dashboard_id = ?`,
@@ -235,8 +254,8 @@ router.get("/list", async (req, res) => {
               yAxisFactIds.length > 0
                 ? await db.all(
                     `SELECT id, name, table_name, column_name, aggregate_function 
-                   FROM facts 
-                   WHERE id IN (${yAxisFactIds.map(() => "?").join(",")})`,
+                     FROM facts 
+                     WHERE id IN (${yAxisFactIds.map(() => "?").join(",")})`,
                     yAxisFactIds
                   )
                 : [];
@@ -258,6 +277,11 @@ router.get("/list", async (req, res) => {
               stacked: !!chart.stacked,
               title: chart.title,
               description: chart.description,
+              isDrillEnabled: !!chart.is_drill_enabled,
+              drillTargetDashboardId: chart.drill_target_dashboard_id,
+              drillMappingJson: chart.drill_mapping_json
+                ? JSON.parse(chart.drill_mapping_json)
+                : null,
               createdAt: chart.created_at,
               lastModified: chart.last_modified,
             };
@@ -407,6 +431,35 @@ router.delete("/chart/:chartId", async (req, res) => {
       success: false,
       error: `Failed to delete chart: ${error.message}`,
     });
+  }
+});
+
+// 🔥 Drill config endpoint for charts
+router.get("/chart/:chartId/drill-config", async (req, res) => {
+  const db = await dbPromise;
+  const { chartId } = req.params;
+
+  try {
+    const chart = await db.get(
+      `SELECT is_drill_enabled, drill_target_dashboard_id, drill_mapping_json
+       FROM charts WHERE id = ?`,
+      [chartId]
+    );
+
+    if (!chart || !chart.is_drill_enabled) {
+      return res.json({ drillEnabled: false });
+    }
+
+    res.json({
+      drillEnabled: !!chart.is_drill_enabled,
+      targetDashboardId: chart.drill_target_dashboard_id,
+      mapping: chart.drill_mapping_json
+        ? JSON.parse(chart.drill_mapping_json)
+        : {},
+    });
+  } catch (err) {
+    console.error("Error fetching drill config:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

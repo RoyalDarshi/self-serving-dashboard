@@ -1,5 +1,5 @@
 import React from "react";
-import { Database, Trash2 } from "lucide-react";
+import { Database, Trash2, Edit2 } from "lucide-react";
 
 interface Connection {
   id: number;
@@ -15,6 +15,7 @@ interface ConnectionsListProps {
   selectedConnectionId: number | null;
   setSelectedConnectionId: (id: number) => void;
   onDelete: (id: number, name: string) => void;
+  onEdit: (connection: Connection) => void;
 }
 
 const ConnectionsList: React.FC<ConnectionsListProps> = ({
@@ -22,6 +23,7 @@ const ConnectionsList: React.FC<ConnectionsListProps> = ({
   selectedConnectionId,
   setSelectedConnectionId,
   onDelete,
+  onEdit,
 }) => {
   if (connections.length === 0) {
     return (
@@ -59,13 +61,24 @@ const ConnectionsList: React.FC<ConnectionsListProps> = ({
                 {conn.type} • {conn.hostname}:{conn.port}/{conn.database}
               </div>
             </button>
-            <button
-              onClick={() => onDelete(conn.id, conn.connection_name)}
-              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-              title={`Delete ${conn.connection_name}`}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => onEdit(conn)}
+                className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                title={`Edit ${conn.connection_name}`}
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => onDelete(conn.id, conn.connection_name)}
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title={`Delete ${conn.connection_name}`}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         ))}
       </div>

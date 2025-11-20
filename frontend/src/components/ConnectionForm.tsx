@@ -20,7 +20,6 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import Card from "./ui/Card";
 import { apiService } from "../services/api";
 import Loader from "./Loader";
 
@@ -37,6 +36,7 @@ interface Connection {
   username: string;
   selected_db: string;
   created_at: string;
+  password?: string;
 }
 
 interface FormData {
@@ -73,6 +73,9 @@ interface ConnectionFormProps {
   onSuccess: (msg: string) => void;
   onError: (msg: string) => void;
   onCreate: (conn: Connection) => void;
+  onUpdate: (conn: Connection) => void;
+  onCancelEdit: () => void;
+  editingConnection: Connection | null;
 }
 
 const databaseOptions: DatabaseOption[] = [
@@ -169,6 +172,9 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
   onSuccess,
   onError,
   onCreate,
+  onUpdate,
+  onCancelEdit,
+  editingConnection,
 }) => {
   const [formData, setFormData] = useState<FormData>({
     connectionName: "",
@@ -189,6 +195,24 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
   const [isTestSuccessful, setIsTestSuccessful] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const timeoutIdRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (editingConnection) {
+      setFormData({
+        connectionName: editingConnection.connection_name,
+        hostname: editingConnection.hostname,
+        port: editingConnection.port.toString(),
+        database: editingConnection.database,
+        username: editingConnection.username,
+        password: "",
+        selectedDB: editingConnection.type || editingConnection.selected_db,
+      });
+      setIsTestSuccessful(false);
+      setIsFormModified(false);
+    } else {
+      resetFormState();
+    }
+  }, [editingConnection]);
 
   const isFormValid = useMemo(() => {
     const {
@@ -226,9 +250,6 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
         ([key, value]) => key !== "selectedDB" && !!value
       );
       setIsFormModified(isModified);
-      if (isModified) {
-        setIsTestSuccessful(false);
-      }
     }, 500);
     return () => {
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
@@ -301,15 +322,17 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
     debouncedValidateField(name as keyof FormData, value);
     setIsTestSuccessful(false);
+    setIsSubmitButtonEnabled(false);
   };
 
   const handleSelectDB = (value: string) => {
     setFormData((prev) => ({ ...prev, selectedDB: value }));
     setIsSelectOpen(false);
     setIsTestSuccessful(false);
+    setIsSubmitButtonEnabled(false);
   };
 
-  const clearForm = () => {
+  const resetFormState = () => {
     setFormData({
       connectionName: "",
       hostname: "",
@@ -317,7 +340,7 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
       database: "",
       username: "",
       password: "",
-      selectedDB: formData.selectedDB,
+      selectedDB: "",
     });
     setErrors({});
     setIsTestButtonEnabled(false);
@@ -325,6 +348,11 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
     setIsFormModified(false);
     setIsTestSuccessful(false);
     setShowPassword(false);
+  };
+
+  const handleCancel = () => {
+    resetFormState();
+    onCancelEdit();
   };
 
   const handleTestConnection = async () => {
@@ -365,49 +393,78 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
     }
   };
 
-  const handleCreateConnection = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) {
       toast.error("Please fill all required fields correctly");
       return;
     }
+
+    const body = {
+      connection_name: formData.connectionName,
+      type: formData.selectedDB,
+      hostname: formData.hostname,
+      port: Number(formData.port),
+      database: formData.database,
+      username: formData.username,
+      password: formData.password,
+    };
+
     try {
-      const body = {
-        connection_name: formData.connectionName,
-        type: formData.selectedDB,
-        hostname: formData.hostname,
-        port: Number(formData.port),
-        database: formData.database,
-        username: formData.username,
-        password: formData.password,
-      };
-      const res = await apiService.createConnection(body);
-      if (res.success) {
-        const newConn: Connection = {
-          id: res.data.id!,
-          connection_name: res.data.connection_name!,
-          type: res.data.type!,
-          hostname: res.data.hostname!,
-          port: res.data.port!,
-          database: res.data.database!,
-          username: res.data.username!,
-          created_at: new Date().toISOString(),
-        };
-        onCreate(newConn);
-        clearForm();
-        toast.success(
-          `Connection "${newConn.connection_name}" created successfully`
+      if (editingConnection) {
+        const res = await apiService.updateConnection(
+          editingConnection.id,
+          body
         );
-        onSuccess(
-          `Connection "${newConn.connection_name}" created successfully`
-        );
+
+        if (res.success) {
+          const updatedConn: Connection = {
+            ...editingConnection,
+            connection_name: res.data.connection_name || body.connection_name,
+            type: res.data.type || body.type,
+            hostname: res.data.hostname || body.hostname,
+            port: res.data.port || body.port,
+            database: res.data.database || body.database,
+            username: res.data.username || body.username,
+          };
+          onUpdate(updatedConn);
+          toast.success(`Connection updated successfully`);
+          onSuccess(`Connection updated successfully`);
+          resetFormState();
+        } else {
+          toast.error(res.error || "Failed to update connection");
+          onError(res.error || "Failed to update connection");
+        }
       } else {
-        toast.error(res.error || "Failed to create connection");
-        onError(res.error || "Failed to create connection");
+        const res = await apiService.createConnection(body);
+        if (res.success) {
+          const newConn: Connection = {
+            id: res.data.id!,
+            connection_name: res.data.connection_name!,
+            type: res.data.type!,
+            hostname: res.data.hostname!,
+            port: res.data.port!,
+            database: res.data.database!,
+            username: res.data.username!,
+            created_at: new Date().toISOString(),
+          };
+          onCreate(newConn);
+          resetFormState();
+          toast.success(
+            `Connection "${newConn.connection_name}" created successfully`
+          );
+          onSuccess(
+            `Connection "${newConn.connection_name}" created successfully`
+          );
+        } else {
+          toast.error(res.error || "Failed to create connection");
+          onError(res.error || "Failed to create connection");
+        }
       }
     } catch (err) {
-      toast.error(`Failed to create connection: ${(err as Error).message}`);
-      onError(`Failed to create connection: ${(err as Error).message}`);
+      const action = editingConnection ? "update" : "create";
+      toast.error(`Failed to ${action} connection: ${(err as Error).message}`);
+      onError(`Failed to ${action} connection: ${(err as Error).message}`);
     }
   };
 
@@ -478,7 +535,6 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
         theme="light"
       />
 
-      {/* Database Selection */}
       <div className="custom-select-container space-y-1">
         <label className="text-sm font-medium text-gray-700">
           Database Engine <span className="text-red-500">*</span>
@@ -533,9 +589,8 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
         </div>
       </div>
 
-      {/* Connection Form */}
       {formData.selectedDB && (
-        <form onSubmit={handleCreateConnection} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {fieldConfigs.map((config) => renderInputField(config))}
           </div>
@@ -543,15 +598,10 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
           <div className="flex flex-col sm:flex-row gap-2 pt-2">
             <button
               type="button"
-              onClick={clearForm}
-              disabled={!isFormModified && !isTestSuccessful}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                isFormModified || isTestSuccessful
-                  ? "bg-gray-600 text-white hover:bg-gray-700"
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
-              }`}
+              onClick={editingConnection ? handleCancel : resetFormState}
+              className="px-4 py-2 text-sm font-medium rounded-lg transition-colors bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"
             >
-              Clear
+              {editingConnection ? "Cancel Edit" : "Clear"}
             </button>
             <button
               type="button"
@@ -574,7 +624,7 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
                   : "bg-gray-200 text-gray-400 cursor-not-allowed"
               }`}
             >
-              Create Connection
+              {editingConnection ? "Update Connection" : "Create Connection"}
             </button>
           </div>
 

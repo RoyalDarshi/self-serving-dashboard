@@ -129,11 +129,15 @@ const SCHEMAS = {
       stacked BOOLEAN DEFAULT FALSE,
       title TEXT,
       description TEXT,
+      is_drill_enabled BOOLEAN DEFAULT FALSE,
+      drill_target_dashboard_id INTEGER,
+      drill_mapping_json TEXT, -- e.g. {"region": "region"}
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_modified DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (dashboard_id) REFERENCES dashboards(id) ON DELETE CASCADE,
       FOREIGN KEY (x_axis_dimension_id) REFERENCES dimensions(id),
-      FOREIGN KEY (group_by_dimension_id) REFERENCES dimensions(id)
+      FOREIGN KEY (group_by_dimension_id) REFERENCES dimensions(id),
+      FOREIGN KEY (drill_target_dashboard_id) REFERENCES dashboards(id)
     )
   `,
 
@@ -151,6 +155,59 @@ const SCHEMAS = {
       )),
       UNIQUE (connection_id, designation),
       FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+    )
+  `,
+
+  reports: `
+    CREATE TABLE IF NOT EXISTS reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      connection_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      base_table TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (connection_id) REFERENCES connections(id)
+    )
+  `,
+
+  report_columns: `
+    CREATE TABLE IF NOT EXISTS report_columns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL,
+      column_name TEXT NOT NULL,
+      alias TEXT,
+      data_type TEXT,
+      visible BOOLEAN DEFAULT TRUE,
+      order_index INTEGER,
+      FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
+    )
+  `,
+
+  report_filters: `
+    CREATE TABLE IF NOT EXISTS report_filters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL,
+      column_name TEXT NOT NULL,
+      operator TEXT NOT NULL,
+      value TEXT,
+      is_user_editable BOOLEAN DEFAULT TRUE,
+      order_index INTEGER,
+      FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
+    )
+  `,
+
+  report_drillthrough: `
+    CREATE TABLE IF NOT EXISTS report_drillthrough (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_report_id INTEGER NOT NULL,
+      target_report_id INTEGER NOT NULL,
+      mapping_json TEXT NOT NULL, -- e.g. {"region": "region"}
+      label TEXT,
+      FOREIGN KEY (parent_report_id) REFERENCES reports(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_report_id) REFERENCES reports(id) ON DELETE CASCADE
     )
   `,
 };
@@ -188,6 +245,14 @@ const INDEXES = [
 
   // charts indexes
   "CREATE INDEX IF NOT EXISTS idx_charts_dashboard ON charts(dashboard_id)",
+
+  // reports indexes
+  "CREATE INDEX IF NOT EXISTS idx_reports_user ON reports(user_id)",
+  "CREATE INDEX IF NOT EXISTS idx_reports_connection ON reports(connection_id)",
+  "CREATE INDEX IF NOT EXISTS idx_report_columns_report ON report_columns(report_id)",
+  "CREATE INDEX IF NOT EXISTS idx_report_filters_report ON report_filters(report_id)",
+  "CREATE INDEX IF NOT EXISTS idx_report_drill_parent ON report_drillthrough(parent_report_id)",
+  "CREATE INDEX IF NOT EXISTS idx_report_drill_target ON report_drillthrough(target_report_id)",
 
   // connection_designations indexes
   "CREATE INDEX IF NOT EXISTS idx_connection_designations_connection ON connection_designations(connection_id)",

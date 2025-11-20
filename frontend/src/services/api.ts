@@ -62,6 +62,54 @@ export interface DashboardData {
   lastModified?: string;
 }
 
+export interface ReportDefinition {
+  id: number;
+  name: string;
+  description?: string | null;
+  connection_id: number;
+  base_table: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ReportColumn {
+  id?: number;
+  report_id?: number;
+  column_name: string;
+  alias?: string | null;
+  data_type?: string | null;
+  visible?: boolean;
+  order_index?: number;
+}
+
+export interface ReportFilter {
+  id?: number;
+  report_id?: number;
+  column_name: string;
+  operator: string;
+  value: any; // can be string or array
+  is_user_editable?: boolean;
+  order_index?: number;
+}
+
+export interface ReportDrillConfig {
+  target_report_id: number;
+  mapping_json: string; // JSON string from backend
+  label?: string | null;
+}
+
+export interface FullReportConfig {
+  report: ReportDefinition;
+  columns: ReportColumn[];
+  filters: ReportFilter[];
+  drillTargets: ReportDrillConfig[];
+}
+
+export interface RunReportResponse {
+  sql: string;
+  rows: Record<string, any>[];
+}
+
 export interface AggregationResponse {
   sql?: string;
   rows?: { [key: string]: number | string }[];
@@ -99,7 +147,7 @@ export interface Kpi {
 }
 
 export type Role = "admin" | "user" | "designer";
-export type AccessLevel = "viewer" | "editor"; // Added AccessLevel type
+export type AccessLevel = "viewer" | "editor";
 export type Designation =
   | "Business Analyst"
   | "Data Scientist"
@@ -113,7 +161,7 @@ export interface User {
   id: number;
   username: string;
   role: Role;
-  accessLevel?: AccessLevel; // Added optional accessLevel
+  accessLevel?: AccessLevel;
   designation?: Designation;
   created_at: string;
   is_ad_user: boolean;
@@ -137,7 +185,7 @@ export interface AuthResponse {
     id: number;
     role: Role;
     designation?: string | null;
-    accessLevel?: AccessLevel; // Added optional accessLevel
+    accessLevel?: AccessLevel;
   };
 }
 
@@ -175,7 +223,6 @@ const createApiFetch = <T = unknown>(
 
   return fetch(`${API_BASE}${endpoint}`, config)
     .then(async (response) => {
-      // Handle cases with no content
       if (response.status === 204) {
         return { success: true, data: undefined };
       }
@@ -201,8 +248,6 @@ export const apiService = {
     password: string
   ): Promise<ApiResponse<AuthResponse>> =>
     createApiFetch("/auth/login", "POST", { username, password }, false),
-
-  // adLogin was removed as it's now handled by the unified /auth/login endpoint
 
   validateToken: (): Promise<
     ApiResponse<{
@@ -304,15 +349,13 @@ export const apiService = {
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
-  createFact: (
-    fact: Omit<Fact, "id">
-  ): Promise<ApiResponse<Fact>> => // Changed return type to Fact
+  createFact: (fact: Omit<Fact, "id">): Promise<ApiResponse<Fact>> =>
     createApiFetch("/semantic/facts", "POST", fact),
 
   updateFact: (
     id: number,
     fact: Omit<Fact, "id">
-  ): Promise<ApiResponse<Fact>> => // Changed return type to Fact
+  ): Promise<ApiResponse<Fact>> =>
     createApiFetch(`/semantic/facts/${id}`, "PUT", fact),
 
   deleteFact: (id: number): Promise<ApiResponse<unknown>> =>
@@ -326,26 +369,24 @@ export const apiService = {
 
   createDimension: (
     dimension: Omit<Dimension, "id">
-  ): Promise<ApiResponse<Dimension>> => // Changed return type to Dimension
+  ): Promise<ApiResponse<Dimension>> =>
     createApiFetch("/semantic/dimensions", "POST", dimension),
 
   updateDimension: (
     id: number,
     dimension: Omit<Dimension, "id">
-  ): Promise<ApiResponse<Dimension>> => // Changed return type to Dimension
+  ): Promise<ApiResponse<Dimension>> =>
     createApiFetch(`/semantic/dimensions/${id}`, "PUT", dimension),
 
   deleteDimension: (id: number): Promise<ApiResponse<unknown>> =>
     createApiFetch(`/semantic/dimensions/${id}`, "DELETE"),
 
-  // FIX: This function now retrieves SAVED mappings using a GET request
   getFactDimensions: (connectionId: number): Promise<FactDimension[]> =>
     createApiFetch<FactDimension[]>(
-      `/semantic/fact-dimensions?connection_id=${connectionId}`, // Adjusted endpoint for GET
+      `/semantic/fact-dimensions?connection_id=${connectionId}`,
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
-  // New function for auto-mapping
   autoMap: (connectionId: number): Promise<ApiResponse<FactDimension[]>> =>
     createApiFetch(`/semantic/auto-map`, "POST", {
       connection_id: connectionId,
@@ -353,13 +394,13 @@ export const apiService = {
 
   createFactDimension: (
     factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<FactDimension>> => // Changed return type to FactDimension
+  ): Promise<ApiResponse<FactDimension>> =>
     createApiFetch("/semantic/fact-dimensions", "POST", factDimension),
 
   updateFactDimension: (
     id: number,
     factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<FactDimension>> => // Changed return type to FactDimension
+  ): Promise<ApiResponse<FactDimension>> =>
     createApiFetch(`/semantic/fact-dimensions/${id}`, "PUT", factDimension),
 
   deleteFactDimension: (id: number): Promise<ApiResponse<unknown>> =>
@@ -372,14 +413,13 @@ export const apiService = {
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
-  createKpi: (
-    kpi: Omit<Kpi, "id" | "created_by">
-  ): Promise<ApiResponse<Kpi>> => createApiFetch("/semantic/kpis", "POST", kpi), // Changed return type to Kpi
+  createKpi: (kpi: Omit<Kpi, "id" | "created_by">): Promise<ApiResponse<Kpi>> =>
+    createApiFetch("/semantic/kpis", "POST", kpi),
 
   updateKpi: (
     id: number,
     kpi: Omit<Kpi, "id" | "connection_id" | "created_by">
-  ): Promise<ApiResponse<Kpi>> => // Changed return type to Kpi
+  ): Promise<ApiResponse<Kpi>> =>
     createApiFetch(`/semantic/kpis/${id}`, "PUT", kpi),
 
   deleteKpi: (id: number): Promise<ApiResponse<unknown>> =>
@@ -430,6 +470,60 @@ export const apiService = {
 
   deleteChart: (chartId: string): Promise<ApiResponse<unknown>> =>
     createApiFetch(`/dashboard/chart/${chartId}`, "DELETE"),
-};  
+
+  // Report Management (Refactored)
+  getReports: (): Promise<ReportDefinition[]> =>
+    createApiFetch<ReportDefinition[]>("/reports/list", "GET").then(
+      (response) => (response.success ? response.data || [] : [])
+    ),
+
+  getReportConfig: (reportId: number): Promise<ApiResponse<FullReportConfig>> =>
+    createApiFetch(`/reports/${reportId}`, "GET"),
+
+  saveReport: (payload: {
+    id?: number;
+    name: string;
+    description?: string;
+    connection_id: number;
+    base_table: string;
+    columns: ReportColumn[];
+    filters: ReportFilter[];
+  }): Promise<ApiResponse<{ reportId?: number }>> => {
+    const method = payload.id ? "PUT" : "POST";
+    const endpoint = payload.id ? `/reports/${payload.id}` : "/reports/save";
+    return createApiFetch(endpoint, method, payload);
+  },
+
+  deleteReport: (reportId: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/reports/${reportId}`, "DELETE"),
+
+  runReport: (
+    reportId: number,
+    filters: Record<string, any> = {}
+  ): Promise<ApiResponse<RunReportResponse>> => {
+    const params = new URLSearchParams({ reportId: String(reportId) });
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v != null) params.append(k, String(v));
+    });
+    return createApiFetch(`/reports/run?${params.toString()}`, "GET");
+  },
+
+  getReportDrillConfig: (reportId: number): Promise<ReportDrillConfig[]> =>
+    createApiFetch<ReportDrillConfig[]>(
+      `/reports/${reportId}/drill-config`,
+      "GET"
+    ).then((response) => (response.success ? response.data || [] : [])),
+
+  // For chart drill-through
+  getChartDrillConfig: (
+    chartId: string
+  ): Promise<
+    ApiResponse<{
+      drillEnabled: boolean;
+      targetDashboardId?: number;
+      mapping?: Record<string, string>;
+    }>
+  > => createApiFetch(`/dashboard/chart/${chartId}/drill-config`, "GET"),
+};
 
 export default apiService;

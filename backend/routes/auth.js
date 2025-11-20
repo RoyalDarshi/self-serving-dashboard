@@ -29,8 +29,7 @@ const signJwtForUser = (user, groups = []) =>
       accessLevel: user.access_level,
       groups,
     },
-    JWT_SECRET,
-    { expiresIn: "1h" }
+    JWT_SECRET
   );
 
 // Main login
@@ -53,6 +52,7 @@ router.post("/login", async (req, res) => {
         return res.status(401).json({ error: "Invalid username or password" });
 
       const token = signJwtForUser(localUser);
+      console.log("Loging in...");
       return res.json({
         token,
         user: {

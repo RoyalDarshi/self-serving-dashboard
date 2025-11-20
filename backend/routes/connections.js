@@ -291,7 +291,7 @@ router.post("/connections/test", async (req, res) => {
     });
   } catch (err) {
     console.error("Test connection error:", err.message);
-    res.status(500).json({ error: "Failed to test connection" });
+    res.status(500).json({ error: err.message });
   }
 });
 

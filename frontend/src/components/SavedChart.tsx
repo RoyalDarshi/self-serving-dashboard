@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ChartConfig, AggregationResponse } from "../services/api";
 import ChartDisplay from "./ChartDisplay";
+import ReportViewer from "./ReportViewer";
 import apiService from "../services/api";
 
 interface ChartDataItem {
@@ -19,6 +20,7 @@ interface Column {
 interface SavedChartProps {
   config: ChartConfig;
   connectionId: number;
+  chartId?: string;
 }
 
 const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
@@ -26,6 +28,9 @@ const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
   const [yAxisColumns, setYAxisColumns] = useState<Column[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [drillReportId, setDrillReportId] = useState<number | null>(null);
+  const [drillFilters, setDrillFilters] = useState<Record<string, any>>({});
+  const [showDrillModal, setShowDrillModal] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -150,6 +155,37 @@ const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
     }
   }, [config, connectionId]);
 
+  const handleDataPointClick = async (payload: any) => {
+    if (!chartId) return;
+    try {
+      const cfg = await apiService.getChartDrillConfig(chartId);
+      if (!cfg.drillEnabled || !cfg.targetDashboardId || !cfg.mapping) return;
+
+      // For now, we just log or you can later wire chart->dashboard navigation.
+      // If you instead want chart -> report, you can map to a fixed reportId here.
+
+      // Example: if mapping keys correspond to xAxis value in payload
+      const filters: Record<string, any> = {};
+      const [sourceKey, targetKey] = Object.entries(cfg.mapping)[0] as [
+        string,
+        string
+      ];
+      if (payload[sourceKey] != null) {
+        filters[targetKey] = payload[sourceKey];
+      }
+
+      // If you have a detail reportId for this chart, set it here.
+      // For now we'll assume one report per chart saved in config (optional custom field).
+      if ((config as any).detailReportId) {
+        setDrillReportId((config as any).detailReportId);
+        setDrillFilters(filters);
+        setShowDrillModal(true);
+      }
+    } catch (err) {
+      console.error("Drill error:", err);
+    }
+  };
+
   return (
     <div className="h-full w-full flex flex-col">
       <h3 className="text-lg flex justify-center font-semibold p-2">
@@ -183,8 +219,23 @@ const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
           loading={loading}
           error={error}
           stacked={config.stacked}
+          onDataPointClick={handleDataPointClick}
         />
       </div>
+      {showDrillModal && drillReportId && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-lg w-[80vw] h-[80vh]">
+            <ReportViewer
+              initialReportId={drillReportId}
+              onClose={() => {
+                setShowDrillModal(false);
+                setDrillReportId(null);
+                setDrillFilters({});
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

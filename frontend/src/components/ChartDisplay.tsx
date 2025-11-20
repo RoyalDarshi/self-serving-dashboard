@@ -35,6 +35,7 @@ interface ChartDisplayProps {
   chartContainerRef: React.RefObject<HTMLDivElement>;
   sortOrder?: "asc" | "desc" | null;
   height?: number;
+  onDataPointClick?: (payload: any) => void;
 }
 
 const COLORS = [
@@ -75,6 +76,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   chartContainerRef,
   sortOrder = null,
   height,
+  onDataPointClick,
 }) => {
   const isGrouped =
     !!groupByColumn && !!xAxisColumn && groupByColumn.key !== xAxisColumn.key;
@@ -189,7 +191,19 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   const renderChart = () => {
     if (chartType === "bar") {
       return (
-        <BarChart {...commonProps}>
+        <BarChart
+          {...commonProps}
+          onClick={(e: any) => {
+            if (
+              onDataPointClick &&
+              e &&
+              e.activePayload &&
+              e.activePayload[0]
+            ) {
+              onDataPointClick(e.activePayload[0].payload);
+            }
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="name" stroke="#6b7280" interval="preserveStartEnd" />
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
@@ -210,7 +224,19 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
 
     if (chartType === "line") {
       return (
-        <LineChart {...commonProps}>
+        <LineChart
+          {...commonProps}
+          onClick={(e: any) => {
+            if (
+              onDataPointClick &&
+              e &&
+              e.activePayload &&
+              e.activePayload[0]
+            ) {
+              onDataPointClick(e.activePayload[0].payload);
+            }
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="name" stroke="#6b7280" />
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
@@ -232,7 +258,19 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
 
     if (chartType === "area") {
       return (
-        <AreaChart {...commonProps}>
+        <AreaChart
+          {...commonProps}
+          onClick={(e: any) => {
+            if (
+              onDataPointClick &&
+              e &&
+              e.activePayload &&
+              e.activePayload[0]
+            ) {
+              onDataPointClick(e.activePayload[0].payload);
+            }
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="name" stroke="#6b7280" />
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
@@ -255,7 +293,19 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
 
     if (chartType === "composed") {
       return (
-        <ComposedChart {...commonProps}>
+        <ComposedChart
+          {...commonProps}
+          onClick={(e: any) => {
+            if (
+              onDataPointClick &&
+              e &&
+              e.activePayload &&
+              e.activePayload[0]
+            ) {
+              onDataPointClick(e.activePayload[0].payload);
+            }
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="name" stroke="#6b7280" />
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />
@@ -290,7 +340,18 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
         value: r[yAxisColumns[0].key] || 0,
       }));
       return (
-        <PieChart>
+        <PieChart
+          onClick={(e: any) => {
+            if (
+              onDataPointClick &&
+              e &&
+              e.activePayload &&
+              e.activePayload[0]
+            ) {
+              onDataPointClick(e.activePayload[0].payload);
+            }
+          }}
+        >
           <Tooltip formatter={(v) => formatNumericValue(v)} />
           <Legend />
           <Pie
