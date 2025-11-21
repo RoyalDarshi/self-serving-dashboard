@@ -1,8 +1,22 @@
 // src/components/ReportBuilder.tsx
 import React, { useState, useEffect, useMemo } from "react";
-import { ReportColumn, ReportFilter, Schema } from "../services/api"; // Added Schema import
+import {
+  ReportColumn,
+  ReportFilter,
+  Schema,
+  ReportDrillConfig,
+  ReportDefinition,
+} from "../services/api";
 import { apiService } from "../services/api";
-import { Plus, Trash2, Save, RefreshCw } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Save,
+  RefreshCw,
+  BarChart3,
+  Table,
+  ArrowRightCircle,
+} from "lucide-react";
 
 interface Props {
   connections: { id: number; connection_name: string }[];
@@ -15,68 +29,71 @@ const emptyColumn: ReportColumn = {
   visible: true,
   order_index: 0,
 };
-
 const emptyFilter: ReportFilter = {
   column_name: "",
   operator: "=",
   value: "",
   is_user_editable: true,
-  order_index: 0,
 };
 
 const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
+  const [activeTab, setActiveTab] = useState<"data" | "visual" | "drill">(
+    "data"
+  );
+
+  // Report Basic Info
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [connectionId, setConnectionId] = useState<number | null>(
     connections[0]?.id ?? null
   );
   const [baseTable, setBaseTable] = useState("");
+
+  // Data Configuration
   const [columns, setColumns] = useState<ReportColumn[]>([emptyColumn]);
   const [filters, setFilters] = useState<ReportFilter[]>([]);
 
-  // New State for Schema logic
+  // Visualization Configuration
+  const [showChart, setShowChart] = useState(false);
+  const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
+  const [chartXAxis, setChartXAxis] = useState("");
+  const [chartYAxis, setChartYAxis] = useState<string[]>([]);
+  const [chartAgg, setChartAgg] = useState<"SUM" | "COUNT">("SUM");
+
+  // Drill Configuration (Linking to other reports)
+  const [targetReports, setTargetReports] = useState<ReportDefinition[]>([]);
+  const [drillConfig, setDrillConfig] = useState<{
+    targetId: number;
+    mapping: Record<string, string>;
+  }>({ targetId: 0, mapping: {} });
+
+  // Metadata
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [loadingSchemas, setLoadingSchemas] = useState(false);
-
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // 1. Fetch Schemas (Tables & Columns) when Connection Changes
+  // Load Schemas
   useEffect(() => {
     if (connectionId) {
       setLoadingSchemas(true);
       apiService
         .getSchemas(connectionId)
-        .then((data) => {
-          setSchemas(data);
-          // Reset base table if the new connection doesn't have the current table
-          setBaseTable("");
-        })
-        .catch((err) => console.error("Failed to load schemas", err))
+        .then(setSchemas)
         .finally(() => setLoadingSchemas(false));
     }
   }, [connectionId]);
 
-  // 2. Derive available columns based on selected baseTable
+  // Load available reports for Drill-through targets
+  useEffect(() => {
+    apiService.getReports().then(setTargetReports);
+  }, []);
+
   const availableColumns = useMemo(() => {
     if (!baseTable) return [];
     const tableSchema = schemas.find((s) => s.tableName === baseTable);
     return tableSchema ? tableSchema.columns : [];
   }, [baseTable, schemas]);
-
-  const handleAddColumn = () => {
-    setColumns((prev) => [
-      ...prev,
-      { ...emptyColumn, order_index: prev.length },
-    ]);
-  };
-
-  const handleAddFilter = () => {
-    setFilters((prev) => [
-      ...prev,
-      { ...emptyFilter, order_index: prev.length },
-    ]);
-  };
 
   const handleSave = async () => {
     if (!name || !connectionId || !baseTable) {
@@ -84,8 +101,24 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       return;
     }
     setSaving(true);
-    setMessage(null);
     try {
+      const visualization_config = {
+        showChart,
+        chartType,
+        xAxisColumn: chartXAxis,
+        yAxisColumns: chartYAxis,
+        aggregation: chartAgg,
+      };
+
+      // Prepare drill targets payload
+      const drillTargetsPayload = [];
+      if (drillConfig.targetId !== 0) {
+        drillTargetsPayload.push({
+          target_report_id: drillConfig.targetId,
+          mapping_json: drillConfig.mapping, // Send object, backend will stringify
+        });
+      }
+
       const payload = {
         name,
         description,
@@ -93,16 +126,20 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
         base_table: baseTable,
         columns: columns.filter((c) => c.column_name.trim() !== ""),
         filters,
+        visualization_config,
+        drillTargets: drillTargetsPayload, // <--- ADD THIS
       };
+
       const res = await apiService.saveReport(payload);
+
       if (res.success && res.reportId) {
-        setMessage("Report saved");
+        setMessage("Report saved successfully!");
         onSaved?.(res.reportId);
       } else {
-        setMessage(res.error || "Failed to save report");
+        setMessage("Error saving: " + res.error);
       }
     } catch (err: any) {
-      setMessage(err.message || "Error saving report");
+      setMessage(err.message);
     } finally {
       setSaving(false);
     }
@@ -110,287 +147,411 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
+      {/* Header */}
       <div className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">Report Builder</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Report Studio</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab("data")}
+            className={`px-3 py-1 text-sm rounded ${
+              activeTab === "data"
+                ? "bg-blue-100 text-blue-700"
+                : "text-slate-600"
+            }`}
+          >
+            Data
+          </button>
+          <button
+            onClick={() => setActiveTab("visual")}
+            className={`px-3 py-1 text-sm rounded ${
+              activeTab === "visual"
+                ? "bg-blue-100 text-blue-700"
+                : "text-slate-600"
+            }`}
+          >
+            Visualization
+          </button>
+          <button
+            onClick={() => setActiveTab("drill")}
+            className={`px-3 py-1 text-sm rounded ${
+              activeTab === "drill"
+                ? "bg-blue-100 text-blue-700"
+                : "text-slate-600"
+            }`}
+          >
+            Drill-Through
+          </button>
+        </div>
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-1 px-3 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 disabled:opacity-60"
+          className="flex items-center gap-1 px-3 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700"
         >
-          <Save className="h-4 w-4" />
-          Save
+          <Save className="h-4 w-4" /> Save
         </button>
       </div>
+
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {message && (
-          <div className="text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded px-3 py-2">
+          <div className="p-2 bg-green-100 text-green-800 text-sm rounded">
             {message}
           </div>
         )}
-        <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Report Name
-              </label>
-              <input
-                className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Sales by Region"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                Connection
-              </label>
-              <select
-                className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
-                value={connectionId ?? ""}
-                onChange={(e) => setConnectionId(Number(e.target.value))}
-              >
-                {connections.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.connection_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
-          {/* Base Table Dropdown */}
+        {/* General Info (Always Visible) */}
+        <div className="bg-white p-4 rounded border border-slate-200 grid grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1 flex justify-between">
-              <span>Base Table / View</span>
-              {loadingSchemas && (
-                <span className="text-indigo-500 flex items-center gap-1">
-                  <RefreshCw className="h-3 w-3 animate-spin" /> Fetching
-                  tables...
-                </span>
-              )}
+            <label className="text-xs font-bold text-slate-500">Name</label>
+            <input
+              className="w-full border rounded px-2 py-1"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500">
+              Connection
             </label>
             <select
-              className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
-              value={baseTable}
-              onChange={(e) => {
-                setBaseTable(e.target.value);
-                // Optionally clear columns when table changes
-                setColumns([emptyColumn]);
-                setFilters([]);
-              }}
-              disabled={loadingSchemas || !connectionId}
+              className="w-full border rounded px-2 py-1"
+              value={connectionId ?? ""}
+              onChange={(e) => setConnectionId(Number(e.target.value))}
             >
-              <option value="">-- Select Table --</option>
-              {schemas.map((schema) => (
-                <option key={schema.tableName} value={schema.tableName}>
-                  {schema.tableName}
+              {connections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.connection_name}
                 </option>
               ))}
             </select>
           </div>
-
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Description (optional)
+            <label className="text-xs font-bold text-slate-500">
+              Base Table
             </label>
-            <textarea
-              className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Monthly sales report grouped by region"
-            />
+            <select
+              className="w-full border rounded px-2 py-1"
+              value={baseTable}
+              onChange={(e) => setBaseTable(e.target.value)}
+            >
+              <option value="">Select Table</option>
+              {schemas.map((s) => (
+                <option key={s.tableName} value={s.tableName}>
+                  {s.tableName}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* Columns */}
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold text-slate-800">Columns</h3>
-            <button
-              onClick={handleAddColumn}
-              disabled={!baseTable}
-              className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
-            >
-              <Plus className="h-3 w-3" /> Add Column
-            </button>
-          </div>
-
-          {/* Show helper text if table not selected */}
-          {!baseTable && (
-            <div className="text-xs text-slate-500 italic mb-2">
-              Select a Base Table to view available columns.
+        {/* TAB: DATA */}
+        {activeTab === "data" && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded border border-slate-200">
+              <div className="flex justify-between mb-2">
+                <h3 className="font-medium text-slate-700">Columns</h3>
+                <button
+                  onClick={() =>
+                    setColumns([
+                      ...columns,
+                      { ...emptyColumn, order_index: columns.length },
+                    ])
+                  }
+                  className="text-xs bg-slate-100 px-2 py-1 rounded"
+                >
+                  + Add
+                </button>
+              </div>
+              {columns.map((col, idx) => (
+                <div key={idx} className="flex gap-2 mb-2">
+                  <select
+                    className="border rounded px-2 py-1 text-sm flex-1"
+                    value={col.column_name}
+                    onChange={(e) => {
+                      const newCols = [...columns];
+                      newCols[idx].column_name = e.target.value;
+                      newCols[idx].alias = e.target.value; // Auto-alias
+                      setColumns(newCols);
+                    }}
+                  >
+                    <option value="">Select Column</option>
+                    {availableColumns.map((ac) => (
+                      <option key={ac.name} value={ac.name}>
+                        {ac.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="border rounded px-2 py-1 text-sm w-32"
+                    placeholder="Alias"
+                    value={col.alias || ""}
+                    onChange={(e) => {
+                      const newCols = [...columns];
+                      newCols[idx].alias = e.target.value;
+                      setColumns(newCols);
+                    }}
+                  />
+                  <button
+                    onClick={() =>
+                      setColumns(columns.filter((_, i) => i !== idx))
+                    }
+                    className="text-red-500"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
             </div>
-          )}
 
-          <div className="space-y-2">
-            {columns.map((col, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-4 gap-2 items-center text-xs"
-              >
-                {/* Column Dropdown */}
-                <select
-                  className="border border-slate-300 rounded px-2 py-1"
-                  value={col.column_name}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    // Auto-fill alias if empty
-                    setColumns((prev) =>
-                      prev.map((c, i) =>
-                        i === idx
-                          ? { ...c, column_name: v, alias: c.alias || v }
-                          : c
-                      )
-                    );
-                  }}
-                >
-                  <option value="">-- Select Column --</option>
-                  {availableColumns.map((ac) => (
-                    <option key={ac.name} value={ac.name}>
-                      {ac.name} ({ac.type})
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  className="border border-slate-300 rounded px-2 py-1"
-                  placeholder="Alias"
-                  value={col.alias ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setColumns((prev) =>
-                      prev.map((c, i) => (i === idx ? { ...c, alias: v } : c))
-                    );
-                  }}
-                />
-                <label className="flex items-center gap-1 text-[11px] text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={col.visible ?? true}
-                    onChange={(e) => {
-                      const v = e.target.checked;
-                      setColumns((prev) =>
-                        prev.map((c, i) =>
-                          i === idx ? { ...c, visible: v } : c
-                        )
-                      );
-                    }}
-                  />
-                  Visible
-                </label>
+            <div className="bg-white p-4 rounded border border-slate-200">
+              <div className="flex justify-between mb-2">
+                <h3 className="font-medium text-slate-700">Filters</h3>
                 <button
-                  onClick={() =>
-                    setColumns((prev) => prev.filter((_, i) => i !== idx))
-                  }
-                  className="text-red-500 hover:bg-red-50 rounded p-1 justify-self-end"
+                  onClick={() => setFilters([...filters, { ...emptyFilter }])}
+                  className="text-xs bg-slate-100 px-2 py-1 rounded"
                 >
-                  <Trash2 className="h-3 w-3" />
+                  + Add
                 </button>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold text-slate-800">
-              Default Filters
-            </h3>
-            <button
-              onClick={handleAddFilter}
-              disabled={!baseTable}
-              className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
-            >
-              <Plus className="h-3 w-3" /> Add Filter
-            </button>
-          </div>
-          <div className="space-y-2">
-            {filters.map((f, idx) => (
-              <div
-                key={idx}
-                className="grid grid-cols-5 gap-2 items-center text-xs"
-              >
-                {/* Filter Column Dropdown */}
-                <select
-                  className="border border-slate-300 rounded px-2 py-1"
-                  value={f.column_name}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setFilters((prev) =>
-                      prev.map((x, i) =>
-                        i === idx ? { ...x, column_name: v } : x
-                      )
-                    );
-                  }}
-                >
-                  <option value="">-- Column --</option>
-                  {availableColumns.map((ac) => (
-                    <option key={ac.name} value={ac.name}>
-                      {ac.name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="border border-slate-300 rounded px-2 py-1"
-                  value={f.operator}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setFilters((prev) =>
-                      prev.map((x, i) =>
-                        i === idx ? { ...x, operator: v } : x
-                      )
-                    );
-                  }}
-                >
-                  <option value="=">=</option>
-                  <option value="!=">!=</option>
-                  <option value=">">&gt;</option>
-                  <option value="<">&lt;</option>
-                  <option value=">=">&gt;=</option>
-                  <option value="<=">&lt;=</option>
-                  <option value="LIKE">LIKE</option>
-                </select>
-                <input
-                  className="border border-slate-300 rounded px-2 py-1"
-                  placeholder="Value"
-                  value={f.value as string}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setFilters((prev) =>
-                      prev.map((x, i) => (i === idx ? { ...x, value: v } : x))
-                    );
-                  }}
-                />
-                <label className="flex items-center gap-1 text-[11px] text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={f.is_user_editable ?? true}
+              {filters.map((f, idx) => (
+                <div key={idx} className="flex gap-2 mb-2">
+                  <select
+                    className="border rounded px-2 py-1 text-sm w-1/3"
+                    value={f.column_name}
                     onChange={(e) => {
-                      const v = e.target.checked;
-                      setFilters((prev) =>
-                        prev.map((x, i) =>
-                          i === idx ? { ...x, is_user_editable: v } : x
-                        )
-                      );
+                      const newFilters = [...filters];
+                      newFilters[idx].column_name = e.target.value;
+                      setFilters(newFilters);
+                    }}
+                  >
+                    <option value="">Column</option>
+                    {availableColumns.map((ac) => (
+                      <option key={ac.name} value={ac.name}>
+                        {ac.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="border rounded px-2 py-1 text-sm w-20"
+                    value={f.operator}
+                    onChange={(e) => {
+                      const newFilters = [...filters];
+                      newFilters[idx].operator = e.target.value;
+                      setFilters(newFilters);
+                    }}
+                  >
+                    <option value="=">=</option>
+                    <option value=">">&gt;</option>
+                    <option value="<">&lt;</option>
+                    <option value="LIKE">Like</option>
+                  </select>
+                  <input
+                    className="border rounded px-2 py-1 text-sm flex-1"
+                    placeholder="Value"
+                    value={f.value}
+                    onChange={(e) => {
+                      const newFilters = [...filters];
+                      newFilters[idx].value = e.target.value;
+                      setFilters(newFilters);
                     }}
                   />
-                  User editable
-                </label>
-                <button
-                  onClick={() =>
-                    setFilters((prev) => prev.filter((_, i) => i !== idx))
-                  }
-                  className="text-red-500 hover:bg-red-50 rounded p-1 justify-self-end"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
+                  <button
+                    onClick={() =>
+                      setFilters(filters.filter((_, i) => i !== idx))
+                    }
+                    className="text-red-500"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* TAB: VISUALIZATION */}
+        {activeTab === "visual" && (
+          <div className="bg-white p-4 rounded border border-slate-200 space-y-4">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={showChart}
+                onChange={(e) => setShowChart(e.target.checked)}
+              />
+              <span className="font-medium text-slate-700">
+                Enable Chart Visualization
+              </span>
+            </label>
+
+            {showChart && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">
+                      Chart Type
+                    </label>
+                    <div className="flex gap-2">
+                      {["bar", "line", "pie"].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setChartType(t as any)}
+                          className={`px-3 py-2 border rounded flex flex-col items-center ${
+                            chartType === t
+                              ? "bg-indigo-50 border-indigo-500 text-indigo-700"
+                              : "hover:bg-slate-50"
+                          }`}
+                        >
+                          {t === "bar" && <BarChart3 className="h-5 w-5" />}
+                          {t === "line" && <Table className="h-5 w-5" />}{" "}
+                          {/* Placeholder icon */}
+                          <span className="text-xs capitalize mt-1">{t}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">
+                      Aggregation
+                    </label>
+                    <select
+                      value={chartAgg}
+                      onChange={(e) => setChartAgg(e.target.value as any)}
+                      className="w-full border rounded px-2 py-2"
+                    >
+                      <option value="SUM">Sum</option>
+                      <option value="COUNT">Count</option>
+                      <option value="AVG">Average</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">
+                      Category (X-Axis)
+                    </label>
+                    <select
+                      value={chartXAxis}
+                      onChange={(e) => setChartXAxis(e.target.value)}
+                      className="w-full border rounded px-2 py-2"
+                    >
+                      <option value="">Select Column</option>
+                      {columns.map((c) => (
+                        <option key={c.column_name} value={c.column_name}>
+                          {c.alias || c.column_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">
+                      Values (Y-Axis)
+                    </label>
+                    <div className="border rounded p-2 h-32 overflow-y-auto">
+                      {columns.map((c) => (
+                        <label
+                          key={c.column_name}
+                          className="flex items-center gap-2 mb-1 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={chartYAxis.includes(c.column_name)}
+                            onChange={(e) => {
+                              if (e.target.checked)
+                                setChartYAxis([...chartYAxis, c.column_name]);
+                              else
+                                setChartYAxis(
+                                  chartYAxis.filter((y) => y !== c.column_name)
+                                );
+                            }}
+                          />
+                          {c.alias || c.column_name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* TAB: DRILL THROUGH */}
+        {activeTab === "drill" && (
+          <div className="bg-white p-4 rounded border border-slate-200 space-y-4">
+            <p className="text-sm text-slate-500">
+              Configure what happens when a user clicks a row in the table.
+            </p>
+
+            <div>
+              <label className="text-xs font-bold text-slate-500">
+                Target Report
+              </label>
+              <select
+                className="w-full border rounded px-2 py-2 mt-1"
+                value={drillConfig.targetId}
+                onChange={(e) =>
+                  setDrillConfig({
+                    ...drillConfig,
+                    targetId: Number(e.target.value),
+                  })
+                }
+              >
+                <option value={0}>-- No Drill Through --</option>
+                {targetReports
+                  .filter((r) => r.id.toString() !== "CURRENT_ID")
+                  .map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {drillConfig.targetId !== 0 && (
+              <div className="border-t pt-4">
+                <label className="text-xs font-bold text-slate-500 mb-2 block">
+                  Parameter Mapping
+                </label>
+                <div className="grid grid-cols-3 gap-2 mb-2 font-medium text-xs bg-slate-50 p-2 rounded">
+                  <div>Source Column (Current)</div>
+                  <div className="flex justify-center">
+                    <ArrowRightCircle className="h-4 w-4" />
+                  </div>
+                  <div>Target Filter (Destination)</div>
+                </div>
+                {/* Simple Mapping UI: Just select one key column for now for MVP */}
+                {columns.map((col) => (
+                  <div
+                    key={col.column_name}
+                    className="grid grid-cols-3 gap-2 items-center mb-2"
+                  >
+                    <div className="text-sm">
+                      {col.alias || col.column_name}
+                    </div>
+                    <div className="text-center text-slate-400">→</div>
+                    <input
+                      placeholder="Target Column Name"
+                      className="border rounded px-2 py-1 text-sm"
+                      value={drillConfig.mapping[col.column_name] || ""}
+                      onChange={(e) => {
+                        const newMapping = {
+                          ...drillConfig.mapping,
+                          [col.column_name]: e.target.value,
+                        };
+                        if (!e.target.value) delete newMapping[col.column_name];
+                        setDrillConfig({ ...drillConfig, mapping: newMapping });
+                      }}
+                    />
+                  </div>
+                ))}
+                <p className="text-xs text-slate-400 mt-2">
+                  Enter the column name in the target report that matches the
+                  source column value.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -160,17 +160,18 @@ const SCHEMAS = {
 
   reports: `
     CREATE TABLE IF NOT EXISTS reports (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      connection_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      base_table TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id),
-      FOREIGN KEY (connection_id) REFERENCES connections(id)
-    )
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    connection_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    base_table TEXT NOT NULL,
+    visualization_config TEXT, -- JSON: { type: 'bar', xAxis: 'col1', yAxis: ['col2'] }
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (connection_id) REFERENCES connections(id)
+  )
   `,
 
   report_columns: `

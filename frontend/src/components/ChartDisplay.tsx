@@ -191,19 +191,7 @@ const ChartDisplay: React.FC<ChartDisplayProps> = ({
   const renderChart = () => {
     if (chartType === "bar") {
       return (
-        <BarChart
-          {...commonProps}
-          onClick={(e: any) => {
-            if (
-              onDataPointClick &&
-              e &&
-              e.activePayload &&
-              e.activePayload[0]
-            ) {
-              onDataPointClick(e.activePayload[0].payload);
-            }
-          }}
-        >
+        <BarChart {...commonProps} onClick={(data) => handleDrill(data)}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="name" stroke="#6b7280" interval="preserveStartEnd" />
           <YAxis tickFormatter={formatNumericValue} stroke="#6b7280" />

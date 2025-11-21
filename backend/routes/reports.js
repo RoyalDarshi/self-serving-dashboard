@@ -10,11 +10,22 @@ const router = Router();
 /**
  * CREATE REPORT
  */
+
 router.post("/save", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
-  const { name, description, connection_id, base_table, columns, filters } =
-    req.body;
+
+  // 👇 FIX: You must add 'drillTargets' to this list!
+  const {
+    name,
+    description,
+    connection_id,
+    base_table,
+    columns,
+    filters,
+    visualization_config,
+    drillTargets, // <--- THIS WAS MISSING
+  } = req.body;
 
   if (!name || !connection_id || !base_table) {
     return res
@@ -25,13 +36,22 @@ router.post("/save", async (req, res) => {
   try {
     await db.run("BEGIN TRANSACTION");
 
+    // 1. Insert Report
     const result = await db.run(
-      `INSERT INTO reports (user_id, connection_id, name, description, base_table)
-       VALUES (?, ?, ?, ?, ?)`,
-      [user.userId, connection_id, name, description || null, base_table]
+      `INSERT INTO reports (user_id, connection_id, name, description, base_table, visualization_config)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        user.userId,
+        connection_id,
+        name,
+        description || null,
+        base_table,
+        JSON.stringify(visualization_config || {}),
+      ]
     );
     const reportId = result.lastID;
 
+    // 2. Insert Columns
     for (const col of columns || []) {
       await db.run(
         `INSERT INTO report_columns (report_id, column_name, alias, data_type, visible, order_index)
@@ -47,6 +67,7 @@ router.post("/save", async (req, res) => {
       );
     }
 
+    // 3. Insert Filters
     for (const f of filters || []) {
       await db.run(
         `INSERT INTO report_filters (report_id, column_name, operator, value, is_user_editable, order_index)
@@ -60,6 +81,17 @@ router.post("/save", async (req, res) => {
           f.order_index || 0,
         ]
       );
+    }
+
+    // 4. Insert Drill Targets (The code causing the error before)
+    if (drillTargets && drillTargets.length > 0) {
+      for (const dt of drillTargets) {
+        await db.run(
+          `INSERT INTO report_drillthrough (parent_report_id, target_report_id, mapping_json)
+           VALUES (?, ?, ?)`,
+          [reportId, dt.target_report_id, JSON.stringify(dt.mapping_json)]
+        );
+      }
     }
 
     await db.run("COMMIT");
@@ -77,17 +109,32 @@ router.post("/save", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const db = await dbPromise;
   const { id } = req.params;
-  const { name, description, columns, filters } = req.body;
+  const { name, description, columns, filters, visualization_config } =
+    req.body;
 
   try {
     await db.run("BEGIN TRANSACTION");
 
     await db.run(
-      `UPDATE reports SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [name, description || null, id]
+      `UPDATE reports SET name = ?, description = ?, visualization_config = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [
+        name,
+        description || null,
+        JSON.stringify(visualization_config || {}),
+        id,
+      ]
     );
 
     await db.run(`DELETE FROM report_columns WHERE report_id = ?`, [id]);
+    if (drillTargets && drillTargets.length > 0) {
+      for (const dt of drillTargets) {
+        await db.run(
+          `INSERT INTO report_drillthrough (parent_report_id, target_report_id, mapping_json)
+                 VALUES (?, ?, ?)`,
+          [reportId, dt.target_report_id, JSON.stringify(dt.mapping_json)]
+        );
+      }
+    }
     for (const col of columns || []) {
       await db.run(
         `INSERT INTO report_columns (report_id, column_name, alias, data_type, visible, order_index)

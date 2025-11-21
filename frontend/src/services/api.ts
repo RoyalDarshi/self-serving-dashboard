@@ -68,6 +68,7 @@ export interface ReportDefinition {
   description?: string | null;
   connection_id: number;
   base_table: string;
+  visualization_config?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -80,6 +81,14 @@ export interface ReportColumn {
   data_type?: string | null;
   visible?: boolean;
   order_index?: number;
+}
+
+export interface ReportVisualization {
+  showChart: boolean;
+  chartType: "bar" | "line" | "pie" | "area";
+  xAxisColumn: string;
+  yAxisColumns: string[]; // Columns to aggregate (e.g., Sum of Sales)
+  aggregation: "SUM" | "COUNT" | "AVG";
 }
 
 export interface ReportFilter {
@@ -103,6 +112,7 @@ export interface FullReportConfig {
   columns: ReportColumn[];
   filters: ReportFilter[];
   drillTargets: ReportDrillConfig[];
+  visualization?: ReportVisualization;
 }
 
 export interface RunReportResponse {
