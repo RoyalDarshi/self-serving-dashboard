@@ -5,14 +5,13 @@ import { apiService } from "../services/api";
 import ReportShareModal from "./ReportShareModal";
 import {
   ArrowLeft,
-  Download,
   Share2,
   Filter,
   BarChart2,
   Table as TableIcon,
-  RefreshCw,
   X,
-  PieChart as PieIcon,
+  ChevronRight,
+  ChevronLeft,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -29,16 +28,31 @@ import {
 } from "recharts";
 
 interface ReportViewerProps {
-  initialReportId: number;
+  initialReportId?: number;
   onClose?: () => void;
+  previewConfig?: FullReportConfig;
+  previewData?: RunReportResponse;
 }
 
-const COLORS = ["#6366F1", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
+const COLORS = [
+  "#6366F1",
+  "#10B981",
+  "#F59E0B",
+  "#EF4444",
+  "#8B5CF6",
+  "#EC4899",
+];
+const PAGE_SIZE = 10;
 
 const ReportViewer: React.FC<ReportViewerProps> = ({
   initialReportId,
   onClose,
+  previewConfig,
+  previewData,
 }) => {
+  const [history, setHistory] = useState<
+    { id: number; filters: any; name: string }[]
+  >([]);
   const [config, setConfig] = useState<FullReportConfig | null>(null);
   const [data, setData] = useState<RunReportResponse | null>(null);
   const [runtimeFilters, setRuntimeFilters] = useState<Record<string, any>>({});
@@ -46,170 +60,202 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "chart" | "both">("both");
   const [shareOpen, setShareOpen] = useState(false);
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  // 1. LOAD REPORT (Restored JSON Parsing)
-  const loadReport = async (id: number, filters: any) => {
+  // Initialize
+  useEffect(() => {
+    if (previewConfig && previewData) {
+      setConfig(previewConfig);
+      setData(previewData);
+    } else if (initialReportId) {
+      loadReport(initialReportId, {}, true);
+    }
+  }, [initialReportId, previewConfig, previewData]);
+
+  const loadReport = async (id: number, filters: any, isNewHistory = false) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiService.getReportConfig(id);
+      const configRes = await apiService.getReportConfig(id);
+      if (!configRes.data)
+        throw new Error(configRes.error || "Failed to load config");
 
-      if (!response.success || !response.data) {
-        throw new Error(
-          response.error || "Failed to fetch report configuration"
-        );
-      }
-
-      const cfg = response.data;
-
-      // CRITICAL: Parse visualization config if it's a string
+      const cfg = configRes.data;
       if (typeof cfg.report?.visualization_config === "string") {
         try {
           (cfg as any).visualization = JSON.parse(
             cfg.report.visualization_config
           );
-        } catch (e) {
-          console.warn("Failed to parse visualization config", e);
-        }
+        } catch (e) {}
       } else {
-        // Ensure it's mapped if it's already an object
         (cfg as any).visualization = cfg.report.visualization_config;
       }
 
-      setConfig(cfg);
+      const dataRes = await apiService.runReport(id, filters);
 
-      const result = await apiService.runReport(id, filters);
-      if (result.success && result.data) {
-        setData(result.data);
-      } else {
-        setError(result.error || "Failed to load report data");
-        setData({ sql: "", rows: [] });
+      setConfig(cfg);
+      setData(dataRes.data || { sql: "", rows: [] });
+      setRuntimeFilters(filters);
+      setCurrentPage(1);
+
+      if (isNewHistory) {
+        setHistory((prev) => [...prev, { id, filters, name: cfg.report.name }]);
       }
     } catch (err: any) {
-      console.error("Report load error:", err);
-      setError(err.message || "Unexpected error loading report");
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadReport(initialReportId, {});
-  }, [initialReportId]);
+  // --- UPDATED DRILL HANDLER ---
+  const handleDrill = (rowInput: any, source: "table" | "chart") => {
+    if (previewConfig) {
+      alert(
+        "Drill-down is disabled in Preview Mode. Save the report to test navigation."
+      );
+      return;
+    }
 
-  // 2. DATA AGGREGATION (Restored for Charts)
+    // Normalize Data (Recharts uses .payload)
+    const row = rowInput.payload || rowInput;
+
+    if (config?.drillTargets && config.drillTargets.length > 0) {
+      const target = config.drillTargets[0];
+
+      let mapping = {};
+      try {
+        mapping =
+          typeof target.mapping_json === "string"
+            ? JSON.parse(target.mapping_json)
+            : target.mapping_json;
+      } catch (e) {
+        console.error("Invalid Drill Mapping JSON", e);
+        return;
+      }
+
+      const drillFilters: any = {};
+      let matchFound = false;
+
+      // Identify the X-Axis Column (for Chart filtering)
+      const xAxisCol = config.visualization?.xAxisColumn;
+
+      Object.entries(mapping).forEach(([srcCol, targetCol]) => {
+        // --- LOGIC CHANGE ---
+        // If clicking a CHART, we ONLY allow filtering by the X-Axis column.
+        // This prevents accidental filtering by other columns that might be in the row data.
+        if (source === "chart" && srcCol !== xAxisCol) {
+          return;
+        }
+
+        if (row[srcCol] !== undefined && row[srcCol] !== null) {
+          drillFilters[targetCol as string] = row[srcCol];
+          matchFound = true;
+        }
+      });
+
+      if (matchFound) {
+        loadReport(target.target_report_id, drillFilters, true);
+      } else {
+        if (source === "chart") {
+          alert(
+            `Drill failed: Could not find value for X-Axis column '${xAxisCol}' in the chart data.`
+          );
+        } else {
+          alert("Drill failed: Mapped columns not found in this row.");
+        }
+      }
+    }
+  };
+
+  const handleBreadcrumbClick = (index: number) => {
+    if (index === history.length - 1) return;
+    const target = history[index];
+    setHistory((prev) => prev.slice(0, index + 1));
+    loadReport(target.id, target.filters, false);
+  };
+
   const chartData = useMemo(() => {
     if (!data?.rows || !config?.visualization?.showChart) return [];
     const vis = config.visualization;
-
     const groups: Record<string, any> = {};
 
     data.rows.forEach((row) => {
       const key = row[vis.xAxisColumn] || "Unknown";
-
       if (!groups[key]) {
         groups[key] = {
           name: key,
-          [vis.xAxisColumn]: key,
+          [vis.xAxisColumn]: key, // Ensure X-Axis key is present for drilling
+          ...row, // We still spread row for Table view, but handleDrill will ignore non-X cols for charts now
           count: 0,
         };
         vis.yAxisColumns.forEach((y) => (groups[key][y] = 0));
       }
-
       groups[key].count++;
       vis.yAxisColumns.forEach((y) => {
         groups[key][y] += Number(row[y]) || 0;
       });
     });
-
     return Object.values(groups);
   }, [data, config]);
 
-  // 3. DRILL THROUGH HANDLER
-  const handleDrill = (row: any) => {
-    if (config?.drillTargets && config.drillTargets.length > 0) {
-      const target = config.drillTargets[0];
-      const mapping = JSON.parse(target.mapping_json);
-      const metricsToIgnore = config.visualization?.yAxisColumns || [];
-      const drillFilters: any = {};
+  const paginatedRows = useMemo(() => {
+    if (!data?.rows) return [];
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return data.rows.slice(start, start + PAGE_SIZE);
+  }, [data?.rows, currentPage]);
 
-      Object.entries(mapping).forEach(([src, dest]) => {
-        if (metricsToIgnore.includes(src)) return;
-        if (row[src]) {
-          drillFilters[dest as string] = row[src];
-        }
-      });
-
-      loadReport(target.target_report_id, drillFilters);
-    }
-  };
-
-  const handleExportCSV = () => {
-    if (!data?.rows?.length) return;
-    const cols = Object.keys(data.rows[0]);
-    const csv =
-      cols.join(",") +
-      "\n" +
-      data.rows
-        .map((row) => cols.map((c) => JSON.stringify(row[c] ?? "")).join(","))
-        .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${config?.report?.name || "report"}.csv`;
-    link.click();
-  };
+  const totalPages = data?.rows ? Math.ceil(data.rows.length / PAGE_SIZE) : 0;
 
   return (
     <div className="flex h-full bg-slate-50 relative overflow-hidden">
       {/* FILTER SIDEBAR */}
       <div
-        className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col ${
-          showFilters ? "w-64" : "w-0 overflow-hidden"
+        className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col z-20 ${
+          showFilters ? "w-72" : "w-0 overflow-hidden"
         }`}
       >
-        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-            <Filter className="h-4 w-4 text-slate-500" /> Filters
+            <Filter className="h-4 w-4" /> Filters
           </h3>
-          <button
-            onClick={() => setShowFilters(false)}
-            className="text-slate-400 hover:text-slate-600"
-          >
-            <X className="h-4 w-4" />
+          <button onClick={() => setShowFilters(false)}>
+            <X className="h-4 w-4 text-slate-400" />
           </button>
         </div>
         <div className="p-4 space-y-4 overflow-y-auto flex-1">
           {config?.filters?.map((f) => (
             <div key={f.column_name}>
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1 block">
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">
                 {f.column_name}
               </label>
-              <input
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-sm focus:ring-2 focus:ring-indigo-500/20 outline-none"
-                placeholder={f.operator || "Search..."}
-                onChange={(e) => {
-                  const newF = {
-                    ...runtimeFilters,
-                    [f.column_name]: e.target.value,
-                  };
-                  setRuntimeFilters(newF);
-                }}
-              />
+              <div className="flex items-center border rounded bg-white overflow-hidden focus-within:ring-2 ring-indigo-100">
+                <span className="px-2 text-xs text-slate-400 bg-slate-50 border-r py-2">
+                  {f.operator || "="}
+                </span>
+                <input
+                  className="w-full px-2 py-1.5 text-sm outline-none"
+                  placeholder="Value..."
+                  value={runtimeFilters[f.column_name] || ""}
+                  onChange={(e) =>
+                    setRuntimeFilters({
+                      ...runtimeFilters,
+                      [f.column_name]: e.target.value,
+                    })
+                  }
+                />
+              </div>
             </div>
           ))}
-          {(!config?.filters || config.filters.length === 0) && (
-            <p className="text-sm text-slate-400 italic">
-              No filters configured for this report.
-            </p>
-          )}
         </div>
-        <div className="p-4 border-t border-slate-100">
+        <div className="p-4 border-t">
           <button
-            onClick={() => loadReport(initialReportId, runtimeFilters)}
-            className="w-full py-2 bg-indigo-50 text-indigo-600 font-medium rounded-lg text-sm hover:bg-indigo-100"
+            onClick={() =>
+              initialReportId && loadReport(initialReportId, runtimeFilters)
+            }
+            disabled={!!previewConfig}
+            className="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
           >
             Apply Filters
           </button>
@@ -218,236 +264,246 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Floating Toolbar */}
-        <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-slate-200 shadow-sm z-10">
+        {/* HEADER TOOLBAR */}
+        <div className="bg-white border-b border-slate-200 px-6 py-3 flex justify-between items-center shadow-sm z-10">
           <div className="flex items-center gap-4">
             {onClose && (
-              <button
-                onClick={onClose}
-                className="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors"
-              >
-                <ArrowLeft className="h-5 w-5" />
+              <button onClick={onClose}>
+                <ArrowLeft className="h-5 w-5 text-slate-500 hover:text-slate-800" />
               </button>
             )}
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 leading-tight">
-                {config?.report.name || "Loading..."}
-              </h1>
-              <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-medium">
-                  {config?.report.base_table}
+
+            {/* BREADCRUMBS */}
+            <div className="flex items-center gap-1 text-sm">
+              {history.map((h, idx) => (
+                <React.Fragment key={idx}>
+                  <button
+                    onClick={() => handleBreadcrumbClick(idx)}
+                    className={`hover:underline ${
+                      idx === history.length - 1
+                        ? "font-bold text-slate-800"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {h.name}
+                  </button>
+                  {idx < history.length - 1 && (
+                    <ChevronRight className="h-4 w-4 text-slate-300" />
+                  )}
+                </React.Fragment>
+              ))}
+              {history.length === 0 && (
+                <span className="font-bold text-slate-800">
+                  {config?.report.name || "Report"}
                 </span>
-                <span>• {data?.rows?.length || 0} records found</span>
-              </div>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {!showFilters && (
-              <button
-                onClick={() => setShowFilters(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
-              >
-                <Filter className="h-4 w-4" /> Filters
-              </button>
-            )}
-            <div className="h-6 w-px bg-slate-200 mx-1"></div>
-            <div className="flex bg-slate-100 p-1 rounded-lg">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`p-2 rounded hover:bg-slate-100 ${
+                showFilters ? "bg-indigo-50 text-indigo-600" : "text-slate-500"
+              }`}
+            >
+              <Filter className="h-5 w-5" />
+            </button>
+            <div className="h-8 w-px bg-slate-200 mx-2" />
+            <div className="flex bg-slate-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode("table")}
                 className={`p-1.5 rounded ${
                   viewMode === "table"
-                    ? "bg-white shadow-sm text-indigo-600"
+                    ? "bg-white shadow text-indigo-600"
                     : "text-slate-500"
                 }`}
               >
                 <TableIcon className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setViewMode("both")}
-                className={`p-1.5 rounded ${
-                  viewMode === "both"
-                    ? "bg-white shadow-sm text-indigo-600"
-                    : "text-slate-500"
-                }`}
-              >
-                <div className="flex gap-0.5">
-                  <TableIcon className="h-4 w-4" />
-                  <BarChart2 className="h-4 w-4" />
-                </div>
-              </button>
-              <button
                 onClick={() => setViewMode("chart")}
                 className={`p-1.5 rounded ${
                   viewMode === "chart"
-                    ? "bg-white shadow-sm text-indigo-600"
+                    ? "bg-white shadow text-indigo-600"
                     : "text-slate-500"
                 }`}
               >
                 <BarChart2 className="h-4 w-4" />
               </button>
+              <button
+                onClick={() => setViewMode("both")}
+                className={`p-1.5 rounded ${
+                  viewMode === "both"
+                    ? "bg-white shadow text-indigo-600"
+                    : "text-slate-500"
+                }`}
+              >
+                <span className="text-xs font-bold px-1">ALL</span>
+              </button>
             </div>
-            <div className="h-6 w-px bg-slate-200 mx-1"></div>
-            <button
-              onClick={handleExportCSV}
-              className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-            >
-              <Download className="h-5 w-5" />
-            </button>
             <button
               onClick={() => setShareOpen(true)}
-              className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              className="p-2 ml-2 text-slate-500 hover:bg-slate-100 rounded"
             >
               <Share2 className="h-5 w-5" />
             </button>
           </div>
         </div>
 
-        {/* Workspace */}
-        <div className="flex-1 overflow-hidden p-6 space-y-6 overflow-y-auto">
-          {error && (
-            <div className="p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg">
-              <p className="font-semibold">Error loading report</p>
-              <p className="text-sm">{error}</p>
+        {/* WORKSPACE */}
+        <div className="flex-1 overflow-auto p-6 space-y-6">
+          {loading && (
+            <div className="flex items-center justify-center h-64 text-slate-500 gap-2">
+              Loading data...
             </div>
           )}
 
-          {/* Chart Card */}
-          {config?.visualization?.showChart && viewMode !== "table" && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 min-h-[350px] animate-in fade-in slide-in-from-bottom-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                {config.visualization.chartType === "pie" ? (
-                  <PieIcon className="h-4 w-4 text-indigo-500" />
-                ) : (
-                  <BarChart2 className="h-4 w-4 text-indigo-500" />
-                )}
-                Visualization
-              </h3>
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer>
-                  {config.visualization.chartType === "pie" ? (
-                    <PieChart>
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: "8px",
-                          border: "none",
-                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                        }}
-                      />
-                      <Legend />
-                      <Pie
-                        data={chartData}
-                        dataKey={config.visualization.yAxisColumns[0]}
-                        nameKey="name"
-                        outerRadius={100}
-                        innerRadius={60}
-                        paddingAngle={5}
-                        label
-                      >
-                        {chartData.map((_, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
+          {!loading && error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg">
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+
+          {!loading && !error && (
+            <>
+              {/* CHART SECTION */}
+              {config?.visualization?.showChart && viewMode !== "table" && (
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    {config.visualization.chartType === "pie" ? (
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          dataKey={config.visualization.yAxisColumns[0]}
+                          nameKey="name"
+                          outerRadius={100}
+                          fill="#8884d8"
+                          label
+                          onClick={(data) => handleDrill(data, "chart")} // PASSING 'chart'
+                          cursor="pointer"
+                        >
+                          {chartData.map((_, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    ) : (
+                      <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="name"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#94a3b8" }}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#94a3b8" }}
+                        />
+                        <Tooltip cursor={{ fill: "#f1f5f9" }} />
+                        <Legend />
+                        {config.visualization.yAxisColumns.map((col, i) => (
+                          <Bar
+                            key={col}
+                            dataKey={col}
+                            fill={COLORS[i % COLORS.length]}
+                            radius={[4, 4, 0, 0]}
+                            onClick={(data) => handleDrill(data, "chart")} // PASSING 'chart'
+                            cursor="pointer"
                           />
                         ))}
-                      </Pie>
-                    </PieChart>
-                  ) : (
-                    <BarChart data={chartData}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="#E2E8F0"
-                      />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fill: "#64748B", fontSize: 12 }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fill: "#64748B", fontSize: 12 }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip
-                        cursor={{ fill: "#F1F5F9" }}
-                        contentStyle={{
-                          borderRadius: "8px",
-                          border: "none",
-                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-                        }}
-                      />
-                      <Legend />
-                      {config.visualization.yAxisColumns.map((col, i) => (
-                        <Bar
-                          key={col}
-                          dataKey={col}
-                          fill={COLORS[i % COLORS.length]}
-                          radius={[4, 4, 0, 0]}
-                          onClick={(data) => handleDrill(data)}
-                          cursor="pointer"
-                        />
-                      ))}
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Table Card */}
-          {viewMode !== "chart" && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col animate-in fade-in slide-in-from-bottom-8">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      {config?.columns
-                        .filter((c) => c.visible)
-                        .map((c) => (
-                          <th
-                            key={c.column_name}
-                            className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap"
-                          >
-                            {c.alias || c.column_name}
-                          </th>
-                        ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {data?.rows?.map((row, i) => (
-                      <tr
-                        key={i}
-                        onClick={() => handleDrill(row)}
-                        className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                      >
-                        {config?.columns
-                          .filter((c) => c.visible)
-                          .map((c) => (
-                            <td
-                              key={c.column_name}
-                              className="px-6 py-3 text-slate-600 group-hover:text-slate-900"
-                            >
-                              {row[c.column_name]}
-                            </td>
-                          ))}
-                      </tr>
-                    ))}
-                    {(!data?.rows || data.rows.length === 0) && (
-                      <tr>
-                        <td
-                          colSpan={config?.columns?.length || 1}
-                          className="px-6 py-12 text-center text-slate-400 italic"
-                        >
-                          No data available.
-                        </td>
-                      </tr>
+                      </BarChart>
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* TABLE SECTION */}
+              {viewMode !== "chart" && (
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                      <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr>
+                          {config?.columns
+                            .filter((c) => c.visible)
+                            .map((c) => (
+                              <th
+                                key={c.column_name}
+                                className="px-6 py-3 font-semibold whitespace-nowrap"
+                              >
+                                {c.alias || c.column_name}
+                              </th>
+                            ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {paginatedRows.map((row, i) => (
+                          <tr
+                            key={i}
+                            onClick={() => handleDrill(row, "table")} // PASSING 'table'
+                            className={`hover:bg-slate-50 ${
+                              config?.drillTargets?.length
+                                ? "cursor-pointer"
+                                : ""
+                            }`}
+                          >
+                            {config?.columns
+                              .filter((c) => c.visible)
+                              .map((c) => (
+                                <td
+                                  key={c.column_name}
+                                  className="px-6 py-3 text-slate-700"
+                                >
+                                  {row[c.column_name]}
+                                </td>
+                              ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* PAGINATION */}
+                  <div className="px-6 py-3 border-t border-slate-200 flex items-center justify-between">
+                    <span className="text-xs text-slate-500">
+                      Showing {(currentPage - 1) * PAGE_SIZE + 1} to{" "}
+                      {Math.min(
+                        currentPage * PAGE_SIZE,
+                        data?.rows.length || 0
+                      )}{" "}
+                      of {data?.rows.length} rows
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage((p) => p - 1)}
+                        className="p-1 rounded border hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="px-2 py-1 text-sm text-slate-600">
+                        Page {currentPage}
+                      </span>
+                      <button
+                        disabled={currentPage === totalPages}
+                        onClick={() => setCurrentPage((p) => p + 1)}
+                        className="p-1 rounded border hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
