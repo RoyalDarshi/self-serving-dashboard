@@ -268,7 +268,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   const [searchQuery, setSearchQuery] = useState("");
 
   // --- Report Meta ---
-  const [name, setName] = useState("Untitled Report");
+  const [name, setName] = useState("");
+  const [nameError, setNameError] = useState(false);
   const [description, setDescription] = useState("");
 
   // --- Configuration Shelves ---
@@ -506,10 +507,19 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   };
 
   const handleSave = async () => {
-    if (!name || !baseTable) {
+    if (!name.trim()) {
+      setNameError(true);
       setMessage({
         type: "error",
-        text: "Please define a name and select a table.",
+        text: "Please enter a report name before saving.",
+      });
+      return;
+    }
+
+    if (!baseTable) {
+      setMessage({
+        type: "error",
+        text: "Please select a data source table.",
       });
       return;
     }
@@ -616,9 +626,17 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
           <div className="flex-1 max-w-md">
             <input
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="text-lg font-bold text-slate-800 placeholder:text-slate-300 border-none p-0 focus:ring-0 bg-transparent w-full"
-              placeholder="Report Name"
+              onChange={(e) => {
+                setName(e.target.value);
+                if (e.target.value) setNameError(false); // Clear error on type
+              }}
+              className={`text-lg font-bold text-slate-800 placeholder:text-slate-400 border-b-2 bg-transparent w-full p-1 focus:outline-none transition-all ${
+                nameError
+                  ? "border-red-500 bg-red-50 placeholder:text-red-300 animate-pulse"
+                  : "border-transparent hover:border-slate-200 focus:border-indigo-500"
+              }`}
+              placeholder="Enter Report Name... *"
+              autoFocus
             />
           </div>
           <div className="flex items-center gap-3">
