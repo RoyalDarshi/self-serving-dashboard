@@ -229,6 +229,94 @@ router.post("/save", async (req, res) => {
   }
 });
 
+/**
+ * PREVIEW REPORT (Runs query without saving)
+ */
+router.post("/preview", async (req, res) => {
+  const db = await dbPromise;
+  const { user } = req;
+  const { connection_id, base_table, columns, filters } = req.body;
+
+  if (!connection_id || !base_table) {
+    return res.status(400).json({ error: "Missing connection or table" });
+  }
+
+  try {
+    // 1. Check Permissions
+    if (user.role !== "admin") {
+      const accessCheck = await db.get(
+        `SELECT count(*) as count FROM connection_designations WHERE connection_id = ? AND designation = ?`,
+        [connection_id, user.designation]
+      );
+      if (!accessCheck || accessCheck.count === 0) {
+        return res.status(403).json({ error: "Access denied to this connection" });
+      }
+    }
+
+    // 2. Get DB Connection
+    const { pool, type } = await getPoolForConnection(
+      connection_id,
+      req.user?.userId
+    );
+    const client = await pool.connect();
+    const quote = (v) => quoteIdentifier(v, type);
+
+    // 3. Build Query
+    let where = [];
+    
+    // Process Filters from Request Body
+    if (filters && Array.isArray(filters)) {
+      for (const f of filters) {
+        // Handle values that might be arrays (IN clause) or single values
+        // Note: In builder, value is usually a string, but let's handle safety
+        let val = f.value;
+        
+        if (f.operator === "IN" || Array.isArray(val)) {
+             // Handle "IN" logic if your UI supports it, otherwise treat as string
+             const valArray = Array.isArray(val) ? val : String(val).split(',');
+             const quotedVals = valArray.map(v => `'${v.trim()}'`).join(",");
+             where.push(`${quote(f.column_name)} IN (${quotedVals})`);
+        } else {
+             // Standard operators (=, >, <, LIKE)
+             if (val !== "" && val !== null && val !== undefined) {
+               where.push(`${quote(f.column_name)} ${f.operator} '${val}'`);
+             }
+        }
+      }
+    }
+
+    // Process Columns
+    const selectClause =
+      columns && columns.length > 0 && columns.some(c => c.visible)
+        ? columns
+            .filter((c) => c.visible) // Only select visible columns
+            .map((c) => {
+                 // Handle aggregations if your UI sends them (e.g., SUM(sales))
+                 // For now, assuming direct column selection based on your previous code
+                 return quote(c.column_name) + (c.alias ? ` AS "${c.alias}"` : "");
+            })
+            .join(", ")
+        : "*";
+
+    const sql = `
+      SELECT ${selectClause}
+      FROM ${quote(base_table)}
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
+      LIMIT 100
+    `.trim(); // Added LIMIT 100 for safety during preview
+
+    // 4. Execute
+    const result = await client.query(sql);
+    const rows = result.rows || result[0] || [];
+    client.release();
+
+    res.json({ sql, rows });
+  } catch (err) {
+    console.error("Preview error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================================================================
 // 2. DYNAMIC ROUTES (Must come AFTER static routes)
 // ==================================================================

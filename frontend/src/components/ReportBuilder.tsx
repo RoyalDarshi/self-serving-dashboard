@@ -296,6 +296,11 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   const [previewConfig, setPreviewConfig] = useState<FullReportConfig | null>(
     null
   );
+  const [previewData, setPreviewData] = useState<{
+    sql: string;
+    rows: any[];
+  } | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -451,11 +456,15 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     };
   };
 
-  const handleRun = () => {
+  const handleRun = async () => {
     if (!baseTable) return;
+
+    setIsLoadingPreview(true); // Start loading
+    setPreviewData(null); // Clear previous data
+
     const payload = constructPayload();
 
-    // Build preview config
+    // 1. Build preview config (for the viewer columns/settings)
     const config: FullReportConfig = {
       report: {
         id: 0,
@@ -467,9 +476,33 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       columns: payload.columns,
       filters: payload.filters,
       visualization: payload.visualization_config as any,
-      drillTargets: [], // Drill links don't work in preview typically
+      drillTargets: [],
     };
+
     setPreviewConfig(config);
+
+    // 2. Fetch the actual data
+    try {
+      // Calls the new API method we added in Step 1
+      const res = await apiService.previewReport(payload);
+
+      if (res.success && res.data) {
+        setPreviewData(res.data);
+        setMessage({ type: "success", text: "Query executed successfully" });
+      } else {
+        setMessage({
+          type: "error",
+          text: res.error || "Failed to fetch preview data",
+        });
+      }
+    } catch (err: any) {
+      setMessage({
+        type: "error",
+        text: err.message || "An unexpected error occurred",
+      });
+    } finally {
+      setIsLoadingPreview(false);
+    }
   };
 
   const handleSave = async () => {
@@ -608,8 +641,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* SECTION: TABLE CONFIG */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2 bg-white">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2 bg-white rounded-t-xl">
               <div className="p-1.5 bg-blue-50 rounded text-blue-600">
                 <TableIcon className="w-4 h-4" />
               </div>
@@ -641,8 +674,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
           </div>
 
           {/* SECTION: FILTERS */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2 rounded-t-xl">
               <div className="p-1.5 bg-amber-50 rounded text-amber-600">
                 <Filter className="w-4 h-4" />
               </div>
@@ -824,8 +857,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
           </div>
 
           {/* SECTION: DRILL THROUGH */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2 rounded-t-xl">
               <div className="p-1.5 bg-purple-50 rounded text-purple-600">
                 <MousePointerClick className="w-4 h-4" />
               </div>
@@ -929,17 +962,23 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
         </div>
         <div className="flex-1 overflow-hidden p-6">
           <div className="h-full bg-white rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200 overflow-hidden relative">
-            {previewConfig ? (
+            {isLoadingPreview ? (
+              // LOADING STATE
+              <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
+                <p className="text-sm font-medium">Running Query...</p>
+              </div>
+            ) : previewConfig ? (
+              // DATA LOADED STATE
               <ReportViewer
                 initialReportId={0}
                 onClose={() => {}}
                 previewConfig={previewConfig}
-                previewData={{
-                  sql: "-- SQL generated by builder...",
-                  rows: [],
-                }}
+                // Pass the fetched data or a default empty object to prevent crashes
+                previewData={previewData || { sql: "", rows: [] }}
               />
             ) : (
+              // IDLE STATE
               <div className="h-full flex flex-col items-center justify-center text-slate-300">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                   <Layout className="w-8 h-8 opacity-20" />

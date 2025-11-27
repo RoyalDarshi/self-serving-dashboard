@@ -504,6 +504,15 @@ export const apiService = {
     return createApiFetch(endpoint, method, payload);
   },
 
+  // Add this new function
+  previewReport: (payload: {
+    connection_id: number;
+    base_table: string;
+    columns: ReportColumn[];
+    filters: ReportFilter[];
+  }): Promise<ApiResponse<RunReportResponse>> =>
+    createApiFetch("/reports/preview", "POST", payload),
+
   deleteReport: (reportId: number): Promise<ApiResponse<unknown>> =>
     createApiFetch(`/reports/${reportId}`, "DELETE"),
 
