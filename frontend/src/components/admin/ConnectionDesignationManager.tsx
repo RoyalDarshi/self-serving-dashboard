@@ -1,6 +1,6 @@
 // components/ConnectionDesignationManager.tsx
 import React, { useState, useEffect } from "react";
-import { apiService, Connection } from "../services/api";
+import { apiService, Connection } from "../../services/api";
 import {
   Plus,
   X,
@@ -294,10 +294,9 @@ const ConnectionDesignationManager: React.FC<{ connections: Connection[] }> = ({
                       connectionMappings.map((mapping) => (
                         <div
                           key={mapping.id}
-                          className={`group/item relative overflow-hidden rounded-2xl p-4 bg-gradient-to-r ${
-                            designationColors[mapping.designation] ||
+                          className={`group/item relative overflow-hidden rounded-2xl p-4 bg-gradient-to-r ${designationColors[mapping.designation] ||
                             "from-gray-400 to-gray-500"
-                          } shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-102`}
+                            } shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-102`}
                         >
                           <div className="flex items-center justify-between relative z-10">
                             <div className="flex items-center gap-3">

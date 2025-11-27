@@ -36,8 +36,8 @@ import {
   StarOff,
 } from "lucide-react";
 import { debounce } from "lodash";
-import SavedChart from "./SavedChart";
-import apiService from "../services/api";
+import SavedChart from "../Dashboard/SavedChart";
+import apiService from "../../services/api";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
@@ -538,11 +538,10 @@ const Dashboard: React.FC<DashboardProps> = ({
               {user.role === "designer" && (
                 <button
                   onClick={() => setIsEditMode(!isEditMode)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                    isEditMode
-                      ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                  }`}
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${isEditMode
+                    ? "bg-orange-100 text-orange-700 hover:bg-orange-200"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    }`}
                 >
                   {isEditMode ? (
                     <>
@@ -682,44 +681,40 @@ const Dashboard: React.FC<DashboardProps> = ({
             {filteredDashboards().map((dashboard) => (
               <div
                 key={dashboard.id}
-                className={`px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer ${
-                  isDefaultDashboard(dashboard.id)
-                    ? "hover:bg-yellow-50 "
-                    : dashboard.charts.length > 0
+                className={`px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer ${isDefaultDashboard(dashboard.id)
+                  ? "hover:bg-yellow-50 "
+                  : dashboard.charts.length > 0
                     ? "hover:bg-blue-50"
                     : ""
-                }`}
+                  }`}
                 onClick={() => handleDashboardClick(dashboard.id)}
               >
                 <div className="grid grid-cols-12 gap-4 items-center">
                   <div className="col-span-4 flex items-center space-x-3">
                     <div
-                      className={`p-2 rounded-lg ${
-                        isDefaultDashboard(dashboard.id)
-                          ? "border-2 bg-blue-100"
-                          : dashboard.charts.length > 0
+                      className={`p-2 rounded-lg ${isDefaultDashboard(dashboard.id)
+                        ? "border-2 bg-blue-100"
+                        : dashboard.charts.length > 0
                           ? "bg-blue-100"
                           : "bg-slate-100"
-                      }`}
+                        }`}
                     >
                       <LayoutDashboard
-                        className={`h-5 w-5 ${
-                          isDefaultDashboard(dashboard.id)
-                            ? "text-blue-600"
-                            : dashboard.charts.length > 0
+                        className={`h-5 w-5 ${isDefaultDashboard(dashboard.id)
+                          ? "text-blue-600"
+                          : dashboard.charts.length > 0
                             ? "text-blue-600"
                             : "text-slate-500"
-                        }`}
+                          }`}
                       />
                     </div>
                     <div className="flex items-center space-x-2">
                       <div>
                         <h3
-                          className={`font-medium ${
-                            isDefaultDashboard(dashboard.id)
-                              ? "text-yellow-900"
-                              : "text-slate-900"
-                          }`}
+                          className={`font-medium ${isDefaultDashboard(dashboard.id)
+                            ? "text-yellow-900"
+                            : "text-slate-900"
+                            }`}
                         >
                           {dashboard.name}
                         </h3>
@@ -738,13 +733,12 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                   </div>
                   <div
-                    className={`col-span-2 text-sm ${
-                      isDefaultDashboard(dashboard.id)
-                        ? "text-yellow-600 font-semibold"
-                        : dashboard.charts.length > 0
+                    className={`col-span-2 text-sm ${isDefaultDashboard(dashboard.id)
+                      ? "text-yellow-600 font-semibold"
+                      : dashboard.charts.length > 0
                         ? "text-blue-600 font-medium"
                         : "text-slate-600"
-                    }`}
+                      }`}
                   >
                     {dashboard.charts.length} chart
                     {dashboard.charts.length !== 1 ? "s" : ""}
@@ -754,11 +748,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                   <div className="col-span-2">
                     <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        dashboard.isPublic
-                          ? "bg-green-100 text-green-800"
-                          : "bg-slate-100 text-slate-800"
-                      }`}
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${dashboard.isPublic
+                        ? "bg-green-100 text-green-800"
+                        : "bg-slate-100 text-slate-800"
+                        }`}
                     >
                       {dashboard.isPublic ? "Shared" : "Private"}
                     </span>
@@ -769,11 +762,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                         e.stopPropagation();
                         handleDashboardClick(dashboard.id);
                       }}
-                      className={`p-1 transition-colors ${
-                        isDefaultDashboard(dashboard.id)
-                          ? "text-yellow-600 hover:text-yellow-700"
-                          : "text-slate-400 hover:text-blue-600"
-                      }`}
+                      className={`p-1 transition-colors ${isDefaultDashboard(dashboard.id)
+                        ? "text-yellow-600 hover:text-yellow-700"
+                        : "text-slate-400 hover:text-blue-600"
+                        }`}
                       title="View"
                     >
                       <Eye className="h-4 w-4" />

@@ -1,6 +1,6 @@
 // src/components/ReportShareModal.tsx
 import React from "react";
-import { ReportDefinition } from "../services/api";
+import { ReportDefinition } from "../../services/api";
 import { X, Copy, Link as LinkIcon } from "lucide-react";
 
 interface Props {

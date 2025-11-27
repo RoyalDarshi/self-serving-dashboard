@@ -8,10 +8,10 @@ import {
   Settings,
   Edit3,
 } from "lucide-react";
-import { apiService } from "../services/api";
+import { apiService } from "../../services/api";
 import ConnectionForm from "./ConnectionForm";
 import ConnectionsList from "./ConnectionsList";
-import ErrorBoundary from "./ErrorBoundary";
+import ErrorBoundary from "../common/ErrorBoundary";
 
 interface Connection {
   id: number;
@@ -120,17 +120,15 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {/* Create/Edit Connection Card */}
             <div
-              className={`bg-white rounded-lg border p-6 ${
-                editingConnection
-                  ? "border-blue-300 ring-1 ring-blue-100"
-                  : "border-gray-200"
-              }`}
+              className={`bg-white rounded-lg border p-6 ${editingConnection
+                ? "border-blue-300 ring-1 ring-blue-100"
+                : "border-gray-200"
+                }`}
             >
               <div className="flex items-center space-x-3 mb-6">
                 <div
-                  className={`p-2 rounded-lg ${
-                    editingConnection ? "bg-orange-100" : "bg-blue-100"
-                  }`}
+                  className={`p-2 rounded-lg ${editingConnection ? "bg-orange-100" : "bg-blue-100"
+                    }`}
                 >
                   {editingConnection ? (
                     <Edit3 className="w-5 h-5 text-orange-600" />
@@ -195,7 +193,7 @@ const ConnectionManager: React.FC<ConnectionManagerProps> = ({
               <ConnectionsList
                 connections={connections}
                 selectedConnectionId={editingConnection?.id || null}
-                setSelectedConnectionId={() => {}}
+                setSelectedConnectionId={() => { }}
                 onEdit={(conn) => {
                   setEditingConnection(conn);
                   window.scrollTo({ top: 0, behavior: "smooth" });

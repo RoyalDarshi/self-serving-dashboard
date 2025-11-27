@@ -1,5 +1,5 @@
 // src/components/ReportTypes.ts
-import { ReportDefinition, ReportColumn, ReportFilter } from "../services/api";
+import { ReportDefinition, ReportColumn, ReportFilter } from "../../services/api";
 
 export interface UIReport extends ReportDefinition {
   columns: ReportColumn[];

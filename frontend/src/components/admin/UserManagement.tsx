@@ -5,7 +5,7 @@ import {
   Role,
   Designation,
   AccessLevel,
-} from "../services/api";
+} from "../../services/api";
 
 // Constants
 const ROLES: Role[] = ["admin", "user", "designer"];
@@ -750,11 +750,10 @@ const UserManagement: React.FC = () => {
                       <td className="px-6 py-4">
                         {user.role === "user" && user.accessLevel ? (
                           <span
-                            className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                              user.accessLevel === "editor"
+                            className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${user.accessLevel === "editor"
                                 ? "bg-blue-100 text-blue-800"
                                 : "bg-gray-100 text-gray-800"
-                            }`}
+                              }`}
                           >
                             {user.accessLevel.charAt(0).toUpperCase() +
                               user.accessLevel.slice(1)}
@@ -772,11 +771,10 @@ const UserManagement: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <span
-                          className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                            user.is_ad_user
+                          className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${user.is_ad_user
                               ? "bg-yellow-100 text-yellow-800"
                               : "bg-gray-100 text-gray-800"
-                          }`}
+                            }`}
                         >
                           {user.is_ad_user ? "AD" : "Local"}
                         </span>

@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import ReportList from "./ReportList";
 import ReportViewer from "./ReportViewer";
 import ReportBuilder from "./ReportBuilder";
-import { Connection } from "../services/api";
+import { Connection } from "../../services/api";
 
 const ReportLayout: React.FC<{ connections: Connection[] }> = ({ connections }) => {
   const [mode, setMode] = useState<"list" | "view" | "build">("list");

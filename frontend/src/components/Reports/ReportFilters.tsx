@@ -1,6 +1,6 @@
 // src/components/ReportFilters.tsx
 import React from "react";
-import { ReportFilter } from "../services/api";
+import { ReportFilter } from "../../services/api";
 
 interface ReportFiltersProps {
   filters: ReportFilter[];

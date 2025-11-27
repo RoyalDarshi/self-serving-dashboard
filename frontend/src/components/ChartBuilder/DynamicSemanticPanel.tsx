@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { apiService } from "../services/api";
+import { apiService } from "../../services/api";
 import DraggableFact from "./DraggableFact";
 import DraggableDimension from "./DraggableDimension";
 import { Search, Database, ChevronDown, ChevronUp } from "lucide-react";
-import { ConnectionSelector } from "./ConnectionSelector";
+import { ConnectionSelector } from "../common/ConnectionSelector";
 
 interface Fact {
   id: number;

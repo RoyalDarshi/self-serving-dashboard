@@ -1,7 +1,7 @@
 // src/components/ReportViewer.tsx
 import React, { useEffect, useState, useMemo } from "react";
-import { FullReportConfig, RunReportResponse } from "../services/api";
-import { apiService } from "../services/api";
+import { FullReportConfig, RunReportResponse } from "../../services/api";
+import { apiService } from "../../services/api";
 import ReportShareModal from "./ReportShareModal";
 import {
   ArrowLeft,
@@ -87,7 +87,7 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           (cfg as any).visualization = JSON.parse(
             cfg.report.visualization_config
           );
-        } catch (e) {}
+        } catch (e) { }
       } else {
         (cfg as any).visualization = cfg.report.visualization_config;
       }
@@ -212,9 +212,8 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
     <div className="flex h-full bg-slate-50 relative overflow-hidden">
       {/* FILTER SIDEBAR */}
       <div
-        className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col z-20 ${
-          showFilters ? "w-72" : "w-0 overflow-hidden"
-        }`}
+        className={`bg-white border-r border-slate-200 transition-all duration-300 flex flex-col z-20 ${showFilters ? "w-72" : "w-0 overflow-hidden"
+          }`}
       >
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h3 className="font-semibold text-slate-800 flex items-center gap-2">
@@ -279,11 +278,10 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                 <React.Fragment key={idx}>
                   <button
                     onClick={() => handleBreadcrumbClick(idx)}
-                    className={`hover:underline ${
-                      idx === history.length - 1
-                        ? "font-bold text-slate-800"
-                        : "text-slate-500"
-                    }`}
+                    className={`hover:underline ${idx === history.length - 1
+                      ? "font-bold text-slate-800"
+                      : "text-slate-500"
+                      }`}
                   >
                     {h.name}
                   </button>
@@ -303,9 +301,8 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           <div className="flex gap-2">
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`p-2 rounded hover:bg-slate-100 ${
-                showFilters ? "bg-indigo-50 text-indigo-600" : "text-slate-500"
-              }`}
+              className={`p-2 rounded hover:bg-slate-100 ${showFilters ? "bg-indigo-50 text-indigo-600" : "text-slate-500"
+                }`}
             >
               <Filter className="h-5 w-5" />
             </button>
@@ -313,31 +310,28 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
             <div className="flex bg-slate-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode("table")}
-                className={`p-1.5 rounded ${
-                  viewMode === "table"
-                    ? "bg-white shadow text-indigo-600"
-                    : "text-slate-500"
-                }`}
+                className={`p-1.5 rounded ${viewMode === "table"
+                  ? "bg-white shadow text-indigo-600"
+                  : "text-slate-500"
+                  }`}
               >
                 <TableIcon className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setViewMode("chart")}
-                className={`p-1.5 rounded ${
-                  viewMode === "chart"
-                    ? "bg-white shadow text-indigo-600"
-                    : "text-slate-500"
-                }`}
+                className={`p-1.5 rounded ${viewMode === "chart"
+                  ? "bg-white shadow text-indigo-600"
+                  : "text-slate-500"
+                  }`}
               >
                 <BarChart2 className="h-4 w-4" />
               </button>
               <button
                 onClick={() => setViewMode("both")}
-                className={`p-1.5 rounded ${
-                  viewMode === "both"
-                    ? "bg-white shadow text-indigo-600"
-                    : "text-slate-500"
-                }`}
+                className={`p-1.5 rounded ${viewMode === "both"
+                  ? "bg-white shadow text-indigo-600"
+                  : "text-slate-500"
+                  }`}
               >
                 <span className="text-xs font-bold px-1">ALL</span>
               </button>
@@ -449,11 +443,10 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                           <tr
                             key={i}
                             onClick={() => handleDrill(row, "table")} // PASSING 'table'
-                            className={`hover:bg-slate-50 ${
-                              config?.drillTargets?.length
-                                ? "cursor-pointer"
-                                : ""
-                            }`}
+                            className={`hover:bg-slate-50 ${config?.drillTargets?.length
+                              ? "cursor-pointer"
+                              : ""
+                              }`}
                           >
                             {config?.columns
                               .filter((c) => c.visible)

@@ -14,7 +14,7 @@ import ReactFlow, {
 
 import TableNode from "./TableNode";
 import { SchemaSelector } from "./SchemaSelector";
-import { getUniqueSchemaList } from "../components/schemaUtils";
+import { getUniqueSchemaList } from "../common/schemaUtils";
 import { Search } from "lucide-react";
 
 interface Schema {

@@ -20,8 +20,8 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import { apiService } from "../services/api";
-import Loader from "./Loader";
+import { apiService } from "../../services/api";
+import Loader from "../common/Loader";
 
 interface Connection {
   id: number;
@@ -226,13 +226,13 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
     } = formData;
     return Boolean(
       connectionName &&
-        hostname &&
-        port &&
-        database &&
-        username &&
-        password &&
-        selectedDB &&
-        !Object.values(errors).some((error) => error)
+      hostname &&
+      port &&
+      database &&
+      username &&
+      password &&
+      selectedDB &&
+      !Object.values(errors).some((error) => error)
     );
   }, [formData, errors]);
 
@@ -276,10 +276,10 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
           error = !value
             ? "Hostname is required"
             : !/^(?!:\/\/)([a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}$/.test(
-                value
-              ) && !/^(\d{1,3}\.){3}\d{1,3}$/.test(value)
-            ? "Invalid hostname or IP"
-            : "";
+              value
+            ) && !/^(\d{1,3}\.){3}\d{1,3}$/.test(value)
+              ? "Invalid hostname or IP"
+              : "";
           break;
         case "port":
           error = !value
@@ -287,22 +287,22 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
             : !/^\d+$/.test(value) ||
               parseInt(value, 10) < 1024 ||
               parseInt(value, 10) > 65535
-            ? "Port must be between 1024-65535"
-            : "";
+              ? "Port must be between 1024-65535"
+              : "";
           break;
         case "database":
           error = !value
             ? "Database is required"
             : !/^\w+$/.test(value)
-            ? "Only letters, numbers, and underscores"
-            : "";
+              ? "Only letters, numbers, and underscores"
+              : "";
           break;
         case "username":
           error = !value
             ? "Username is required"
             : /\s/.test(value)
-            ? "No spaces allowed"
-            : "";
+              ? "No spaces allowed"
+              : "";
           break;
         case "password":
           error = !value ? "Password is required" : "";
@@ -493,9 +493,8 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
             onChange={handleChange}
             required={required}
             placeholder={placeholder}
-            className={`pl-10 w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-              errors[name] ? "border-red-300" : "border-gray-300"
-            }`}
+            className={`pl-10 w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${errors[name] ? "border-red-300" : "border-gray-300"
+              }`}
           />
           {name === "password" && (
             <button
@@ -556,9 +555,8 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
               </span>
             )}
             <ChevronDown
-              className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${
-                isSelectOpen ? "rotate-180" : ""
-              }`}
+              className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${isSelectOpen ? "rotate-180" : ""
+                }`}
             />
           </button>
           {isSelectOpen && (
@@ -567,9 +565,8 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
                 <div
                   key={option.value}
                   onClick={() => handleSelectDB(option.value)}
-                  className={`p-3 cursor-pointer hover:bg-gray-50 ${
-                    formData.selectedDB === option.value ? "bg-blue-50" : ""
-                  }`}
+                  className={`p-3 cursor-pointer hover:bg-gray-50 ${formData.selectedDB === option.value ? "bg-blue-50" : ""
+                    }`}
                 >
                   <div className="flex items-center space-x-2">
                     {option.icon}
@@ -607,22 +604,20 @@ const ConnectionForm: React.FC<ConnectionFormProps> = ({
               type="button"
               onClick={handleTestConnection}
               disabled={!isTestButtonEnabled || isTestSuccessful}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                isTestButtonEnabled && !isTestSuccessful
-                  ? "bg-blue-600 text-white hover:bg-blue-700"
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
-              }`}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${isTestButtonEnabled && !isTestSuccessful
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                }`}
             >
               {isTestSuccessful ? "✓ Tested" : "Test Connection"}
             </button>
             <button
               type="submit"
               disabled={!isSubmitButtonEnabled}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                isSubmitButtonEnabled
-                  ? "bg-green-600 text-white hover:bg-green-700"
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
-              }`}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${isSubmitButtonEnabled
+                ? "bg-green-600 text-white hover:bg-green-700"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                }`}
             >
               {editingConnection ? "Update Connection" : "Create Connection"}
             </button>

@@ -19,8 +19,8 @@ import {
   ComposedChart,
 } from "recharts";
 import { BarChart3, RefreshCw, Database, Layers } from "lucide-react";
-import { DatabaseColumn, AggregationType } from "../services/api";
-import { formatNumericValue } from "./utils";
+import { DatabaseColumn, AggregationType } from "../../services/api";
+import { formatNumericValue } from "../common/utils";
 
 interface ChartDisplayProps {
   chartType: "bar" | "line" | "pie" | "area" | "composed";

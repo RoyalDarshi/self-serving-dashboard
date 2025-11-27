@@ -1,9 +1,9 @@
 // src/components/MappingForm.tsx
 import React, { useMemo } from "react";
 import { Zap, Target, Plus, Lightbulb, Save, X } from "lucide-react";
-import Card from "./ui/Card";
-import Button from "./ui/Button";
-import Select from "./ui/Select";
+import Card from "../ui/Card";
+import Button from "../ui/Button";
+import Select from "../ui/Select";
 
 interface Schema {
   tableName: string;
@@ -66,7 +66,7 @@ interface MappingFormProps {
 }
 
 // Helper to extract table name from composite key
-const getTableNameFromComposite = (compositeKey: string): string => 
+const getTableNameFromComposite = (compositeKey: string): string =>
   compositeKey.split('|')[1] || '';
 
 // Helper to extract connection ID from composite key

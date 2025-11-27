@@ -1,15 +1,15 @@
 // src/components/SemanticBuilder.tsx
 import React, { useState, useEffect } from "react";
 import { Database, BarChart3, Layers, Target, Zap, Table, AlertCircle } from "lucide-react";
-import { apiService } from "../services/api";
+import { apiService } from "../../services/api";
 import FactForm from "./FactForm";
 import DimensionForm from "./DimensionForm";
 import MappingForm from "./MappingForm";
 import KPIForm from "./KPIForm";
 import DataList from "./DataList";
 import SchemaVisualizer from "./SchemaVisualizer";
-import ErrorBoundary from "./ErrorBoundary";
-import { ConnectionSelector } from "./ConnectionSelector";
+import ErrorBoundary from "../common/ErrorBoundary";
+import { ConnectionSelector } from "../common/ConnectionSelector";
 import { ReactFlowProvider } from "react-flow-renderer";
 
 // Types
@@ -669,11 +669,10 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300 ${
-                  activeTab === tab.id
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-blue-600"
-                }`}
+                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === tab.id
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "text-gray-600 hover:bg-gray-100 hover:text-blue-600"
+                  }`}
               >
                 <tab.icon className="w-5 h-5" />
                 <span>{tab.label}</span>

@@ -1,18 +1,18 @@
 // src/App.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { apiService } from "./services/api";
-import Login from "./components/Login";
-import Sidebar from "./components/Sidebar";
-import UserManagement from "./components/UserManagement";
-import ConnectionManager from "./components/ConnectionManager";
-import DynamicSemanticChartBuilder from "./components/DynamicSementicChartBuilder";
-import DragDropProvider from "./components/DragDropProvider";
-import DynamicSemanticPanel from "./components/DynamicSemanticPanel";
-import Dashboard from "./components/Dashboard";
-import SemanticBuilder from "./components/SemanticBuilder";
-import ConnectionDesignationManager from "./components/ConnectionDesignationManager";
-import ReportLayout from "./components/ReportLayout";
-import ReportBuilder from "./components/ReportBuilder";
+import Login from "./components/auth/Login";
+import Sidebar from "./components/common/Sidebar";
+import UserManagement from "./components/admin/UserManagement";
+import ConnectionManager from "./components/admin/ConnectionManager";
+import DynamicSemanticChartBuilder from "./components/ChartBuilder/DynamicSementicChartBuilder";
+import DragDropProvider from "./components/ChartBuilder/DragDropProvider";
+import DynamicSemanticPanel from "./components/ChartBuilder/DynamicSemanticPanel";
+import Dashboard from "./components/Dashboard/Dashboard";
+import SemanticBuilder from "./components/SemanticBuilder/SemanticBuilder";
+import ConnectionDesignationManager from "./components/admin/ConnectionDesignationManager";
+import ReportLayout from "./components/Reports/ReportLayout";
+import ReportBuilder from "./components/Reports/ReportBuilder";
 
 interface Fact {
   id: number;

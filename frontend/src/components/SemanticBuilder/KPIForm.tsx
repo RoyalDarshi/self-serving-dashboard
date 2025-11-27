@@ -1,10 +1,10 @@
 import React from "react";
 import { Zap, Save, X, Plus } from "lucide-react";
-import Card from "./ui/Card";
-import Button from "./ui/Button";
-import Input from "./ui/Input";
-import Textarea from "./ui/Textarea";
-import Select from "./ui/Select";
+import Card from "../ui/Card";
+import Button from "../ui/Button";
+import Input from "../ui/Input";
+import Textarea from "../ui/Textarea";
+import Select from "../ui/Select";
 interface Schema {
   tableName: string;
   columns: {
@@ -167,11 +167,11 @@ const KPIForm: React.FC<KPIFormProps> = ({
       )}
       {((kpiInsertType === "fact" && kpiInsertFactId) ||
         (kpiInsertType === "column" && kpiInsertTable && kpiInsertColumn)) && (
-        <Button onClick={onInsert} variant="secondary" size="sm">
-          <Plus className="w-4 h-4" />
-          Insert
-        </Button>
-      )}
+          <Button onClick={onInsert} variant="secondary" size="sm">
+            <Plus className="w-4 h-4" />
+            Insert
+          </Button>
+        )}
       {kpiExpression && (
         <div className="p-3 bg-gray-50 rounded-xl">
           <p className="text-sm text-gray-600 mb-1">Preview:</p>

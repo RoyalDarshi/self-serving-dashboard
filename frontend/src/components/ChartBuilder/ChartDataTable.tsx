@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 // Assuming DatabaseColumn and other types are defined in '../services/api'
-import { DatabaseColumn } from "../services/api";
+import { DatabaseColumn } from "../../services/api";
 
 interface ChartDataTableProps {
   chartData: any[];
@@ -161,13 +161,12 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
         const isNumeric = normalizeType(col.type) === "number";
         columns.push({
           key: col.key,
-          label: `${col.label} (${
-            isNumeric && aggregationType !== "COUNT"
+          label: `${col.label} (${isNumeric && aggregationType !== "COUNT"
               ? aggregationType
               : normalizeType(col.type) === "string"
-              ? "COUNT"
-              : ""
-          })`,
+                ? "COUNT"
+                : ""
+            })`,
           isNumeric: isNumeric,
           type: "metric",
           colorScheme: getColumnColor("metric", colorIndex++),
@@ -319,8 +318,8 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
                 {col.key === "serial"
                   ? "✓"
                   : columnVisibility[col.key]
-                  ? "✓"
-                  : "○"}{" "}
+                    ? "✓"
+                    : "○"}{" "}
                 {col.label}
               </option>
             ))}
@@ -338,11 +337,10 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
                 {visibleColumns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-6 py-3 text-left text-sm font-bold uppercase tracking-wider cursor-pointer transition-colors hover:bg-slate-200 border-b border-gray-200 sticky left-0 z-30 ${
-                      col.key === "serial"
+                    className={`px-6 py-3 text-left text-sm font-bold uppercase tracking-wider cursor-pointer transition-colors hover:bg-slate-200 border-b border-gray-200 sticky left-0 z-30 ${col.key === "serial"
                         ? "bg-white shadow-sm border-r border-gray-200"
                         : ""
-                    }`}
+                      }`}
                     onClick={() => handleSort(col.key)}
                     style={{
                       backgroundColor: col.colorScheme?.bg || "white",
@@ -379,35 +377,32 @@ const ChartDataTable: React.FC<ChartDataTableProps> = ({
                   {visibleColumns.map((col) => (
                     <td
                       key={`${rowIndex}-${col.key}`}
-                      className={`px-6 py-4 text-sm min-w-[120px] max-w-[200px] border-r border-gray-100 ${
-                        col.key === "serial"
+                      className={`px-6 py-4 text-sm min-w-[120px] max-w-[200px] border-r border-gray-100 ${col.key === "serial"
                           ? "sticky left-0 z-10 shadow-sm"
                           : ""
-                      }`}
+                        }`}
                       style={{
                         ...getCellStyle(row[col.key], col),
                         backgroundColor:
                           rowIndex % 2 === 0
                             ? col.colorScheme?.bg || "white"
                             : col.key === "serial"
-                            ? col.colorScheme?.bg || "white"
-                            : `color-mix(in srgb, ${
-                                col.colorScheme?.bg || "white"
+                              ? col.colorScheme?.bg || "white"
+                              : `color-mix(in srgb, ${col.colorScheme?.bg || "white"
                               } 90%, slate-50 10%)`,
                         color: col.colorScheme?.text || "slate-900",
                       }}
                     >
                       <div className="flex items-center space-x-2">
                         <span
-                          className={`${
-                            col.isNumeric ? "font-bold" : "font-medium"
-                          } truncate`}
+                          className={`${col.isNumeric ? "font-bold" : "font-medium"
+                            } truncate`}
                         >
                           {col.key === "serial"
                             ? (currentPage - 1) * pageSize + rowIndex + 1
                             : col.isNumeric && valueFormatter
-                            ? valueFormatter(row[col.key])
-                            : row[col.key] || ""}
+                              ? valueFormatter(row[col.key])
+                              : row[col.key] || ""}
                         </span>
                       </div>
                     </td>

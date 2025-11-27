@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { ReportDefinition } from "../services/api";
-import { apiService } from "../services/api";
+import { ReportDefinition } from "../../services/api";
+import { apiService } from "../../services/api";
 import {
   FileText,
   Plus,
@@ -96,11 +96,10 @@ const ReportList: React.FC<Props> = ({
             >
               <div className="flex justify-between items-start mb-4">
                 <div
-                  className={`p-3 rounded-lg ${
-                    r.id % 2 === 0
+                  className={`p-3 rounded-lg ${r.id % 2 === 0
                       ? "bg-blue-50 text-blue-600"
                       : "bg-purple-50 text-purple-600"
-                  }`}
+                    }`}
                 >
                   {r.id % 2 === 0 ? (
                     <FileText className="h-6 w-6" />

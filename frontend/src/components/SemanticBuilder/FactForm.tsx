@@ -1,9 +1,9 @@
 import React from "react";
 import { BarChart3, Save, X } from "lucide-react";
-import Card from "./ui/Card";
-import Button from "./ui/Button";
-import Input from "./ui/Input";
-import Select from "./ui/Select";
+import Card from "../ui/Card";
+import Button from "../ui/Button";
+import Input from "../ui/Input";
+import Select from "../ui/Select";
 
 interface Schema {
   tableName: string;

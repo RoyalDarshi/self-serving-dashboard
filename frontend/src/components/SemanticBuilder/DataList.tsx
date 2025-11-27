@@ -8,8 +8,8 @@ import {
   Trash2,
   Filter,
 } from "lucide-react";
-import Card from "./ui/Card";
-import Button from "./ui/Button";
+import Card from "../ui/Card";
+import Button from "../ui/Button";
 
 interface Fact {
   id: number;

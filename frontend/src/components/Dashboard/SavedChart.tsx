@@ -1,9 +1,9 @@
 // SavedChart.tsx
 import React, { useState, useEffect, useRef } from "react";
-import { ChartConfig, AggregationResponse } from "../services/api";
-import ChartDisplay from "./ChartDisplay";
-import ReportViewer from "./ReportViewer";
-import apiService from "../services/api";
+import { ChartConfig, AggregationResponse } from "../../services/api";
+import ChartDisplay from "../ChartBuilder/ChartDisplay";
+import ReportViewer from "../Reports/ReportViewer";
+import apiService from "../../services/api";
 
 interface ChartDataItem {
   name: string;
@@ -124,16 +124,16 @@ const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
 
           const newYAxisColumns: Column[] = config.groupByDimension
             ? Array.from(groupSet).map((g) => ({
-                key: g,
-                label: g,
-                type: "number",
-              }))
+              key: g,
+              label: g,
+              type: "number",
+            }))
             : config.yAxisFacts.map((fact) => ({
-                ...fact,
-                key: fact.name,
-                label: fact.name,
-                type: "number",
-              }));
+              ...fact,
+              key: fact.name,
+              label: fact.name,
+              type: "number",
+            }));
 
           setChartData(normalizedData);
           setYAxisColumns(newYAxisColumns);
@@ -199,20 +199,20 @@ const SavedChart: React.FC<SavedChartProps> = ({ config, connectionId }) => {
           xAxisColumn={
             config.xAxisDimension
               ? {
-                  key: config.xAxisDimension.name,
-                  label: config.xAxisDimension.name,
-                  type: "string",
-                }
+                key: config.xAxisDimension.name,
+                label: config.xAxisDimension.name,
+                type: "string",
+              }
               : null
           }
           yAxisColumns={yAxisColumns}
           groupByColumn={
             config.groupByDimension
               ? {
-                  key: config.groupByDimension.name,
-                  label: config.groupByDimension.name,
-                  type: "string",
-                }
+                key: config.groupByDimension.name,
+                label: config.groupByDimension.name,
+                type: "string",
+              }
               : null
           }
           aggregationType={config.aggregationType}
