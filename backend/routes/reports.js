@@ -614,4 +614,76 @@ router.get("/:id/drill-config", async (req, res) => {
   }
 });
 
+/**
+ * GET DRILL FIELDS
+ * Returns available fields for drill-down based on report type.
+ */
+router.get("/:id/drill-fields", async (req, res) => {
+  const db = await dbPromise;
+  const { id } = req.params;
+  const { user } = req;
+
+  try {
+    const report = await db.get(`SELECT * FROM reports WHERE id = ?`, [id]);
+    if (!report) return res.status(404).json({ error: "Report not found" });
+
+    // Check access
+    if (user.role !== "admin" && report.user_id !== user.userId) {
+      const accessCheck = await db.get(
+        `SELECT count(*) as count FROM connection_designations WHERE connection_id = ? AND designation = ?`,
+        [report.connection_id, user.designation]
+      );
+      if (!accessCheck || accessCheck.count === 0) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+    }
+
+    if (report.base_table === "SEMANTIC") {
+      // For Semantic Reports, return configured columns (Facts/Dimensions)
+      // We fetch from report_columns because that's what the user configured.
+      // Alternatively, we could parse visualization_config, but report_columns is easier and already has aliases.
+      const columns = await db.all(
+        `SELECT column_name, alias, data_type FROM report_columns WHERE report_id = ? ORDER BY order_index`,
+        [id]
+      );
+      res.json(columns.map(c => ({
+        name: c.column_name,
+        alias: c.alias || c.column_name,
+        type: c.data_type || "unknown"
+      })));
+    } else {
+      // For Table Reports, return ALL columns from the base table
+      const { pool, type } = await getPoolForConnection(report.connection_id, user.userId);
+      const client = await pool.connect();
+      try {
+        let columns = [];
+        if (type === "postgres") {
+          const result = await client.query(
+            `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1`,
+            [report.base_table]
+          );
+          columns = result.rows;
+        } else {
+          // MySQL
+          const result = await client.query(
+            `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?`,
+            [report.base_table]
+          );
+          columns = result[0]; // mysql2 returns [rows, fields]
+        }
+
+        res.json(columns.map(c => ({
+          name: c.column_name,
+          alias: c.column_name, // No alias for raw table columns
+          type: c.data_type
+        })));
+      } finally {
+        client.release();
+      }
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

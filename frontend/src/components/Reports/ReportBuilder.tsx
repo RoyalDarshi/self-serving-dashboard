@@ -48,7 +48,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   const [nameError, setNameError] = useState(false);
   const [description] = useState(""); // Description state exists but not used in UI in original code
 
-  // --- Configuration Shelves ---
+  //--- Configuration Shelves ---
   const [tableColumns, setTableColumns] = useState<ConfigItem[]>([]);
 
   // Chart Config
@@ -68,6 +68,9 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     targetReportId: 0,
     mapping: {},
   });
+  const [targetReportFields, setTargetReportFields] = useState<
+    { name: string; alias: string; type: string }[]
+  >([]);
 
   // --- App Status ---
   const [previewConfig, setPreviewConfig] = useState<FullReportConfig | null>(
@@ -94,6 +97,17 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     }
     apiService.getReports().then(setAvailableReports);
   }, [connectionId]);
+
+  // Fetch Drill Fields when Target Report Changes
+  useEffect(() => {
+    if (drillConfig.targetReportId !== 0) {
+      apiService
+        .getReportDrillFields(drillConfig.targetReportId)
+        .then(setTargetReportFields);
+    } else {
+      setTargetReportFields([]);
+    }
+  }, [drillConfig.targetReportId]);
 
   // --- Handlers ---
 
@@ -407,6 +421,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
             setDrillConfig={setDrillConfig}
             availableReports={availableReports}
             tableColumns={tableColumns}
+            targetReportFields={targetReportFields}
           />
         </div>
       </div>

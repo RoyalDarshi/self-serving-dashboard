@@ -8,6 +8,7 @@ interface DrillThroughConfigProps {
     setDrillConfig: (config: DrillConfig) => void;
     availableReports: ReportDefinition[];
     tableColumns: ConfigItem[];
+    targetReportFields: { name: string; alias: string; type: string }[];
 }
 
 export const DrillThroughConfig: React.FC<DrillThroughConfigProps> = ({
@@ -15,6 +16,7 @@ export const DrillThroughConfig: React.FC<DrillThroughConfigProps> = ({
     setDrillConfig,
     availableReports,
     tableColumns,
+    targetReportFields,
 }) => {
     return (
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
@@ -38,6 +40,7 @@ export const DrillThroughConfig: React.FC<DrillThroughConfigProps> = ({
                             setDrillConfig({
                                 ...drillConfig,
                                 targetReportId: Number(e.target.value),
+                                mapping: {}, // Reset mapping when report changes
                             })
                         }
                     >
@@ -65,9 +68,8 @@ export const DrillThroughConfig: React.FC<DrillThroughConfigProps> = ({
                                         {col.alias || col.name}
                                     </span>
                                     <ArrowRightLeft className="w-3 h-3 text-slate-300" />
-                                    <input
-                                        className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                                        placeholder="Target Column Name"
+                                    <select
+                                        className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
                                         value={drillConfig.mapping[col.name] || ""}
                                         onChange={(e) =>
                                             setDrillConfig({
@@ -78,7 +80,14 @@ export const DrillThroughConfig: React.FC<DrillThroughConfigProps> = ({
                                                 },
                                             })
                                         }
-                                    />
+                                    >
+                                        <option value="">Select Target Field</option>
+                                        {targetReportFields.map((field) => (
+                                            <option key={field.name} value={field.name}>
+                                                {field.alias || field.name}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             ))}
                         </div>

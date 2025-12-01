@@ -35,14 +35,14 @@ export interface ChartConfig {
   groupByDimension: Dimension | null;
   chartType: "bar" | "line" | "pie";
   aggregationType:
-    | "SUM"
-    | "AVG"
-    | "COUNT"
-    | "MAX"
-    | "MIN"
-    | "MEDIAN"
-    | "STDDEV"
-    | "VARIANCE";
+  | "SUM"
+  | "AVG"
+  | "COUNT"
+  | "MAX"
+  | "MIN"
+  | "MEDIAN"
+  | "STDDEV"
+  | "VARIANCE";
   stacked: boolean;
   title?: string;
   description?: string;
@@ -530,6 +530,12 @@ export const apiService = {
   getReportDrillConfig: (reportId: number): Promise<ReportDrillConfig[]> =>
     createApiFetch<ReportDrillConfig[]>(
       `/reports/${reportId}/drill-config`,
+      "GET"
+    ).then((response) => (response.success ? response.data || [] : [])),
+
+  getReportDrillFields: (reportId: number): Promise<{ name: string; alias: string; type: string }[]> =>
+    createApiFetch<{ name: string; alias: string; type: string }[]>(
+      `/reports/${reportId}/drill-fields`,
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
