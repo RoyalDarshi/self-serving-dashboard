@@ -6,6 +6,8 @@ import {
   ReportDefinition,
   FullReportConfig,
   apiService,
+  Fact,
+  Dimension,
 } from "../../services/api";
 import {
   Save,
@@ -34,17 +36,27 @@ import {
   Database,
   Plus,
   Check,
+  Layers,
+  Sigma,
+  BarChart2,
 } from "lucide-react";
 import ReportViewer from "./ReportViewer";
 
 // --- Types ---
 type FieldType = "string" | "number" | "date" | "boolean";
-type DragItem = { name: string; type: FieldType };
+type DragItem = {
+  name: string;
+  type: FieldType;
+  factId?: number;
+  dimensionId?: number;
+  aggregation?: string;
+};
 
 interface ConfigItem extends DragItem {
   id: string;
   alias?: string;
   aggregation?: string;
+  visible?: boolean;
 }
 
 interface DrillConfig {
@@ -82,6 +94,65 @@ const DraggableField = ({ name, type }: { name: string; type: string }) => {
       <span className="truncate text-slate-700 font-medium group-hover:text-indigo-900">
         {name}
       </span>
+    </div>
+  );
+};
+
+/** Draggable Semantic Item (Fact/Dimension) */
+const DraggableSemanticItem = ({
+  item,
+  type,
+}: {
+  item: Fact | Dimension;
+  type: "fact" | "dimension";
+}) => {
+  const handleDragStart = (e: React.DragEvent) => {
+    const dragData: DragItem = {
+      name: item.name,
+      type: type === "fact" ? "number" : "string",
+      factId: type === "fact" ? (item as Fact).id : undefined,
+      dimensionId: type === "dimension" ? (item as Dimension).id : undefined,
+      aggregation: type === "fact" ? (item as Fact).aggregate_function : undefined,
+    };
+    e.dataTransfer.setData("field", JSON.stringify(dragData));
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  return (
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      className={`flex items-center gap-2.5 px-3 py-2.5 text-sm border rounded-lg cursor-grab active:cursor-grabbing group transition-all select-none shadow-sm hover:shadow ${type === "fact"
+        ? "bg-emerald-50/50 border-emerald-100 hover:border-emerald-300 hover:bg-emerald-50"
+        : "bg-blue-50/50 border-blue-100 hover:border-blue-300 hover:bg-blue-50"
+        }`}
+    >
+      <GripVertical
+        className={`w-3.5 h-3.5 transition-colors ${type === "fact"
+          ? "text-emerald-300 group-hover:text-emerald-500"
+          : "text-blue-300 group-hover:text-blue-500"
+          }`}
+      />
+      {type === "fact" ? (
+        <Sigma className="w-3.5 h-3.5 text-emerald-600" />
+      ) : (
+        <Layers className="w-3.5 h-3.5 text-blue-600" />
+      )}
+      <div className="flex flex-col overflow-hidden">
+        <span
+          className={`truncate font-medium ${type === "fact"
+            ? "text-emerald-900 group-hover:text-emerald-950"
+            : "text-blue-900 group-hover:text-blue-950"
+            }`}
+        >
+          {item.name}
+        </span>
+        <span className="text-[10px] text-slate-400 truncate">
+          {type === "fact"
+            ? `${(item as Fact).aggregate_function}(${item.column_name})`
+            : item.column_name}
+        </span>
+      </div>
     </div>
   );
 };
@@ -135,8 +206,8 @@ const Shelf = ({
         onDragLeave={() => setIsOver(false)}
         onDrop={handleDrop}
         className={`min-h-[70px] p-3 rounded-xl border-2 border-dashed transition-all flex flex-wrap gap-2 content-start ${isOver
-            ? "border-indigo-400 bg-gradient-to-br from-indigo-50 to-blue-50 shadow-inner"
-            : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
+          ? "border-indigo-400 bg-gradient-to-br from-indigo-50 to-blue-50 shadow-inner"
+          : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
           }`}
       >
         {items.length === 0 && (
@@ -188,11 +259,17 @@ const ShelfPill = ({
       <div
         onClick={() => setShowMenu(!showMenu)}
         className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border shadow-sm cursor-pointer select-none transition-all ${isAgg
-            ? "bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-800 hover:shadow-md"
-            : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:shadow-md"
+          ? "bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-800 hover:shadow-md"
+          : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:shadow-md"
           }`}
       >
-        <FieldIcon type={item.type} />
+        {item.factId ? (
+          <Sigma className="w-3.5 h-3.5 text-emerald-600" />
+        ) : item.dimensionId ? (
+          <Layers className="w-3.5 h-3.5 text-blue-600" />
+        ) : (
+          <FieldIcon type={item.type} />
+        )}
         <span className="font-semibold">{item.alias || item.name}</span>
         {isAgg && (
           <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 rounded font-bold">
@@ -225,6 +302,8 @@ const ShelfPill = ({
               />
             </div>
 
+            {/* Only show aggregation options if it's not a semantic fact (facts have fixed agg for now) or if we want to override */}
+            {/* For now, let's allow overriding aggregation even for facts, or at least for table columns */}
             <div>
               <label className="text-[10px] text-slate-500 uppercase font-semibold mb-1.5 block">
                 Aggregation
@@ -235,6 +314,7 @@ const ShelfPill = ({
                 onChange={(e) =>
                   onUpdate({ aggregation: e.target.value || undefined })
                 }
+                disabled={!!item.factId} // Disable changing aggregation for defined facts for now
               >
                 <option value="">None (Dimension)</option>
                 <option value="SUM">Sum</option>
@@ -270,6 +350,7 @@ interface Props {
 const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   // UI State
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [mode, setMode] = useState<"TABLE" | "SEMANTIC">("TABLE");
 
   // --- Data Source State ---
   const [connectionId, setConnectionId] = useState<number | null>(
@@ -278,6 +359,10 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   const [baseTable, setBaseTable] = useState<string>("");
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Semantic Data
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [dimensions, setDimensions] = useState<Dimension[]>([]);
 
   // --- Report Meta ---
   const [name, setName] = useState("");
@@ -324,6 +409,9 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   useEffect(() => {
     if (connectionId) {
       apiService.getSchemas(connectionId).then(setSchemas);
+      // Always fetch facts/dims so they are ready if user switches mode
+      apiService.getFacts(connectionId).then(setFacts);
+      apiService.getDimensions(connectionId).then(setDimensions);
     }
     apiService.getReports().then(setAvailableReports);
   }, [connectionId]);
@@ -336,6 +424,13 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
 
   const filteredColumns = availableColumns.filter((c) =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredFacts = facts.filter((f) =>
+    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredDimensions = dimensions.filter((d) =>
+    d.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // --- Handlers ---
@@ -361,7 +456,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       {
         ...item,
         id: Math.random().toString(36).substr(2, 9),
-        aggregation: isNum ? "SUM" : "COUNT",
+        aggregation: item.aggregation || (isNum ? "SUM" : "COUNT"),
       },
     ]);
   };
@@ -430,7 +525,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       });
     }
 
-    const visualizationConfig = showChart
+    const visualizationConfig: any = showChart
       ? {
         showChart: true,
         chartType,
@@ -439,6 +534,19 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
         aggregation: chartY[0]?.aggregation || "SUM",
       }
       : { showChart: false };
+
+    // Semantic Config
+    if (mode === "SEMANTIC") {
+      const factIds = tableColumns
+        .filter((c) => c.factId)
+        .map((c) => c.factId!);
+      const dimensionIds = tableColumns
+        .filter((c) => c.dimensionId)
+        .map((c) => c.dimensionId!);
+
+      visualizationConfig.factIds = factIds;
+      visualizationConfig.dimensionIds = dimensionIds;
+    }
 
     const drillTargets =
       drillConfig.targetReportId !== 0
@@ -454,7 +562,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       name,
       description,
       connection_id: connectionId,
-      base_table: baseTable,
+      base_table: mode === "SEMANTIC" ? "SEMANTIC" : baseTable,
       columns: reportColumns,
       filters: filters,
       visualization_config: visualizationConfig,
@@ -463,7 +571,12 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   };
 
   const handleRun = async () => {
-    if (!baseTable) return;
+    if (!connectionId) {
+      setMessage({ type: "error", text: "Please select a data source." });
+      return;
+    }
+    if (mode === "TABLE" && !baseTable) return;
+    if (mode === "SEMANTIC" && tableColumns.length === 0) return;
 
     setIsLoadingPreview(true);
     setPreviewData(null);
@@ -475,7 +588,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
         id: 0,
         name,
         connection_id: connectionId!,
-        base_table: baseTable,
+        base_table: payload.base_table,
         visualization_config: JSON.stringify(payload.visualization_config),
       },
       columns: payload.columns,
@@ -519,13 +632,21 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       return;
     }
 
-    if (!baseTable) {
+    if (mode === "TABLE" && !baseTable) {
       setMessage({
         type: "error",
         text: "Please select a data source table.",
       });
       return;
     }
+    if (mode === "SEMANTIC" && tableColumns.length === 0) {
+      setMessage({
+        type: "error",
+        text: "Please select at least one fact or dimension.",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = constructPayload();
@@ -561,11 +682,12 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
             </h2>
           </div>
           <select
-            className="w-full text-sm border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none bg-white hover:bg-slate-50 transition-all shadow-sm font-medium"
+            className="w-full text-sm border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none bg-white hover:bg-slate-50 transition-all shadow-sm font-medium mb-4"
             value={connectionId ?? ""}
             onChange={(e) => {
               setConnectionId(Number(e.target.value));
               setBaseTable("");
+              setTableColumns([]);
             }}
           >
             {connections.map((c) => (
@@ -575,60 +697,131 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
             ))}
           </select>
 
-          {baseTable && (
-            <div className="relative mt-4">
-              <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-              <input
-                className="w-full pl-10 pr-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all shadow-sm"
-                placeholder="Search fields..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          )}
+          {/* MODE SWITCHER */}
+          <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
+            <button
+              onClick={() => {
+                setMode("TABLE");
+                setTableColumns([]);
+              }}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === "TABLE"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+                }`}
+            >
+              Tables
+            </button>
+            <button
+              onClick={() => {
+                setMode("SEMANTIC");
+                setTableColumns([]);
+              }}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === "SEMANTIC"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+                }`}
+            >
+              Semantic
+            </button>
+          </div>
+
+          <div className="relative">
+            <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+            <input
+              className="w-full pl-10 pr-3 py-2.5 text-sm border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all shadow-sm"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {!baseTable ? (
-            <div className="space-y-2">
-              <p className="text-xs text-slate-500 font-semibold mb-3 px-2">
-                Available Tables
-              </p>
-              {schemas.map((s) => (
-                <button
-                  key={s.tableName}
-                  onClick={() => setBaseTable(s.tableName)}
-                  className="w-full text-left px-4 py-3 text-sm text-slate-600 hover:bg-gradient-to-r hover:from-indigo-50 hover:to-blue-50 hover:text-indigo-700 rounded-xl transition-all flex items-center gap-3 group border border-transparent hover:border-indigo-200 shadow-sm hover:shadow"
-                >
-                  <TableIcon className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                  <span className="font-semibold">{s.tableName}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-3 py-2 bg-indigo-50 rounded-lg border border-indigo-100">
-                <div className="flex items-center gap-2">
-                  <TableIcon className="w-3.5 h-3.5 text-indigo-600" />
-                  <span className="text-xs font-bold text-indigo-900">
-                    {baseTable}
-                  </span>
-                </div>
-                <button
-                  onClick={() => setBaseTable("")}
-                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold px-2 py-1 hover:bg-indigo-100 rounded transition-colors"
-                >
-                  Change
-                </button>
-              </div>
-              <div className="space-y-1.5">
-                {filteredColumns.map((col) => (
-                  <DraggableField
-                    key={col.name}
-                    name={col.name}
-                    type={col.type}
-                  />
+          {mode === "TABLE" ? (
+            !baseTable ? (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500 font-semibold mb-3 px-2">
+                  Available Tables
+                </p>
+                {schemas.map((s) => (
+                  <button
+                    key={s.tableName}
+                    onClick={() => setBaseTable(s.tableName)}
+                    className="w-full text-left px-4 py-3 text-sm text-slate-600 hover:bg-gradient-to-r hover:from-indigo-50 hover:to-blue-50 hover:text-indigo-700 rounded-xl transition-all flex items-center gap-3 group border border-transparent hover:border-indigo-200 shadow-sm hover:shadow"
+                  >
+                    <TableIcon className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                    <span className="font-semibold">{s.tableName}</span>
+                  </button>
                 ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-3 py-2 bg-indigo-50 rounded-lg border border-indigo-100">
+                  <div className="flex items-center gap-2">
+                    <TableIcon className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="text-xs font-bold text-indigo-900">
+                      {baseTable}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setBaseTable("")}
+                    className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold px-2 py-1 hover:bg-indigo-100 rounded transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  {filteredColumns.map((col) => (
+                    <DraggableField
+                      key={col.name}
+                      name={col.name}
+                      type={col.type}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          ) : (
+            // SEMANTIC MODE LISTS
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-1 flex items-center gap-1">
+                  <Sigma className="w-3 h-3" /> Facts
+                </h3>
+                <div className="space-y-1.5">
+                  {filteredFacts.map((fact) => (
+                    <DraggableSemanticItem
+                      key={fact.id}
+                      item={fact}
+                      type="fact"
+                    />
+                  ))}
+                  {filteredFacts.length === 0 && (
+                    <p className="text-xs text-slate-400 italic px-2">
+                      No facts found.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-1 flex items-center gap-1">
+                  <Layers className="w-3 h-3" /> Dimensions
+                </h3>
+                <div className="space-y-1.5">
+                  {filteredDimensions.map((dim) => (
+                    <DraggableSemanticItem
+                      key={dim.id}
+                      item={dim}
+                      type="dimension"
+                    />
+                  ))}
+                  {filteredDimensions.length === 0 && (
+                    <p className="text-xs text-slate-400 italic px-2">
+                      No dimensions found.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -665,8 +858,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
                 if (e.target.value) setNameError(false);
               }}
               className={`text-xl font-bold text-slate-800 placeholder:text-slate-400 border-b-2 bg-transparent w-full px-2 py-2 focus:outline-none transition-all ${nameError
-                  ? "border-red-500 bg-red-50/30 placeholder:text-red-300 animate-pulse"
-                  : "border-transparent hover:border-slate-200 focus:border-indigo-500"
+                ? "border-red-500 bg-red-50/30 placeholder:text-red-300 animate-pulse"
+                : "border-transparent hover:border-slate-200 focus:border-indigo-500"
                 }`}
               placeholder="✨ Name your report..."
               autoFocus
@@ -675,7 +868,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
           <div className="flex items-center gap-3">
             <button
               onClick={handleRun}
-              disabled={!baseTable}
+              disabled={mode === "TABLE" && !baseTable}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-200 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <PlayCircle className="w-4 h-4" /> Run Query
@@ -700,23 +893,25 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
           {/* Progress Indicator */}
           <div className="flex items-center gap-2 mb-2">
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${baseTable
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-slate-100 text-slate-500"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${(mode === "TABLE" && baseTable) ||
+                (mode === "SEMANTIC" && tableColumns.length > 0)
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-slate-100 text-slate-500"
                 }`}
             >
-              {baseTable ? (
+              {((mode === "TABLE" && baseTable) ||
+                (mode === "SEMANTIC" && tableColumns.length > 0)) ? (
                 <Check className="w-3 h-3" />
               ) : (
                 <div className="w-3 h-3 rounded-full border-2 border-current" />
               )}
-              Data Source
+              {mode === "TABLE" ? "Data Source" : "Facts & Dimensions"}
             </div>
             <div className="h-px flex-1 bg-slate-200" />
             <div
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${tableColumns.length > 0
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-slate-100 text-slate-500"
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-slate-100 text-slate-500"
                 }`}
             >
               {tableColumns.length > 0 ? (
@@ -729,8 +924,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
             <div className="h-px flex-1 bg-slate-200" />
             <div
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${name.trim()
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-slate-100 text-slate-500"
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-slate-100 text-slate-500"
                 }`}
             >
               {name.trim() ? (
@@ -743,8 +938,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
           </div>
 
           {/* TABLE CONFIG */}
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-gradient-to-r from-white to-blue-50/30">
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-gradient-to-r from-white to-blue-50/30 round-t-xl">
               <div className="p-2 bg-blue-100 rounded-lg">
                 <TableIcon className="w-4 h-4 text-blue-600" />
               </div>
@@ -775,9 +970,88 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
             </div>
           </div>
 
+          {/* VISUALIZATION CONFIG */}
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-white to-purple-50/30 round-t-xl">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <BarChart2 className="w-4 h-4 text-purple-600" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-800">
+                  Visualization
+                </h3>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={showChart}
+                  onChange={(e) => setShowChart(e.target.checked)}
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            {showChart && (
+              <div className="p-6 space-y-6 animate-in slide-in-from-top-2 fade-in duration-200">
+                {/* Chart Type Selector */}
+                <div className="flex gap-2">
+                  {[
+                    { id: "bar", icon: BarChart3, label: "Bar Chart" },
+                    { id: "line", icon: LineChart, label: "Line Chart" },
+                    { id: "pie", icon: PieChart, label: "Pie Chart" },
+                  ].map((type) => (
+                    <button
+                      key={type.id}
+                      onClick={() => setChartType(type.id as any)}
+                      className={`flex-1 flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${chartType === type.id
+                        ? "border-purple-500 bg-purple-50 text-purple-700"
+                        : "border-slate-100 hover:border-slate-200 text-slate-500 hover:bg-slate-50"
+                        }`}
+                    >
+                      <type.icon className="w-6 h-6" />
+                      <span className="text-xs font-bold">{type.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <Shelf
+                    title="X-Axis (Dimension)"
+                    icon={ArrowRightLeft}
+                    placeholder="Drag a dimension here"
+                    items={chartX ? [chartX] : []}
+                    accepts={["string", "date"]}
+                    onDrop={handleDropChartX}
+                    onRemove={() => setChartX(null)}
+                    onUpdate={(i, u) => {
+                      if (chartX) setChartX({ ...chartX, ...u });
+                    }}
+                  />
+                  <Shelf
+                    title="Y-Axis (Metrics)"
+                    icon={BarChart3}
+                    placeholder="Drag metrics here"
+                    items={chartY}
+                    accepts={["number"]}
+                    onDrop={handleDropChartY}
+                    onRemove={(i) =>
+                      setChartY(chartY.filter((_, idx) => idx !== i))
+                    }
+                    onUpdate={(i, u) => {
+                      const n = [...chartY];
+                      n[i] = { ...n[i], ...u };
+                      setChartY(n);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* FILTERS */}
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-gradient-to-r from-white to-amber-50/30">
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-gradient-to-r from-white to-amber-50/30 round-t-xl">
               <div className="p-2 bg-amber-100 rounded-lg">
                 <Filter className="w-4 h-4 text-amber-600" />
               </div>
@@ -802,322 +1076,157 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
                 onRemove={(i) =>
                   setFilters(filters.filter((_, idx) => idx !== i))
                 }
-                onUpdate={() => { }}
-              />{filters.length > 0 && (
-                <div className="space-y-3 mt-5">
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                    <Settings2 className="w-3 h-3" />
-                    Configure Filter Values
-                  </label>
-                  {filters.map((f, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-3 text-sm bg-gradient-to-r from-slate-50 to-white p-3 rounded-xl border border-slate-200 shadow-sm"
-                    >
-                      <span className="font-bold text-slate-700 w-36 truncate px-2">
-                        {f.column_name}
-                      </span>
-                      <select
-                        className="bg-white border border-slate-200 rounded-lg text-xs py-2 px-3 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                        value={f.operator}
-                        onChange={(e) => {
-                          const n = [...filters];
-                          n[idx].operator = e.target.value;
-                          setFilters(n);
-                        }}
-                      >
-                        <option value="=">Equals</option>
-                        <option value=">">Greater Than</option>
-                        <option value="<">Less Than</option>
-                        <option value="LIKE">Contains</option>
-                        <option value="IN">Is One Of</option>
-                      </select>
-                      <input
-                        className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
-                        placeholder="Enter value..."
-                        value={f.value}
-                        onChange={(e) => {
-                          const n = [...filters];
-                          n[idx].value = e.target.value;
-                          setFilters(n);
-                        }}
-                      />
-                      <button
-                        onClick={() =>
-                          setFilters(filters.filter((_, i) => i !== idx))
-                        }
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+                onUpdate={(i, u) => {
+                  const n = [...filters];
+                  n[i] = {
+                    ...n[i],
+                    column_name: u.name || n[i].column_name,
+                  };
+                  setFilters(n);
+                }}
+              />
             </div>
           </div>
 
-          {/* VISUALIZATION */}
-          <div
-            className={`bg-white rounded-2xl shadow-lg border transition-all duration-300 overflow-hidden ${showChart
-                ? "border-indigo-300 ring-2 ring-indigo-100"
-                : "border-slate-200"
-              }`}
-          >
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-white to-indigo-50/30">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`p-2 rounded-lg transition-colors ${showChart
-                      ? "bg-indigo-100 text-indigo-600"
-                      : "bg-slate-100 text-slate-500"
-                    }`}
-                >
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <h3 className="text-sm font-bold text-slate-800">
-                  Visualization
-                </h3>
-              </div>
-              <div className="flex items-center gap-4">
-                <span
-                  className={`text-xs font-bold ${showChart ? "text-indigo-600" : "text-slate-500"
-                    }`}
-                >
-                  {showChart ? "Enabled" : "Disabled"}
-                </span>
-                <button
-                  onClick={() => setShowChart(!showChart)}
-                  className={`w-12 h-6 rounded-full p-0.5 transition-all duration-200 ease-in-out ${showChart ? "bg-indigo-600" : "bg-slate-300"
-                    }`}
-                >
-                  <div
-                    className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${showChart ? "translate-x-6" : "translate-x-0"
-                      }`}
-                  />
-                </button>
-              </div>
-            </div>
-
-            {showChart && (
-              <div className="p-6 space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                {/* Chart Type Selector */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 block">
-                    Chart Type
-                  </label>
-                  <div className="flex items-center gap-3">
-                    {[
-                      { id: "bar", icon: BarChart3, label: "Bar Chart" },
-                      { id: "line", icon: LineChart, label: "Line Chart" },
-                      { id: "pie", icon: PieChart, label: "Pie Chart" },
-                    ].map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => setChartType(t.id as any)}
-                        className={`flex-1 flex flex-col items-center gap-2 px-4 py-3 rounded-xl border-2 text-xs font-semibold transition-all ${chartType === t.id
-                            ? "bg-gradient-to-br from-indigo-50 to-blue-50 border-indigo-300 text-indigo-700 shadow-md"
-                            : "bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                          }`}
-                      >
-                        <t.icon className="w-5 h-5" />
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex gap-5">
-                  <Shelf
-                    title="X-Axis (Categories)"
-                    icon={Settings2}
-                    placeholder="Drag 1 dimension field"
-                    items={chartX ? [chartX] : []}
-                    accepts={["any"]}
-                    onDrop={handleDropChartX}
-                    onRemove={() => setChartX(null)}
-                    onUpdate={(i, u) =>
-                      setChartX(chartX ? { ...chartX, ...u } : null)
-                    }
-                    className="flex-1"
-                  />
-                  <Shelf
-                    title="Y-Axis (Values)"
-                    icon={BarChart3}
-                    placeholder="Drag numeric fields"
-                    items={chartY}
-                    accepts={["any"]}
-                    onDrop={handleDropChartY}
-                    onRemove={(i) =>
-                      setChartY(chartY.filter((_, idx) => idx !== i))
-                    }
-                    onUpdate={(i, u) => {
-                      const n = [...chartY];
-                      n[i] = { ...n[i], ...u };
-                      setChartY(n);
-                    }}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* DRILL THROUGH */}
+          {/* DRILL THROUGH CONFIG */}
           <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-gradient-to-r from-white to-purple-50/30">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <MousePointerClick className="w-4 h-4 text-purple-600" />
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-gradient-to-r from-white to-orange-50/30">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <MousePointerClick className="w-4 h-4 text-orange-600" />
               </div>
               <h3 className="text-sm font-bold text-slate-800">
-                Drill-Through Actions
+                Drill Through
               </h3>
             </div>
-            <div className="p-6">
-              <div className="flex flex-col gap-5">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 block">
-                    Target Report (On Row Click)
-                  </label>
-                  <select
-                    className="w-full max-w-lg text-sm border-slate-200 rounded-xl p-3 bg-white hover:bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm font-medium"
-                    value={drillConfig.targetReportId}
-                    onChange={(e) =>
-                      setDrillConfig({
-                        targetReportId: Number(e.target.value),
-                        mapping: {},
-                      })
-                    }
-                  >
-                    <option value={0}>-- No Drill Action --</option>
-                    {availableReports.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {drillConfig.targetReportId !== 0 && (
-                  <div className="bg-gradient-to-br from-slate-50 to-purple-50/20 rounded-2xl p-5 border border-slate-200 animate-in fade-in slide-in-from-top-2">
-                    <div className="flex items-center gap-2 mb-5 text-slate-700 font-bold text-sm">
-                      <LinkIcon className="w-4 h-4" />
-                      <span>Parameter Mapping</span>
-                    </div>
-
-                    <div className="space-y-3">
-                      {tableColumns.length === 0 && (
-                        <p className="text-xs text-slate-500 italic py-4 text-center">
-                          Add table columns first to create mappings
-                        </p>
-                      )}
-
-                      {tableColumns.map((col) => (
-                        <div
-                          key={col.id}
-                          className="flex items-center gap-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm"
-                        >
-                          <div className="w-1/3 text-right">
-                            <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-                              {col.alias || col.name}
-                            </span>
-                          </div>
-                          <ArrowRightLeft className="w-4 h-4 text-slate-400" />
-                          <div className="flex-1 max-w-md">
-                            <input
-                              className="w-full text-xs border border-slate-200 rounded-lg px-3 py-2.5 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none placeholder:text-slate-400 font-medium"
-                              placeholder={`Target filter (e.g., ${col.name})`}
-                              value={drillConfig.mapping[col.name] || ""}
-                              onChange={(e) => {
-                                const newMapping = {
-                                  ...drillConfig.mapping,
-                                  [col.name]: e.target.value,
-                                };
-                                setDrillConfig({
-                                  ...drillConfig,
-                                  mapping: newMapping,
-                                });
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1.5 block">
+                  Target Report
+                </label>
+                <select
+                  className="w-full text-sm border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                  value={drillConfig.targetReportId}
+                  onChange={(e) =>
+                    setDrillConfig({
+                      ...drillConfig,
+                      targetReportId: Number(e.target.value),
+                    })
+                  }
+                >
+                  <option value={0}>None (Disabled)</option>
+                  {availableReports.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {drillConfig.targetReportId !== 0 && (
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <h4 className="text-xs font-bold text-slate-700 mb-3 flex items-center gap-2">
+                    <LinkIcon className="w-3 h-3" /> Column Mapping
+                  </h4>
+                  <div className="space-y-2">
+                    {tableColumns.map((col) => (
+                      <div
+                        key={col.id}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span className="text-slate-600 font-medium">
+                          {col.alias || col.name}
+                        </span>
+                        <ArrowRightLeft className="w-3 h-3 text-slate-300" />
+                        <input
+                          className="w-40 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                          placeholder="Target Column Name"
+                          value={drillConfig.mapping[col.name] || ""}
+                          onChange={(e) =>
+                            setDrillConfig({
+                              ...drillConfig,
+                              mapping: {
+                                ...drillConfig.mapping,
+                                [col.name]: e.target.value,
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-3 italic">
+                    Map columns from this report to filter columns in the target
+                    report.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
       {/* 3. RIGHT PANEL: Preview */}
-      <div className="flex-1 bg-slate-50 flex flex-col min-w-0">
-        <div className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 shadow-sm z-10">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-              Live Preview
+      <div className="w-[30%] bg-white border-l border-slate-200 flex flex-col z-10 shadow-xl">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
+            Live Preview
+          </h3>
+          {previewData && (
+            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full font-bold">
+              {previewData.rows.length} rows
             </span>
-          </div>
-          {message && (
-            <div
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wide animate-in slide-in-from-right ${message.type === "error"
-                  ? "text-red-700 bg-red-50 border border-red-200"
-                  : "text-emerald-700 bg-emerald-50 border border-emerald-200"
-                }`}
-            >
-              {message.type === "success" ? (
-                <Check className="w-3.5 h-3.5" />
-              ) : (
-                <X className="w-3.5 h-3.5" />
-              )}
-              {message.text}
+          )}
+        </div>
+        <div className="flex-1 overflow-hidden relative bg-slate-50">
+          {isLoadingPreview ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-10">
+              <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3" />
+              <p className="text-xs font-semibold text-indigo-600 animate-pulse">
+                Running Query...
+              </p>
+            </div>
+          ) : previewData ? (
+            <div className="h-full overflow-auto">
+              <ReportViewer
+                previewConfig={previewConfig!}
+                previewData={previewData}
+              />
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                <Sparkles className="w-8 h-8 text-slate-300" />
+              </div>
+              <p className="text-sm font-medium text-slate-600 mb-1">
+                Ready to Preview
+              </p>
+              <p className="text-xs max-w-[200px]">
+                Configure your report columns and filters, then click "Run Query"
+                to see the results here.
+              </p>
             </div>
           )}
         </div>
-        <div className="flex-1 overflow-hidden p-6">
-          <div className="h-full bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden relative">
-            {isLoadingPreview ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                <div className="relative">
-                  <div className="w-16 h-16 border-4 border-slate-200 border-t-indigo-600 rounded-full animate-spin" />
-                  <Sparkles className="w-6 h-6 text-indigo-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
-                </div>
-                <p className="text-sm font-semibold mt-6 text-slate-600">
-                  Executing Query...
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  This may take a moment
-                </p>
-              </div>
-            ) : previewConfig ? (
-              <ReportViewer
-                initialReportId={0}
-                onClose={() => { }}
-                previewConfig={previewConfig}
-                previewData={previewData || { sql: "", rows: [] }}
-              />
+
+        {/* Status Bar */}
+        {message && (
+          <div
+            className={`absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-sm font-medium animate-in slide-in-from-bottom-5 fade-in duration-300 z-50 ${message.type === "success"
+              ? "bg-emerald-600 text-white"
+              : "bg-red-600 text-white"
+              }`}
+          >
+            {message.type === "success" ? (
+              <Check className="w-4 h-4" />
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-slate-300">
-                <div className="w-24 h-24 bg-gradient-to-br from-slate-100 to-slate-50 rounded-2xl flex items-center justify-center mb-6 shadow-inner">
-                  <Layout className="w-12 h-12 opacity-20" />
-                </div>
-                <p className="text-base font-semibold text-slate-500 mb-2">
-                  Ready to Preview
-                </p>
-                <p className="text-sm text-slate-400 text-center max-w-md">
-                  Configure your columns and filters, then click{" "}
-                  <span className="text-indigo-600 font-semibold">
-                    Run Query
-                  </span>{" "}
-                  to see results
-                </p>
-              </div>
+              <X className="w-4 h-4" />
             )}
+            {message.text}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 };
+
 export default ReportBuilder;

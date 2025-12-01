@@ -5,6 +5,7 @@ import {
   getPoolForConnection,
   quoteIdentifier,
 } from "../database/connection.js";
+import { buildSemanticQuery } from "../utils/semanticQueryBuilder.js";
 
 const router = Router();
 
@@ -72,57 +73,93 @@ router.get("/run", async (req, res) => {
       }
     }
 
-    const columns = await db.all(
-      `SELECT column_name FROM report_columns WHERE report_id = ? AND visible = 1 ORDER BY order_index`,
-      [reportId]
-    );
-
-    const storedFilters = await db.all(
-      `SELECT column_name, operator, value FROM report_filters WHERE report_id = ?`,
-      [reportId]
-    );
-
     const { pool, type } = await getPoolForConnection(
       report.connection_id,
       req.user?.userId
     );
     const client = await pool.connect();
-    const quote = (v) => quoteIdentifier(v, type);
 
-    let where = [];
+    try {
+      // SEMANTIC REPORT HANDLING
+      if (report.base_table === "SEMANTIC") {
+        const vizConfig = JSON.parse(report.visualization_config || "{}");
+        const { factIds, dimensionIds, kpiId, aggregation } = vizConfig;
 
-    for (const f of storedFilters) {
-      const v = JSON.parse(f.value);
-      if (Array.isArray(v)) {
-        where.push(
-          `${quote(f.column_name)} IN (${v.map((v2) => `'${v2}'`).join(",")})`
-        );
+        const { sql } = await buildSemanticQuery({
+          db,
+          client,
+          type,
+          connection_id: report.connection_id,
+          factIds,
+          dimensionIds,
+          kpiId,
+          aggregation,
+        });
+
+        // Apply runtime filters to the semantic query if needed
+        const quote = (v) => quoteIdentifier(v, type);
+        let where = [];
+        for (const [col, val] of Object.entries(runtimeFilters)) {
+          if (val !== "") where.push(`${quote(col)} = '${val}'`);
+        }
+
+        const finalSql = where.length > 0
+          ? `SELECT * FROM (${sql}) AS sub WHERE ${where.join(" AND ")}`
+          : sql;
+
+        const result = await client.query(finalSql);
+        const rows = result.rows || result[0];
+        res.json({ sql: finalSql, rows });
+
       } else {
-        if (v !== "")
-          where.push(`${quote(f.column_name)} ${f.operator} '${v}'`);
+        // STANDARD TABLE REPORT HANDLING
+        const columns = await db.all(
+          `SELECT column_name FROM report_columns WHERE report_id = ? AND visible = 1 ORDER BY order_index`,
+          [reportId]
+        );
+
+        const storedFilters = await db.all(
+          `SELECT column_name, operator, value FROM report_filters WHERE report_id = ?`,
+          [reportId]
+        );
+
+        const quote = (v) => quoteIdentifier(v, type);
+        let where = [];
+
+        for (const f of storedFilters) {
+          const v = JSON.parse(f.value);
+          if (Array.isArray(v)) {
+            where.push(
+              `${quote(f.column_name)} IN (${v.map((v2) => `'${v2}'`).join(",")})`
+            );
+          } else {
+            if (v !== "")
+              where.push(`${quote(f.column_name)} ${f.operator} '${v}'`);
+          }
+        }
+
+        for (const [col, val] of Object.entries(runtimeFilters)) {
+          if (val !== "") where.push(`${quote(col)} = '${val}'`);
+        }
+
+        const selectClause =
+          columns.length > 0
+            ? columns.map((c) => quote(c.column_name)).join(", ")
+            : "*";
+
+        const sql = `
+          SELECT ${selectClause}
+          FROM ${quote(report.base_table)}
+          ${where.length ? "WHERE " + where.join(" AND ") : ""}
+        `.trim();
+
+        const result = await client.query(sql);
+        const rows = result.rows || result[0];
+        res.json({ sql, rows });
       }
+    } finally {
+      client.release();
     }
-
-    for (const [col, val] of Object.entries(runtimeFilters)) {
-      if (val !== "") where.push(`${quote(col)} = '${val}'`);
-    }
-
-    const selectClause =
-      columns.length > 0
-        ? columns.map((c) => quote(c.column_name)).join(", ")
-        : "*";
-
-    const sql = `
-      SELECT ${selectClause}
-      FROM ${quote(report.base_table)}
-      ${where.length ? "WHERE " + where.join(" AND ") : ""}
-    `.trim();
-
-    const result = await client.query(sql);
-    const rows = result.rows || result[0];
-    client.release();
-
-    res.json({ sql, rows });
   } catch (err) {
     console.error("Run report error:", err.message);
     res.status(500).json({ error: err.message });
@@ -135,7 +172,7 @@ router.get("/run", async (req, res) => {
 router.post("/save", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
-  const {
+  let {
     name,
     description,
     connection_id,
@@ -145,6 +182,11 @@ router.post("/save", async (req, res) => {
     visualization_config,
     drillTargets,
   } = req.body;
+
+  // Handle Semantic Reports: If base_table is missing but we have semantic config, set base_table to "SEMANTIC"
+  if (!base_table && visualization_config && (visualization_config.factIds || visualization_config.kpiId)) {
+    base_table = "SEMANTIC";
+  }
 
   if (!name || !connection_id || !base_table) {
     return res
@@ -235,7 +277,12 @@ router.post("/save", async (req, res) => {
 router.post("/preview", async (req, res) => {
   const db = await dbPromise;
   const { user } = req;
-  const { connection_id, base_table, columns, filters } = req.body;
+  let { connection_id, base_table, columns, filters, visualization_config } = req.body;
+
+  // Handle Semantic Preview
+  if (!base_table && visualization_config && (visualization_config.factIds || visualization_config.kpiId)) {
+    base_table = "SEMANTIC";
+  }
 
   if (!connection_id || !base_table) {
     return res.status(400).json({ error: "Missing connection or table" });
@@ -259,58 +306,74 @@ router.post("/preview", async (req, res) => {
       req.user?.userId
     );
     const client = await pool.connect();
-    const quote = (v) => quoteIdentifier(v, type);
 
-    // 3. Build Query
-    let where = [];
-    
-    // Process Filters from Request Body
-    if (filters && Array.isArray(filters)) {
-      for (const f of filters) {
-        // Handle values that might be arrays (IN clause) or single values
-        // Note: In builder, value is usually a string, but let's handle safety
-        let val = f.value;
-        
-        if (f.operator === "IN" || Array.isArray(val)) {
-             // Handle "IN" logic if your UI supports it, otherwise treat as string
-             const valArray = Array.isArray(val) ? val : String(val).split(',');
-             const quotedVals = valArray.map(v => `'${v.trim()}'`).join(",");
-             where.push(`${quote(f.column_name)} IN (${quotedVals})`);
-        } else {
-             // Standard operators (=, >, <, LIKE)
-             if (val !== "" && val !== null && val !== undefined) {
-               where.push(`${quote(f.column_name)} ${f.operator} '${val}'`);
-             }
+    try {
+      if (base_table === "SEMANTIC") {
+        const { factIds, dimensionIds, kpiId, aggregation } = visualization_config || {};
+        const { sql } = await buildSemanticQuery({
+          db,
+          client,
+          type,
+          connection_id,
+          factIds,
+          dimensionIds,
+          kpiId,
+          aggregation,
+        });
+
+        // Add LIMIT for preview safety
+        const finalSql = `${sql} LIMIT 100`;
+
+        const result = await client.query(finalSql);
+        const rows = result.rows || result[0] || [];
+        res.json({ sql: finalSql, rows });
+
+      } else {
+        // Standard Table Preview
+        const quote = (v) => quoteIdentifier(v, type);
+        let where = [];
+
+        // Process Filters from Request Body
+        if (filters && Array.isArray(filters)) {
+          for (const f of filters) {
+            let val = f.value;
+            if (f.operator === "IN" || Array.isArray(val)) {
+              const valArray = Array.isArray(val) ? val : String(val).split(',');
+              const quotedVals = valArray.map(v => `'${v.trim()}'`).join(",");
+              where.push(`${quote(f.column_name)} IN (${quotedVals})`);
+            } else {
+              if (val !== "" && val !== null && val !== undefined) {
+                where.push(`${quote(f.column_name)} ${f.operator} '${val}'`);
+              }
+            }
+          }
         }
+
+        // Process Columns
+        const selectClause =
+          columns && columns.length > 0 && columns.some(c => c.visible)
+            ? columns
+              .filter((c) => c.visible)
+              .map((c) => {
+                return quote(c.column_name) + (c.alias ? ` AS "${c.alias}"` : "");
+              })
+              .join(", ")
+            : "*";
+
+        const sql = `
+              SELECT ${selectClause}
+              FROM ${quote(base_table)}
+              ${where.length ? "WHERE " + where.join(" AND ") : ""}
+              LIMIT 100
+            `.trim();
+
+        const result = await client.query(sql);
+        const rows = result.rows || result[0] || [];
+        res.json({ sql, rows });
       }
+    } finally {
+      client.release();
     }
-
-    // Process Columns
-    const selectClause =
-      columns && columns.length > 0 && columns.some(c => c.visible)
-        ? columns
-            .filter((c) => c.visible) // Only select visible columns
-            .map((c) => {
-                 // Handle aggregations if your UI sends them (e.g., SUM(sales))
-                 // For now, assuming direct column selection based on your previous code
-                 return quote(c.column_name) + (c.alias ? ` AS "${c.alias}"` : "");
-            })
-            .join(", ")
-        : "*";
-
-    const sql = `
-      SELECT ${selectClause}
-      FROM ${quote(base_table)}
-      ${where.length ? "WHERE " + where.join(" AND ") : ""}
-      LIMIT 100
-    `.trim(); // Added LIMIT 100 for safety during preview
-
-    // 4. Execute
-    const result = await client.query(sql);
-    const rows = result.rows || result[0] || [];
-    client.release();
-
-    res.json({ sql, rows });
   } catch (err) {
     console.error("Preview error:", err.message);
     res.status(500).json({ error: err.message });
@@ -484,9 +547,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 /**
- * GET DRILL CONFIG (Specific sub-path, usually fine after :id if distinct, but safer before :id if possible.
- * However, since it has extra segments /:id/drill-config, Express distinguishes it from just /:id unless strict routing issues occur.
- * Ideally, place BEFORE /:id too if you encounter issues, but Express handles specific subpaths well.)
+ * GET DRILL CONFIG
  */
 router.get("/:id/drill-config", async (req, res) => {
   const db = await dbPromise;
