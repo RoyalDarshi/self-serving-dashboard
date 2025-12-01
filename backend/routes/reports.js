@@ -96,6 +96,12 @@ router.get("/run", async (req, res) => {
           aggregation,
         });
 
+        // Fetch report columns to apply aliases and ordering
+        const columns = await db.all(
+          `SELECT column_name, alias, visible FROM report_columns WHERE report_id = ? AND visible = 1 ORDER BY order_index`,
+          [reportId]
+        );
+
         // Apply runtime filters to the semantic query if needed
         const quote = (v) => quoteIdentifier(v, type);
         let where = [];
@@ -103,9 +109,32 @@ router.get("/run", async (req, res) => {
           if (val !== "") where.push(`${quote(col)} = '${val}'`);
         }
 
-        const finalSql = where.length > 0
-          ? `SELECT * FROM (${sql}) AS sub WHERE ${where.join(" AND ")}`
-          : sql;
+        let finalSql = sql;
+
+        // If we have columns defined, wrap the semantic query to apply aliases/order
+        if (columns.length > 0) {
+          const selectClause = columns
+            .map((c) => {
+              // For semantic, the inner query returns columns named as the dimension/fact name
+              // We need to match that. The builder returns "TableName.ColumnName" as "Name"
+              // So we select "Name" and alias it to "Alias" if present.
+              // Actually, semanticQueryBuilder returns: `... AS "Name"`
+              // So we should select "Name".
+              // BUT, the report_columns might store "Name" as column_name.
+              // Let's assume report_columns.column_name matches the output name of semantic query.
+              return `${quote(c.column_name)} ${c.alias ? `AS ${quote(c.alias)}` : ""
+                }`;
+            })
+            .join(", ");
+
+          finalSql = `SELECT ${selectClause} FROM (${sql}) AS sub`;
+        } else {
+          finalSql = `SELECT * FROM (${sql}) AS sub`;
+        }
+
+        if (where.length > 0) {
+          finalSql += ` WHERE ${where.join(" AND ")}`;
+        }
 
         const result = await client.query(finalSql);
         const rows = result.rows || result[0];
@@ -321,8 +350,29 @@ router.post("/preview", async (req, res) => {
           aggregation,
         });
 
+        // Wrap with outer SELECT to apply aliases/order from 'columns'
+        const quote = (v) => quoteIdentifier(v, type);
+        let finalSql = sql;
+
+        if (columns && columns.length > 0) {
+          const visibleColumns = columns.filter((c) => c.visible);
+          if (visibleColumns.length > 0) {
+            const selectClause = visibleColumns
+              .map((c) => {
+                return `${quote(c.column_name)} ${c.alias ? `AS ${quote(c.alias)}` : ""
+                  }`;
+              })
+              .join(", ");
+            finalSql = `SELECT ${selectClause} FROM (${sql}) AS sub`;
+          } else {
+            finalSql = `SELECT * FROM (${sql}) AS sub`;
+          }
+        } else {
+          finalSql = `SELECT * FROM (${sql}) AS sub`;
+        }
+
         // Add LIMIT for preview safety
-        const finalSql = `${sql} LIMIT 100`;
+        finalSql += ` LIMIT 100`;
 
         const result = await client.query(finalSql);
         const rows = result.rows || result[0] || [];
