@@ -35,14 +35,14 @@ export interface ChartConfig {
   groupByDimension: Dimension | null;
   chartType: "bar" | "line" | "pie";
   aggregationType:
-  | "SUM"
-  | "AVG"
-  | "COUNT"
-  | "MAX"
-  | "MIN"
-  | "MEDIAN"
-  | "STDDEV"
-  | "VARIANCE";
+    | "SUM"
+    | "AVG"
+    | "COUNT"
+    | "MAX"
+    | "MIN"
+    | "MEDIAN"
+    | "STDDEV"
+    | "VARIANCE";
   stacked: boolean;
   title?: string;
   description?: string;
@@ -136,7 +136,7 @@ export interface Schema {
   }[];
 }
 
-export interface FactDimension {
+export interface TableRelationship {
   id: number;
   fact_id: number;
   fact_name: string;
@@ -391,30 +391,40 @@ export const apiService = {
   deleteDimension: (id: number): Promise<ApiResponse<unknown>> =>
     createApiFetch(`/semantic/dimensions/${id}`, "DELETE"),
 
-  getFactDimensions: (connectionId: number): Promise<FactDimension[]> =>
-    createApiFetch<FactDimension[]>(
-      `/semantic/fact-dimensions?connection_id=${connectionId}`,
+  getTableRelationships: (connectionId: number): Promise<TableRelationship[]> =>
+    createApiFetch<TableRelationship[]>(
+      `/semantic/table-relationships?connection_id=${connectionId}`,
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
-  autoMap: (connectionId: number): Promise<ApiResponse<FactDimension[]>> =>
+  autoMap: (connectionId: number): Promise<ApiResponse<TableRelationship[]>> =>
     createApiFetch(`/semantic/auto-map`, "POST", {
       connection_id: connectionId,
     }),
 
-  createFactDimension: (
-    factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<FactDimension>> =>
-    createApiFetch("/semantic/fact-dimensions", "POST", factDimension),
+  createTableRelationship: (
+    tableRelationship: Omit<
+      TableRelationship,
+      "id" | "fact_name" | "dimension_name"
+    >
+  ): Promise<ApiResponse<TableRelationship>> =>
+    createApiFetch("/semantic/table-relationships", "POST", tableRelationship),
 
-  updateFactDimension: (
+  updateTableRelationship: (
     id: number,
-    factDimension: Omit<FactDimension, "id" | "fact_name" | "dimension_name">
-  ): Promise<ApiResponse<FactDimension>> =>
-    createApiFetch(`/semantic/fact-dimensions/${id}`, "PUT", factDimension),
+    tableRelationship: Omit<
+      TableRelationship,
+      "id" | "fact_name" | "dimension_name"
+    >
+  ): Promise<ApiResponse<TableRelationship>> =>
+    createApiFetch(
+      `/semantic/table-relationships/${id}`,
+      "PUT",
+      tableRelationship
+    ),
 
-  deleteFactDimension: (id: number): Promise<ApiResponse<unknown>> =>
-    createApiFetch(`/semantic/fact-dimensions/${id}`, "DELETE"),
+  deleteTableRelationship: (id: number): Promise<ApiResponse<unknown>> =>
+    createApiFetch(`/semantic/table-relationships/${id}`, "DELETE"),
 
   // KPIs
   getKpis: (connectionId: number): Promise<Kpi[]> =>
@@ -533,7 +543,9 @@ export const apiService = {
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
-  getReportDrillFields: (reportId: number): Promise<{ name: string; alias: string; type: string }[]> =>
+  getReportDrillFields: (
+    reportId: number
+  ): Promise<{ name: string; alias: string; type: string }[]> =>
     createApiFetch<{ name: string; alias: string; type: string }[]>(
       `/reports/${reportId}/drill-fields`,
       "GET"

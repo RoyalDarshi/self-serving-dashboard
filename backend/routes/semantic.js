@@ -3,7 +3,7 @@ import { Router } from "express";
 import { dbPromise } from "../database/sqliteConnection.js";
 // Note: getPoolForConnection is a helper function you would need to import
 // from your connection management logic to get a live database pool.
- import { getPoolForConnection } from "../database/connection.js";
+import { getPoolForConnection } from "../database/connection.js";
 
 const router = Router();
 
@@ -228,122 +228,136 @@ router.delete("/dimensions/:id", async (req, res) => {
   }
 });
 
-router.get("/fact-dimensions", async (req, res) => {
+router.get("/table-relationships", async (req, res) => {
   try {
     const { connection_id } = req.query;
     if (!connection_id) {
       return res.status(400).json({ error: "connection_id required" });
     }
+
     const db = await dbPromise;
-    const factDimensions = await db.all(
-      `SELECT fd.id, fd.fact_id, f.name AS fact_name, fd.dimension_id, d.name AS dimension_name,
-              fd.join_table, fd.fact_column, fd.dimension_column
-       FROM fact_dimensions fd
-       JOIN facts f ON fd.fact_id = f.id
-       JOIN dimensions d ON fd.dimension_id = d.id
-       WHERE f.connection_id = ? AND d.connection_id = ?`,
-      [connection_id, connection_id]
+    const rows = await db.all(
+      `SELECT *
+       FROM table_relationships
+       WHERE connection_id = ?`,
+      [connection_id]
     );
-    res.json(factDimensions);
+
+    res.json(rows);
   } catch (err) {
-    console.error("List fact-dimensions error:", err.message);
+    console.error("List table relationships error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-router.post("/fact-dimensions", async (req, res) => {
+router.post("/table-relationships", async (req, res) => {
   try {
-    const { fact_id, dimension_id, join_table, fact_column, dimension_column } =
-      req.body;
+    const {
+      connection_id,
+      left_table,
+      left_column,
+      right_table,
+      right_column,
+      join_type = "LEFT",
+    } = req.body;
+
     if (
-      !fact_id ||
-      !dimension_id ||
-      !join_table ||
-      !fact_column ||
-      !dimension_column
+      !connection_id ||
+      !left_table ||
+      !left_column ||
+      !right_table ||
+      !right_column
     ) {
       return res.status(400).json({
-        error: "Missing required fact-dimension fields",
+        error: "Missing required table relationship fields",
       });
     }
+
     const db = await dbPromise;
+
     const result = await db.run(
-      `INSERT INTO fact_dimensions (fact_id, dimension_id, join_table, fact_column, dimension_column)
-       VALUES (?, ?, ?, ?, ?)`,
-      [fact_id, dimension_id, join_table, fact_column, dimension_column]
+      `INSERT INTO table_relationships
+       (connection_id, left_table, left_column, right_table, right_column, join_type)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        connection_id,
+        left_table,
+        left_column,
+        right_table,
+        right_column,
+        join_type,
+      ]
     );
-    const fact = await db.get("SELECT name FROM facts WHERE id = ?", [fact_id]);
-    const dimension = await db.get("SELECT name FROM dimensions WHERE id = ?", [
-      dimension_id,
-    ]);
+
     res.json({
       id: result.lastID,
-      fact_id,
-      fact_name: fact.name,
-      dimension_id,
-      dimension_name: dimension.name,
-      join_table,
-      fact_column,
-      dimension_column,
+      connection_id,
+      left_table,
+      left_column,
+      right_table,
+      right_column,
+      join_type,
     });
   } catch (err) {
-    console.error("Create fact-dimension error:", err.message);
+    console.error("Create table relationship error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-router.put("/fact-dimensions/:id", async (req, res) => {
+router.put("/table-relationships/:id", async (req, res) => {
   try {
-    const { fact_id, dimension_id, join_table, fact_column, dimension_column } =
-      req.body;
-    if (
-      !fact_id ||
-      !dimension_id ||
-      !join_table ||
-      !fact_column ||
-      !dimension_column
-    ) {
+    const {
+      left_table,
+      left_column,
+      right_table,
+      right_column,
+      join_type = "LEFT",
+    } = req.body;
+
+    if (!left_table || !left_column || !right_table || !right_column) {
       return res.status(400).json({
-        error: "Missing required fact-dimension fields",
+        error: "Missing required table relationship fields",
       });
     }
+
     const db = await dbPromise;
     await db.run(
-      `UPDATE fact_dimensions SET
-        fact_id = ?, dimension_id = ?, join_table = ?, fact_column = ?, dimension_column = ?
+      `UPDATE table_relationships SET
+        left_table = ?,
+        left_column = ?,
+        right_table = ?,
+        right_column = ?,
+        join_type = ?
        WHERE id = ?`,
       [
-        fact_id,
-        dimension_id,
-        join_table,
-        fact_column,
-        dimension_column,
+        left_table,
+        left_column,
+        right_table,
+        right_column,
+        join_type,
         req.params.id,
       ]
     );
+
     const updated = await db.get(
-      `SELECT fd.id, fd.fact_id, f.name AS fact_name, fd.dimension_id, d.name AS dimension_name,
-              fd.join_table, fd.fact_column, fd.dimension_column
-       FROM fact_dimensions fd
-       JOIN facts f ON fd.fact_id = f.id
-       JOIN dimensions d ON fd.dimension_id = d.id
-       WHERE fd.id = ?`,
+      "SELECT * FROM table_relationships WHERE id = ?",
       [req.params.id]
     );
+
     res.json(updated);
   } catch (err) {
-    console.error("Update fact-dimension error:", err.message);
+    console.error("Update table relationship error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-router.delete("/fact-dimensions/:id", async (req, res) => {
+router.delete("/table-relationships/:id", async (req, res) => {
   try {
     const db = await dbPromise;
-    await db.run("DELETE FROM fact_dimensions WHERE id = ?", req.params.id);
+    await db.run("DELETE FROM table_relationships WHERE id = ?", req.params.id);
     res.json({});
   } catch (err) {
-    console.error("Delete fact-dimension error:", err.message);
+    console.error("Delete table relationship error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

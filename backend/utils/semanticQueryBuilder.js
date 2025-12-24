@@ -1,440 +1,187 @@
-// utils/semanticQueryBuilder.js
-import { quoteIdentifier } from "../database/connection.js";
+// semanticQueryBuilder.js
+import { dbPromise } from "../database/sqliteConnection.js";
 
-/**
- * Helper to get SQL aggregate function string
- */
-function getSqlAggregate(agg, col) {
-  const upperAgg = agg.toUpperCase();
-  switch (upperAgg) {
-    case "SUM":
-    case "AVG":
-    case "MIN":
-    case "MAX":
-      return `${upperAgg}(${col})`;
-    case "COUNT":
-      return `COUNT(${col})`;
-    case "MEDIAN":
-      return `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${col})`;
-    case "STDDEV":
-      return `STDDEV_POP(${col})`;
-    case "VARIANCE":
-      return `VAR_POP(${col})`;
-    default:
-      return `${upperAgg}(${col})`;
+/* =========================================================
+   Helper: Parse table from column string (table.column)
+========================================================= */
+function getTableFromColumn(expr) {
+  if (!expr) return null;
+
+  // Remove aliases: "AS total"
+  let cleaned = expr.replace(/\s+AS\s+.*/i, "").trim();
+
+  // Extract inside aggregation: SUM(table.col)
+  const aggMatch = cleaned.match(/\(([^)]+)\)/);
+  if (aggMatch) {
+    cleaned = aggMatch[1];
   }
+
+  // Expect table.column
+  if (!cleaned.includes(".")) return null;
+
+  return cleaned.split(".")[0].trim();
 }
 
-/**
- * Helper to clean table names by removing "id|" prefix if present.
- * Example: "2|courses" -> "courses"
- */
-function cleanTableName(name) {
-  if (typeof name === "string" && name.includes("|")) {
-    return name.split("|")[1];
-  }
-  return name;
+/* =========================================================
+   Build relationship graph from table_relationships
+========================================================= */
+function buildRelationshipGraph(relationships) {
+  const graph = {};
+
+  relationships.forEach((r) => {
+    if (!graph[r.left_table]) graph[r.left_table] = [];
+    if (!graph[r.right_table]) graph[r.right_table] = [];
+
+    graph[r.left_table].push({
+      table: r.right_table,
+      on: `${r.left_table}.${r.left_column} = ${r.right_table}.${r.right_column}`,
+      join_type: r.join_type,
+    });
+
+    // reverse edge (needed for traversal)
+    graph[r.right_table].push({
+      table: r.left_table,
+      on: `${r.right_table}.${r.right_column} = ${r.left_table}.${r.left_column}`,
+      join_type: r.join_type,
+    });
+  });
+
+  return graph;
 }
 
-/**
- * Builds a semantic query based on facts, dimensions, or KPIs.
- * * @param {object} params
- * @param {object} params.db - SQLite database instance (for metadata lookups)
- * @param {object} params.client - Database client (for schema lookups)
- * @param {string} params.type - Database type ('postgres' or 'mysql')
- * @param {number} params.connection_id - Connection ID
- * @param {number[]} [params.factIds] - Array of fact IDs
- * @param {number[]} [params.dimensionIds] - Array of dimension IDs
- * @param {number} [params.kpiId] - KPI ID
- * @param {string} [params.aggregation] - Optional override for aggregation
- * * @returns {Promise<{sql: string}>}
- */
+/* =========================================================
+   Find JOIN path using BFS
+========================================================= */
+function findJoinPath(graph, start, target) {
+  if (start === target) return [];
+
+  const queue = [[start, []]];
+  const visited = new Set();
+
+  while (queue.length) {
+    const [current, path] = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    for (const edge of graph[current] || []) {
+      if (edge.table === target) {
+        return [...path, edge];
+      }
+      queue.push([edge.table, [...path, edge]]);
+    }
+  }
+
+  return null;
+}
+
+/* =========================================================
+   MAIN QUERY BUILDER
+========================================================= */
 export async function buildSemanticQuery({
-  db,
-  client,
-  type,
   connection_id,
-  factIds,
-  dimensionIds = [],
-  kpiId,
-  aggregation,
+  base_table,
+  select = [],
+  filters = [],
+  group_by = [],
+  order_by = [],
+  limit,
 }) {
-  let selectClause = "";
-  let fromClause = "";
-  let groupByClause = "";
-  let dimSelects = "";
+  if (!connection_id) throw new Error("connection_id required");
+  if (!base_table) throw new Error("base_table required");
 
-  const uniqueDimensionIds = [...new Set(dimensionIds)];
-  const quote = (name) => quoteIdentifier(name, type);
+  const db = await dbPromise;
 
-  if (kpiId) {
-    // =========================================================
-    // KPI FLOW
-    // =========================================================
-    const kpi = await db.get(
-      "SELECT * FROM kpis WHERE id = ? AND connection_id = ?",
-      [kpiId, connection_id]
-    );
-    if (!kpi) throw new Error("Invalid kpiId");
+  /* ---------------------------------------------
+     Load table relationships
+  --------------------------------------------- */
+  const relationships = await db.all(
+    `SELECT left_table, left_column, right_table, right_column, join_type
+     FROM table_relationships
+     WHERE connection_id = ?`,
+    [connection_id]
+  );
 
-    const facts = await db.all("SELECT * FROM facts WHERE connection_id = ?", [
-      connection_id,
-    ]);
-    if (facts.length === 0) {
-      throw new Error("No facts available to build KPI");
+  const graph = buildRelationshipGraph(relationships);
+
+  /* ---------------------------------------------
+     Determine required tables
+  --------------------------------------------- */
+  const requiredTables = new Set([base_table]);
+
+  [...select, ...filters.map((f) => f.column), ...group_by].forEach((c) => {
+    const t = getTableFromColumn(c);
+    if (t) requiredTables.add(t);
+  });
+
+  /* ---------------------------------------------
+     Build JOIN clauses
+  --------------------------------------------- */
+  const joins = [];
+  const joinedTables = new Set([base_table]);
+
+  for (const table of requiredTables) {
+    if (table === base_table) continue;
+
+    const path = findJoinPath(graph, base_table, table);
+    if (!path) {
+      throw new Error(`No join path found from ${base_table} to ${table}`);
     }
 
-    let expr = kpi.expression;
-    for (const f of facts) {
-      const tableName = cleanTableName(f.table_name); // CLEANED
-      const regex = new RegExp(`\\b${f.name}\\b`, "gi");
-      const col = `${quote(tableName)}.${quote(f.column_name)}`;
-      const aggExpr = getSqlAggregate(f.aggregate_function, col);
-      expr = expr.replace(regex, aggExpr);
+    let current = base_table;
+    for (const step of path) {
+      if (!joinedTables.has(step.table)) {
+        joins.push(`${step.join_type} JOIN ${step.table} ON ${step.on}`);
+        joinedTables.add(step.table);
+      }
+      current = step.table;
     }
-
-    selectClause = `${expr} AS value`;
-
-    // Use cleaned table name for base fact
-    const baseFact = facts[0];
-    const baseFactTable = cleanTableName(baseFact.table_name); // CLEANED
-    fromClause = `${quote(baseFactTable)}`;
-
-    if (uniqueDimensionIds.length > 0) {
-      let dimensions = await db.all(
-        `SELECT d.*, fd.join_table, fd.fact_column, fd.dimension_column 
-         FROM fact_dimensions fd
-         JOIN dimensions d ON fd.dimension_id = d.id
-         WHERE fd.fact_id = ? AND d.id IN (${uniqueDimensionIds
-           .map(() => "?")
-           .join(",")}) AND d.connection_id = ?`,
-        [baseFact.id, ...uniqueDimensionIds, connection_id]
-      );
-
-      // Auto-detect joins if no mapping found
-      if (dimensions.length === 0) {
-        let factColumnsQuery =
-          type === "postgres"
-            ? `SELECT column_name FROM information_schema.columns WHERE table_name = $1`
-            : `SELECT column_name FROM information_schema.columns WHERE table_name = ?`;
-
-        const factColumnsResult = await client.query(factColumnsQuery, [
-          baseFactTable, // Using cleaned table name
-        ]);
-        const factColumns = (
-          factColumnsResult.rows || factColumnsResult[0]
-        ).map((row) => row.column_name);
-
-        for (const dimId of uniqueDimensionIds) {
-          const dim = await db.get(
-            "SELECT * FROM dimensions WHERE id = ? AND connection_id = ?",
-            [dimId, connection_id]
-          );
-          if (!dim) continue;
-
-          const dimTableName = cleanTableName(dim.table_name); // CLEANED
-
-          const dimTableColumnsResult = await client.query(factColumnsQuery, [
-            dimTableName,
-          ]);
-          const dimTableColumns = (
-            dimTableColumnsResult.rows || dimTableColumnsResult[0]
-          ).map((row) => row.column_name);
-
-          if (!dimTableColumns.includes(dim.column_name)) continue;
-
-          const commonColumns = factColumns.filter((col) =>
-            dimTableColumns.includes(col)
-          );
-
-          if (commonColumns.length > 0) {
-            const commonCol = commonColumns[0];
-            dimensions.push({
-              ...dim,
-              table_name: dimTableName, // Update with cleaned name
-              join_table: dimTableName,
-              fact_column: commonCol,
-              dimension_column: commonCol,
-            });
-          } else if (dimTableName === baseFactTable) {
-            dimensions.push({
-              ...dim,
-              table_name: dimTableName,
-              join_table: dimTableName,
-              fact_column: dim.column_name,
-              dimension_column: dim.column_name,
-            });
-          }
-        }
-      }
-
-      if (dimensions.length === 0) {
-        throw new Error("No valid dimensions found");
-      }
-
-      // Group dimensions by table and join each table only once
-      const tableToDimensions = {};
-      dimensions.forEach((d) => {
-        // Ensure properties are cleaned
-        d.table_name = cleanTableName(d.table_name);
-        d.join_table = cleanTableName(d.join_table);
-
-        const table = d.join_table || d.table_name;
-        if (!tableToDimensions[table]) {
-          tableToDimensions[table] = [];
-        }
-        tableToDimensions[table].push(d);
-      });
-
-      const dimColumns = [];
-      const seenJoins = new Set();
-
-      // Add dimension columns to SELECT clause
-      dimensions.forEach((d) => {
-        const table = d.join_table || d.table_name;
-        const col = `${quote(table)}.${quote(d.column_name)} AS ${quote(
-          d.name
-        )}`;
-        if (!dimColumns.includes(col)) {
-          dimColumns.push(col);
-        }
-      });
-
-      // Build joins - only one join per table
-      Object.keys(tableToDimensions).forEach((table) => {
-        if (table === baseFactTable) return; // Skip if same as base table
-
-        const dimsForTable = tableToDimensions[table];
-        const firstDim = dimsForTable[0];
-
-        const leftCol = `${quote(table)}.${quote(firstDim.dimension_column)}`;
-        const rightCol = `${quote(baseFactTable)}.${quote(
-          firstDim.fact_column
-        )}`;
-
-        // Conditional Casting
-        const joinCondition =
-          type === "postgres"
-            ? `${leftCol}::text = ${rightCol}::text`
-            : `${leftCol} = ${rightCol}`;
-
-        if (!seenJoins.has(table)) {
-          seenJoins.add(table);
-          fromClause += ` LEFT JOIN ${quote(table)} ON ${joinCondition}`;
-        }
-      });
-
-      if (dimColumns.length > 0) {
-        dimSelects = dimColumns.join(", ");
-        // Group by unique table.column combinations
-        groupByClause = dimensions
-          .map(
-            (d) =>
-              `${quote(d.join_table || d.table_name)}.${quote(d.column_name)}`
-          )
-          .filter((v, i, a) => a.indexOf(v) === i)
-          .join(", ");
-      }
-    }
-
-    const sql = `
-      SELECT ${selectClause}${dimSelects ? ", " + dimSelects : ""}
-      FROM ${fromClause}
-      ${groupByClause ? "GROUP BY " + groupByClause : ""}
-    `.trim();
-
-    return { sql };
-  } else if (factIds && factIds.length > 0) {
-    // =========================================================
-    // FACT IDS FLOW
-    // =========================================================
-    const facts = await db.all(
-      `SELECT * FROM facts WHERE id IN (${factIds
-        .map(() => "?")
-        .join(",")}) AND connection_id = ?`,
-      [...factIds, connection_id]
-    );
-    if (facts.length === 0) {
-      throw new Error("No valid facts found");
-    }
-
-    // Clean fact table names immediately
-    facts.forEach((f) => (f.table_name = cleanTableName(f.table_name)));
-
-    const factTables = [...new Set(facts.map((f) => f.table_name))];
-
-    let dimensions = [];
-    if (uniqueDimensionIds.length > 0) {
-      dimensions = await db.all(
-        `SELECT d.*, fd.join_table, fd.fact_column, fd.dimension_column 
-         FROM fact_dimensions fd
-         JOIN dimensions d ON fd.dimension_id = d.id
-         WHERE fd.fact_id IN (${factIds
-           .map(() => "?")
-           .join(",")}) AND d.id IN (${uniqueDimensionIds
-          .map(() => "?")
-          .join(",")}) AND d.connection_id = ?`,
-        [...factIds, ...uniqueDimensionIds, connection_id]
-      );
-
-      // Clean dimension table names immediately
-      dimensions.forEach((d) => {
-        d.table_name = cleanTableName(d.table_name);
-        d.join_table = cleanTableName(d.join_table);
-      });
-
-      const factColumnsByTable = {};
-      let columnsQuery =
-        type === "postgres"
-          ? `SELECT column_name FROM information_schema.columns WHERE table_name = $1`
-          : `SELECT column_name FROM information_schema.columns WHERE table_name = ?`;
-
-      for (const table of factTables) {
-        const factColumnsResult = await client.query(columnsQuery, [table]);
-        factColumnsByTable[table] = (
-          factColumnsResult.rows || factColumnsResult[0]
-        ).map((row) => row.column_name);
-      }
-
-      for (const dimId of uniqueDimensionIds) {
-        const existingDim = dimensions.find((d) => d.id === dimId);
-        if (
-          existingDim &&
-          facts.every((f) =>
-            dimensions.some((d) => d.id === dimId && d.fact_id === f.id)
-          )
-        )
-          continue;
-
-        const dim = await db.get(
-          "SELECT * FROM dimensions WHERE id = ? AND connection_id = ?",
-          [dimId, connection_id]
-        );
-        if (!dim) continue;
-
-        const dimTableName = cleanTableName(dim.table_name); // CLEANED
-
-        const dimTableColumnsResult = await client.query(columnsQuery, [
-          dimTableName,
-        ]);
-        const dimTableColumns = (
-          dimTableColumnsResult.rows || dimTableColumnsResult[0]
-        ).map((row) => row.column_name);
-
-        if (!dimTableColumns.includes(dim.column_name)) continue;
-
-        for (const fact of facts) {
-          const factColumns = factColumnsByTable[fact.table_name];
-          const commonColumns = factColumns.filter((col) =>
-            dimTableColumns.includes(col)
-          );
-
-          if (commonColumns.length > 0) {
-            const commonCol = commonColumns[0];
-            dimensions.push({
-              ...dim,
-              table_name: dimTableName,
-              join_table: dimTableName,
-              fact_column: commonCol,
-              dimension_column: commonCol,
-              fact_id: fact.id,
-            });
-          } else if (dimTableName === fact.table_name) {
-            dimensions.push({
-              ...dim,
-              table_name: dimTableName,
-              join_table: dimTableName,
-              fact_column: dim.column_name,
-              dimension_column: dim.column_name,
-              fact_id: fact.id,
-            });
-          }
-        }
-      }
-    }
-
-    if (uniqueDimensionIds.length > 0 && dimensions.length === 0) {
-      throw new Error("No valid dimensions found");
-    }
-
-    const baseFact = facts[0]; // Already cleaned
-    fromClause = `${quote(baseFact.table_name)}`;
-
-    // Group dimensions by table and join each table only once
-    const tableToDimensions = {};
-    dimensions.forEach((d) => {
-      const table = d.join_table || d.table_name;
-      if (!tableToDimensions[table]) {
-        tableToDimensions[table] = [];
-      }
-      tableToDimensions[table].push(d);
-    });
-
-    const dimColumns = [];
-    const seenJoins = new Set();
-
-    // Add dimension columns to SELECT clause
-    dimensions.forEach((d) => {
-      const table = d.join_table || d.table_name;
-      const col = `${quote(table)}.${quote(d.column_name)} AS ${quote(d.name)}`;
-      if (!dimColumns.includes(col)) {
-        dimColumns.push(col);
-      }
-    });
-
-    // Build joins - only one join per table
-    Object.keys(tableToDimensions).forEach((table) => {
-      if (table === baseFact.table_name) return; // Skip if same as base table
-
-      const dimsForTable = tableToDimensions[table];
-      const firstDim = dimsForTable[0];
-
-      const leftCol = `${quote(table)}.${quote(firstDim.dimension_column)}`;
-      const rightCol = `${quote(baseFact.table_name)}.${quote(
-        firstDim.fact_column
-      )}`;
-
-      // Conditional Casting
-      const joinCondition =
-        type === "postgres"
-          ? `${leftCol}::text = ${rightCol}::text`
-          : `${leftCol} = ${rightCol}`;
-
-      if (!seenJoins.has(table)) {
-        seenJoins.add(table);
-        fromClause += ` LEFT JOIN ${quote(table)} ON ${joinCondition}`;
-      }
-    });
-
-    const aggFunc = aggregation || facts[0].aggregate_function || "SUM";
-    selectClause = facts
-      .map((f) => {
-        const col = `${quote(f.table_name)}.${quote(f.column_name)}`;
-        const aggExpr = getSqlAggregate(aggFunc, col);
-        return `${aggExpr} AS ${quote(f.name)}`;
-      })
-      .join(", ");
-
-    if (dimColumns.length > 0) {
-      dimSelects = dimColumns.join(", ");
-      // Group by unique table.column combinations
-      groupByClause = dimensions
-        .map(
-          (d) =>
-            `${quote(d.join_table || d.table_name)}.${quote(d.column_name)}`
-        )
-        .filter((v, i, a) => a.indexOf(v) === i)
-        .join(", ");
-    }
-
-    const sql = `
-      SELECT ${selectClause}${dimSelects ? ", " + dimSelects : ""}
-      FROM ${fromClause}
-      ${groupByClause ? "GROUP BY " + groupByClause : ""}
-    `.trim();
-
-    return { sql };
-  } else {
-    throw new Error("factIds or kpiId required");
   }
+
+  /* ---------------------------------------------
+     SELECT
+  --------------------------------------------- */
+  const selectClause =
+    select.length > 0 ? select.join(", ") : `${base_table}.*`;
+
+  let sql = `SELECT ${selectClause} FROM ${base_table}`;
+
+  if (joins.length) {
+    sql += " " + joins.join(" ");
+  }
+
+  /* ---------------------------------------------
+     WHERE
+  --------------------------------------------- */
+  const params = [];
+  if (filters.length) {
+    const whereParts = filters.map((f) => {
+      params.push(f.value);
+      return `${f.column} ${f.operator} ?`;
+    });
+    sql += ` WHERE ${whereParts.join(" AND ")}`;
+  }
+
+  /* ---------------------------------------------
+     GROUP BY
+  --------------------------------------------- */
+  if (group_by.length) {
+    sql += ` GROUP BY ${group_by.join(", ")}`;
+  }
+
+  /* ---------------------------------------------
+     ORDER BY
+  --------------------------------------------- */
+  if (order_by.length) {
+    const parts = order_by.map((o) => `${o.column} ${o.direction || "ASC"}`);
+    sql += ` ORDER BY ${parts.join(", ")}`;
+  }
+
+  /* ---------------------------------------------
+     LIMIT
+  --------------------------------------------- */
+  if (limit) {
+    sql += ` LIMIT ${limit}`;
+  }
+
+  return { sql, params };
 }

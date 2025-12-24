@@ -84,6 +84,27 @@ const SCHEMAS = {
     )
   `,
 
+  table_relationships: `
+    CREATE TABLE IF NOT EXISTS table_relationships (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      connection_id INTEGER NOT NULL,
+      left_table TEXT NOT NULL,
+      left_column TEXT NOT NULL,
+      right_table TEXT NOT NULL,
+      right_column TEXT NOT NULL,
+      join_type TEXT DEFAULT 'LEFT', -- LEFT | INNER | RIGHT
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (
+        connection_id,
+        left_table,
+        left_column,
+        right_table,
+        right_column
+      ),
+      FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
+    )
+  `,
+
   kpis: `
     CREATE TABLE IF NOT EXISTS kpis (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

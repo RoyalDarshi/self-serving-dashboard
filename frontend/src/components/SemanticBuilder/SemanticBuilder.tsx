@@ -1,6 +1,14 @@
 // src/components/SemanticBuilder.tsx
 import React, { useState, useEffect } from "react";
-import { Database, BarChart3, Layers, Target, Zap, Table, AlertCircle } from "lucide-react";
+import {
+  Database,
+  BarChart3,
+  Layers,
+  Target,
+  Zap,
+  Table,
+  AlertCircle,
+} from "lucide-react";
 import { apiService } from "../../services/api";
 import FactForm from "./FactForm";
 import DimensionForm from "./DimensionForm";
@@ -37,18 +45,16 @@ interface Dimension {
   // NEW FIELD
   connection_name?: string;
 }
-interface FactDimension {
+interface TableRelationship {
   id: number;
-  fact_id: number;
-  fact_name: string;
-  dimension_id: number;
-  dimension_name: string;
-  join_table: string;
-  fact_column: string;
-  dimension_column: string;
-  // NEW FIELD
+  left_table: string;
+  left_column: string;
+  right_table: string;
+  right_column: string;
+  join_type: "LEFT" | "INNER" | "RIGHT";
   connection_name?: string;
 }
+
 interface KPI {
   id: number;
   name: string;
@@ -85,7 +91,9 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [facts, setFacts] = useState<Fact[]>([]);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
-  const [factDimensions, setFactDimensions] = useState<FactDimension[]>([]);
+  const [tableRelationships, setTableRelationships] = useState<
+    TableRelationship[]
+  >([]);
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -97,8 +105,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const [editingDimension, setEditingDimension] = useState<Dimension | null>(
     null
   );
-  const [editingFactDimension, setEditingFactDimension] =
-    useState<FactDimension | null>(null);
+  const [editingTableRelationship, setEditingTableRelationship] =
+    useState<TableRelationship | null>(null);
   const [editingKPI, setEditingKPI] = useState<KPI | null>(null);
 
   // Form states
@@ -127,6 +135,12 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const [kpiInsertTable, setKpiInsertTable] = useState("");
   const [kpiInsertColumn, setKpiInsertColumn] = useState("");
 
+  const [leftTable, setLeftTable] = useState("");
+  const [leftColumn, setLeftColumn] = useState("");
+  const [rightTable, setRightTable] = useState("");
+  const [rightColumn, setRightColumn] = useState("");
+  const [joinType, setJoinType] = useState<"LEFT" | "INNER" | "RIGHT">("LEFT");
+
   const isCreationTab = activeTab === "facts" || activeTab === "dimensions";
 
   // Fetch data
@@ -135,7 +149,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       setSchemas([]);
       setFacts([]);
       setDimensions([]);
-      setFactDimensions([]);
+      setTableRelationships([]);
       setKpis([]);
       return;
     }
@@ -205,11 +219,11 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
 
       // Fetch and Enrich Mappings
       if (allFacts.length && allDimensions.length) {
-        let allMappings: FactDimension[] = [];
+        let allMappings: TableRelationship[] = [];
 
         const mappingsResults = await Promise.all(
           selectedConnectionIds.map((id) =>
-            apiService.getFactDimensions(id).catch(() => [])
+            apiService.getTableRelationships(id).catch(() => [])
           )
         );
         allMappings = mappingsResults.flat();
@@ -218,27 +232,31 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
           (m, index, self) => index === self.findIndex((t) => t.id === m.id)
         );
 
-        const enrichedFactDimensions: FactDimension[] = uniqueAll.map((m) => {
-          const fact = allFacts.find((f) => f.id === m.fact_id);
-          const dimension = allDimensions.find((d) => d.id === m.dimension_id);
+        const enrichedTableRelationships: TableRelationship[] = uniqueAll.map(
+          (m) => {
+            const fact = allFacts.find((f) => f.id === m.fact_id);
+            const dimension = allDimensions.find(
+              (d) => d.id === m.dimension_id
+            );
 
-          // Determine the connection name for the mapping display (using the fact's connection is a good proxy)
-          const connection_name =
-            fact?.connection_name ??
-            dimension?.connection_name ??
-            "Unknown Connection";
+            // Determine the connection name for the mapping display (using the fact's connection is a good proxy)
+            const connection_name =
+              fact?.connection_name ??
+              dimension?.connection_name ??
+              "Unknown Connection";
 
-          return {
-            ...m,
-            fact_name: fact?.name ?? "Unknown Fact",
-            dimension_name: dimension?.name ?? "Unknown Dimension",
-            connection_name: connection_name,
-          };
-        });
+            return {
+              ...m,
+              fact_name: fact?.name ?? "Unknown Fact",
+              dimension_name: dimension?.name ?? "Unknown Dimension",
+              connection_name: connection_name,
+            };
+          }
+        );
 
-        setFactDimensions(enrichedFactDimensions);
+        setTableRelationships(enrichedTableRelationships);
       } else {
-        setFactDimensions([]);
+        setTableRelationships([]);
       }
     };
 
@@ -268,14 +286,14 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   }, [mappingDimensionId, dimensions]);
 
   useEffect(() => {
-    if (editingFactDimension) {
-      setMappingFactId(String(editingFactDimension.fact_id));
-      setMappingDimensionId(String(editingFactDimension.dimension_id));
-      setMappingJoinTable(editingFactDimension.join_table);
-      setMappingFactColumn(editingFactDimension.fact_column);
-      setMappingDimensionColumn(editingFactDimension.dimension_column);
+    if (editingTableRelationship) {
+      setMappingFactId(String(editingTableRelationship.fact_id));
+      setMappingDimensionId(String(editingTableRelationship.dimension_id));
+      setMappingJoinTable(editingTableRelationship.join_table);
+      setMappingFactColumn(editingTableRelationship.fact_column);
+      setMappingDimensionColumn(editingTableRelationship.dimension_column);
     }
-  }, [editingFactDimension]);
+  }, [editingTableRelationship]);
 
   const clearForm = () => {
     setFactName("");
@@ -299,7 +317,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     setKpiInsertColumn("");
     setEditingFact(null);
     setEditingDimension(null);
-    setEditingFactDimension(null);
+    setEditingTableRelationship(null);
     setEditingKPI(null);
   };
 
@@ -434,94 +452,68 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
 
   // Mapping handlers
   const handleCreateMapping = async () => {
-    if (
-      !mappingFactId ||
-      !mappingDimensionId ||
-      !mappingJoinTable ||
-      !mappingFactColumn ||
-      !mappingDimensionColumn
-    )
+    if (!leftTable || !leftColumn || !rightTable || !rightColumn)
       return setError("Fill all mapping fields");
-    const r = await apiService.createFactDimension({
-      fact_id: Number(mappingFactId),
-      dimension_id: Number(mappingDimensionId),
-      join_table: mappingJoinTable,
-      fact_column: mappingFactColumn,
-      dimension_column: mappingDimensionColumn,
+
+    const r = await apiService.createTableRelationship({
+      connection_id: selectedConnId,
+      left_table: leftTable,
+      left_column: leftColumn,
+      right_table: rightTable,
+      right_column: rightColumn,
+      join_type: joinType,
     });
+
     if (r.success && r.data) {
-      const fact = facts.find((f) => f.id === Number(mappingFactId));
-      const dimension = dimensions.find(
-        (d) => d.id === Number(mappingDimensionId)
-      );
-      const connection_name =
-        fact?.connection_name ??
-        dimension?.connection_name ??
-        "Unknown Connection";
-
-      const newMapping: FactDimension = {
-        ...r.data!,
-        fact_name: fact?.name ?? "Unknown Fact",
-        dimension_name: dimension?.name ?? "Unknown Dimension",
-        connection_name: connection_name,
-      };
-
-      setFactDimensions((p) => [...p, newMapping]);
+      setTableRelationships((p) => [...p, r.data]);
       clearForm();
-      setSuccess(`Mapping created`);
-    } else setError(r.error ?? "Failed");
+      setSuccess("Mapping created");
+    }
   };
 
   const handleUpdateMapping = async () => {
-    if (!editingFactDimension) return setError("No mapping selected");
-    const r = await apiService.updateFactDimension(editingFactDimension.id, {
-      fact_id: Number(mappingFactId),
-      dimension_id: Number(mappingDimensionId),
-      join_table: mappingJoinTable,
-      fact_column: mappingFactColumn,
-      dimension_column: mappingDimensionColumn,
-    });
+    if (!editingTableRelationship) return;
+
+    const r = await apiService.updateTableRelationship(
+      editingTableRelationship.id,
+      {
+        left_table: leftTable,
+        left_column: leftColumn,
+        right_table: rightTable,
+        right_column: rightColumn,
+        join_type: joinType,
+      }
+    );
+
     if (r.success && r.data) {
-      const fact = facts.find((f) => f.id === Number(mappingFactId));
-      const dimension = dimensions.find(
-        (d) => d.id === Number(mappingDimensionId)
-      );
-      const connection_name =
-        fact?.connection_name ??
-        dimension?.connection_name ??
-        "Unknown Connection";
-
-      const updatedMapping: FactDimension = {
-        ...r.data!,
-        fact_name: fact?.name ?? "Unknown Fact",
-        dimension_name: dimension?.name ?? "Unknown Dimension",
-        connection_name: connection_name,
-      };
-
-      setFactDimensions((p) =>
-        p.map((m) => (m.id === editingFactDimension.id ? updatedMapping : m))
+      setTableRelationships((p) =>
+        p.map((m) => (m.id === editingTableRelationship.id ? r.data : m))
       );
       clearForm();
-      setSuccess(`Updated`);
-    } else setError(r.error ?? "Failed");
+      setSuccess("Updated");
+    }
   };
 
-  const handleDeleteMapping = async (id: number, fact: string, dim: string) => {
-    if (!confirm(`Delete mapping ${fact} to ${dim}?`)) return;
-    const r = await apiService.deleteFactDimension(id);
-    if (r.success) {
-      setFactDimensions((p) => p.filter((m) => m.id !== id));
-      setSuccess(`Deleted`);
-    } else setError(r.error ?? "Failed");
+  const handleDeleteMapping = async (id: number) => {
+    if (!confirm("Delete relationship?")) return;
+    await apiService.deleteTableRelationship(id);
+    setTableRelationships((p) => p.filter((m) => m.id !== id));
   };
 
-  const startEditMapping = (m: FactDimension) => setEditingFactDimension(m);
+  const startEditMapping = (m: TableRelationship) => {
+    setEditingTableRelationship(m);
+    setLeftTable(m.left_table);
+    setLeftColumn(m.left_column);
+    setRightTable(m.right_table);
+    setRightColumn(m.right_column);
+    setJoinType(m.join_type);
+  };
 
   const handleAutoMap = async () => {
     if (!selectedConnectionIds.length)
       return setError("Select at least one connection");
 
-    let all: FactDimension[] = [];
+    let all: TableRelationship[] = [];
     let ok = 0,
       err = 0;
     const allFacts = facts;
@@ -551,7 +543,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     const uniqueAll = all.filter(
       (m, index, self) => index === self.findIndex((t) => t.id === m.id)
     );
-    setFactDimensions(uniqueAll);
+    setTableRelationships(uniqueAll);
     setSuccess(ok ? `Auto-mapped ${uniqueAll.length} relations` : "");
     if (err) setError(`${err} connection(s) failed`);
   };
@@ -630,8 +622,8 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const filteredDimensions = dimensions.filter((d) =>
     d.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  const filteredMappings = factDimensions.filter((m) =>
-    `${m.fact_name} ${m.dimension_name} ${m.connection_name || ""}` // Filter by connection name too
+  const filteredMappings = tableRelationships.filter((m) =>
+    `${m.left_table} ${m.left_column} ${m.right_table} ${m.right_column}`
       .toLowerCase()
       .includes(searchTerm.toLowerCase())
   );
@@ -669,10 +661,11 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === tab.id
-                  ? "bg-blue-600 text-white shadow-md"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-blue-600"
-                  }`}
+                className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 text-sm font-semibold rounded-lg transition-all duration-300 ${
+                  activeTab === tab.id
+                    ? "bg-blue-600 text-white shadow-md"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-blue-600"
+                }`}
               >
                 <tab.icon className="w-5 h-5" />
                 <span>{tab.label}</span>
@@ -728,23 +721,21 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                 {activeTab === "mappings" && (
                   <MappingForm
                     schemas={schemas}
-                    facts={facts}
-                    dimensions={dimensions}
-                    mappingFactId={mappingFactId}
-                    mappingDimensionId={mappingDimensionId}
-                    mappingJoinTable={mappingJoinTable}
-                    mappingFactColumn={mappingFactColumn}
-                    mappingDimensionColumn={mappingDimensionColumn}
-                    setMappingFactId={setMappingFactId}
-                    setMappingDimensionId={setMappingDimensionId}
-                    setMappingJoinTable={setMappingJoinTable}
-                    setMappingFactColumn={setMappingFactColumn}
-                    setMappingDimensionColumn={setMappingDimensionColumn}
+                    editingRelationship={editingTableRelationship}
+                    leftTable={leftTable}
+                    leftColumn={leftColumn}
+                    rightTable={rightTable}
+                    rightColumn={rightColumn}
+                    joinType={joinType}
+                    setLeftTable={setLeftTable}
+                    setLeftColumn={setLeftColumn}
+                    setRightTable={setRightTable}
+                    setRightColumn={setRightColumn}
+                    setJoinType={setJoinType}
                     onCreate={handleCreateMapping}
                     onUpdate={handleUpdateMapping}
                     onCancel={clearForm}
                     onAutoMap={handleAutoMap}
-                    editingFactDimension={editingFactDimension}
                     selectedConnectionIds={selectedConnectionIds}
                   />
                 )}
@@ -780,18 +771,18 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                 activeTab={activeTab}
                 facts={facts}
                 dimensions={dimensions}
-                factDimensions={factDimensions}
+                tableRelationships={tableRelationships}
                 kpis={kpis}
                 filteredFacts={filteredFacts}
                 filteredDimensions={filteredDimensions}
-                filteredFactDimensions={filteredMappings}
+                filteredTableRelationships={filteredMappings}
                 filteredKpis={filteredKpis}
                 onEditFact={startEditFact}
                 onDeleteFact={handleDeleteFact}
                 onEditDimension={startEditDimension}
                 onDeleteDimension={handleDeleteDimension}
-                onEditFactDimension={startEditMapping}
-                onDeleteFactDimension={handleDeleteMapping}
+                onEditTableRelationship={startEditMapping}
+                onDeleteTableRelationship={(id) => handleDeleteMapping(id)}
                 onEditKPI={startEditKPI}
                 onDeleteKPI={handleDeleteKPI}
               />

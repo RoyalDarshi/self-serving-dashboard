@@ -11,6 +11,8 @@ import {
 import Card from "../ui/Card";
 import Button from "../ui/Button";
 
+/* ================= TYPES ================= */
+
 interface Fact {
   id: number;
   name: string;
@@ -26,16 +28,13 @@ interface Dimension {
   column_name: string;
 }
 
-interface FactDimension {
+interface TableRelationship {
   id: number;
-  fact_id: number;
-  dimension_id: number;
-  join_table: string;
-  fact_column: string;
-  dimension_column: string;
-  fact_name: string;
-  dimension_name: string;
-  // NEW FIELD
+  left_table: string;
+  left_column: string;
+  right_table: string;
+  right_column: string;
+  join_type: "LEFT" | "INNER" | "RIGHT";
   connection_name?: string;
 }
 
@@ -48,52 +47,67 @@ interface KPI {
 
 interface DataListProps {
   activeTab: string;
+
   facts: Fact[];
   dimensions: Dimension[];
-  factDimensions: FactDimension[];
+  tableRelationships: TableRelationship[];
   kpis: KPI[];
+
   filteredFacts: Fact[];
   filteredDimensions: Dimension[];
-  filteredFactDimensions: FactDimension[];
+  filteredTableRelationships: TableRelationship[];
   filteredKpis: KPI[];
+
   onEditFact: (fact: Fact) => void;
   onDeleteFact: (id: number, name: string) => void;
+
   onEditDimension: (dimension: Dimension) => void;
   onDeleteDimension: (id: number, name: string) => void;
-  onEditFactDimension: (mapping: FactDimension) => void;
-  onDeleteFactDimension: (id: number, fact: string, dim: string) => void;
+
+  onEditTableRelationship: (mapping: TableRelationship) => void;
+  onDeleteTableRelationship: (id: number) => void;
+
   onEditKPI: (kpi: KPI) => void;
   onDeleteKPI: (id: number, name: string) => void;
 }
 
+/* ================= COMPONENT ================= */
+
 const DataList: React.FC<DataListProps> = ({
   activeTab,
+
   facts,
   dimensions,
-  factDimensions,
+  tableRelationships,
   kpis,
+
   filteredFacts,
   filteredDimensions,
-  filteredFactDimensions,
+  filteredTableRelationships,
   filteredKpis,
+
   onEditFact,
   onDeleteFact,
+
   onEditDimension,
   onDeleteDimension,
-  onEditFactDimension,
-  onDeleteFactDimension,
+
+  onEditTableRelationship,
+  onDeleteTableRelationship,
+
   onEditKPI,
   onDeleteKPI,
 }) => (
   <div className="lg:col-span-2">
     <Card className="p-6">
+      {/* HEADER */}
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-lg font-semibold text-gray-900">
           {activeTab === "facts" && `Facts (${filteredFacts.length})`}
           {activeTab === "dimensions" &&
             `Dimensions (${filteredDimensions.length})`}
           {activeTab === "mappings" &&
-            `Mappings (${filteredFactDimensions.length})`}
+            `Table Relationships (${filteredTableRelationships.length})`}
           {activeTab === "kpis" && `KPIs (${filteredKpis.length})`}
         </h3>
         <div className="flex items-center space-x-2 text-sm text-gray-500">
@@ -101,26 +115,25 @@ const DataList: React.FC<DataListProps> = ({
           <span>Filtered by search</span>
         </div>
       </div>
+
+      {/* LIST */}
       <div className="space-y-3 max-h-96 overflow-y-auto">
+        {/* FACTS */}
         {activeTab === "facts" &&
           filteredFacts.map((fact) => (
             <div
               key={fact.id}
-              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100"
             >
-              <div className="flex-1">
-                <h4 className="font-medium text-gray-900">{fact.name}</h4>
+              <div>
+                <h4 className="font-medium">{fact.name}</h4>
                 <p className="text-sm text-gray-600">
                   {fact.aggregate_function}({fact.table_name}.{fact.column_name}
                   )
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={() => onEditFact(fact)}
-                  variant="secondary"
-                  size="sm"
-                >
+              <div className="flex gap-2">
+                <Button onClick={() => onEditFact(fact)} size="sm">
                   <Edit2 className="w-4 h-4" />
                 </Button>
                 <Button
@@ -133,30 +146,26 @@ const DataList: React.FC<DataListProps> = ({
               </div>
             </div>
           ))}
+
+        {/* DIMENSIONS */}
         {activeTab === "dimensions" &&
-          filteredDimensions.map((dimension) => (
+          filteredDimensions.map((d) => (
             <div
-              key={dimension.id}
-              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+              key={d.id}
+              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100"
             >
-              <div className="flex-1">
-                <h4 className="font-medium text-gray-900">{dimension.name}</h4>
+              <div>
+                <h4 className="font-medium">{d.name}</h4>
                 <p className="text-sm text-gray-600">
-                  {dimension.table_name}.{dimension.column_name}
+                  {d.table_name}.{d.column_name}
                 </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={() => onEditDimension(dimension)}
-                  variant="secondary"
-                  size="sm"
-                >
+              <div className="flex gap-2">
+                <Button onClick={() => onEditDimension(d)} size="sm">
                   <Edit2 className="w-4 h-4" />
                 </Button>
                 <Button
-                  onClick={() =>
-                    onDeleteDimension(dimension.id, dimension.name)
-                  }
+                  onClick={() => onDeleteDimension(d.id, d.name)}
                   variant="danger"
                   size="sm"
                 >
@@ -165,46 +174,35 @@ const DataList: React.FC<DataListProps> = ({
               </div>
             </div>
           ))}
-        {/* Updated Mappings Rendering */}
+
+        {/* TABLE RELATIONSHIPS */}
         {activeTab === "mappings" &&
-          filteredFactDimensions.map((mapping) => (
+          filteredTableRelationships.map((m) => (
             <div
-              key={mapping.id}
-              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+              key={m.id}
+              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100"
             >
-              <div className="flex-1">
+              <div>
                 <h4 className="font-medium text-gray-900">
-                  {mapping.fact_name || "Unknown Fact"} →{" "}
-                  {mapping.dimension_name || "Unknown Dimension"}
+                  {m.left_table}.{m.left_column} → {m.right_table}.
+                  {m.right_column}
                 </h4>
-                {mapping.connection_name && (
+
+                <p className="text-sm text-gray-600 mt-1">{m.join_type} JOIN</p>
+
+                {/* {m.connection_name && (
                   <p className="text-xs text-blue-600 font-semibold mt-0.5">
-                    Connection: {mapping.connection_name}
+                    Connection: {m.connection_name}
                   </p>
-                )}
-                <p className="text-sm text-gray-600 mt-1">
-                  Join on: {mapping.join_table}.{mapping.dimension_column} ={" "}
-                  {facts.find((f) => f.id === mapping.fact_id)?.table_name ||
-                    "Unknown Table"}
-                  .{mapping.fact_column}
-                </p>
+                )} */}
               </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={() => onEditFactDimension(mapping)}
-                  variant="secondary"
-                  size="sm"
-                >
+
+              <div className="flex gap-2">
+                <Button onClick={() => onEditTableRelationship(m)} size="sm">
                   <Edit2 className="w-4 h-4" />
                 </Button>
                 <Button
-                  onClick={() =>
-                    onDeleteFactDimension(
-                      mapping.id,
-                      mapping.fact_name || "Unknown",
-                      mapping.dimension_name || "Unknown"
-                    )
-                  }
+                  onClick={() => onDeleteTableRelationship(m.id)}
                   variant="danger"
                   size="sm"
                 >
@@ -213,33 +211,29 @@ const DataList: React.FC<DataListProps> = ({
               </div>
             </div>
           ))}
+
+        {/* KPIS */}
         {activeTab === "kpis" &&
-          filteredKpis.map((kpi) => (
+          filteredKpis.map((k) => (
             <div
-              key={kpi.id}
-              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+              key={k.id}
+              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100"
             >
-              <div className="flex-1">
-                <h4 className="font-medium text-gray-900">{kpi.name}</h4>
-                <p className="text-sm text-gray-600 font-mono">
-                  {kpi.expression}
+              <div>
+                <h4 className="font-medium">{k.name}</h4>
+                <p className="text-sm font-mono text-gray-600">
+                  {k.expression}
                 </p>
-                {kpi.description && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    {kpi.description}
-                  </p>
+                {k.description && (
+                  <p className="text-xs text-gray-500 mt-1">{k.description}</p>
                 )}
               </div>
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={() => onEditKPI(kpi)}
-                  variant="secondary"
-                  size="sm"
-                >
+              <div className="flex gap-2">
+                <Button onClick={() => onEditKPI(k)} size="sm">
                   <Edit2 className="w-4 h-4" />
                 </Button>
                 <Button
-                  onClick={() => onDeleteKPI(kpi.id, kpi.name)}
+                  onClick={() => onDeleteKPI(k.id, k.name)}
                   variant="danger"
                   size="sm"
                 >
@@ -249,36 +243,13 @@ const DataList: React.FC<DataListProps> = ({
             </div>
           ))}
       </div>
-      {activeTab === "facts" && filteredFacts.length === 0 && (
-        <div className="text-center py-12">
-          <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">
-            No facts found. Create your first fact to get started.
-          </p>
-        </div>
-      )}
-      {activeTab === "dimensions" && filteredDimensions.length === 0 && (
-        <div className="text-center py-12">
-          <Layers className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">
-            No dimensions found. Create your first dimension to get started.
-          </p>
-        </div>
-      )}
-      {activeTab === "mappings" && filteredFactDimensions.length === 0 && (
+
+      {/* EMPTY STATES */}
+      {activeTab === "mappings" && filteredTableRelationships.length === 0 && (
         <div className="text-center py-12">
           <Target className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-500">
-            No mappings found. Create relationships between facts and
-            dimensions.
-          </p>
-        </div>
-      )}
-      {activeTab === "kpis" && filteredKpis.length === 0 && (
-        <div className="text-center py-12">
-          <Zap className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">
-            No KPIs found. Create your first KPI to get started.
+            No table relationships found. Create your first one.
           </p>
         </div>
       )}

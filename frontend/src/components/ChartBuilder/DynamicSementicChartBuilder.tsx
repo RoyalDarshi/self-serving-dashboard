@@ -206,8 +206,17 @@ const DynamicSemanticChartBuilder: React.FC<
         dimensionIds.push(groupByDimension.id);
       }
 
+      const baseTable = yAxisFacts[0]?.table_name;
+
+      if (!baseTable) {
+        setError("Unable to determine base table from selected fact");
+        setLoading(false);
+        return;
+      }
+
       const body = {
         connection_id: selectedConnectionId,
+        base_table: baseTable, // ✅ ADD THIS
         factIds: yAxisFacts.map((f) => f.id),
         dimensionIds,
         aggregation: aggregationType,

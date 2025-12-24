@@ -6,80 +6,81 @@ import { buildSemanticQuery } from "../utils/semanticQueryBuilder.js";
 
 const router = Router();
 
-/**
- * Builds and executes a dynamic SQL query based on facts + dimensions or KPI + dimensions.
- * Handles auto-join detection if no explicit mappings.
- * @route POST /query
- * @param {number} connection_id - ID of the connection to use (required).
- * @param {number[]} factIds - Array of fact IDs (required for fact flow).
- * @param {number[]} dimensionIds - Array of dimension IDs.
- * @param {string} aggregation - Aggregation function (e.g., SUM).
- * @param {number} kpiId - ID of the KPI (required for KPI flow).
- * @returns {object} - SQL query and result rows.
- */
+// routes/analytics.js
 router.post("/query", async (req, res) => {
   try {
     const {
       connection_id,
-      factIds,
+      base_table,
+      factIds = [],
       dimensionIds = [],
       aggregation,
-      kpiId,
     } = req.body;
-    if (!connection_id) {
-      return res.status(400).json({ error: "connection_id required" });
-    }
-    const { pool, type } = await getPoolForConnection(
-      connection_id,
-      req.user?.userId
-    );
 
-    // FIX: Differentiate connection acquisition based on DB type
-    let client;
-    if (type === "postgres") {
-      client = await pool.connect();
-    } else if (type === "mysql") {
-      client = await pool.getConnection();
-    } else {
-      throw new Error(`Unsupported database type: ${type}`);
+    if (!base_table) {
+      return res.status(400).json({ error: "base_table is required" });
     }
 
     const db = await dbPromise;
 
-    try {
-      const { sql } = await buildSemanticQuery({
-        db,
-        client,
-        type,
-        connection_id,
-        factIds,
-        dimensionIds,
-        kpiId,
-        aggregation,
-      });
+    const facts =
+      factIds.length > 0
+        ? await db.all(
+            `SELECT id, name, table_name, column_name
+             FROM facts WHERE id IN (${factIds.map(() => "?").join(",")})`,
+            factIds
+          )
+        : [];
 
-      console.log("Generated SQL:", sql);
+    const dimensions =
+      dimensionIds.length > 0
+        ? await db.all(
+            `SELECT id, name, table_name, column_name
+             FROM dimensions WHERE id IN (${dimensionIds
+               .map(() => "?")
+               .join(",")})`,
+            dimensionIds
+          )
+        : [];
 
-      const result = await client.query(sql);
-      // Handle difference in result structure (Postgres: .rows, MySQL: result[0])
-      const rows = result.rows || result[0];
+    const select = [];
+    const group_by = [];
 
-      res.json({ sql, rows });
-    } catch (err) {
-      if (
-        err.message.includes("No facts") ||
-        err.message.includes("No valid")
-      ) {
-        return res.status(400).json({ error: err.message });
-      }
-      throw err;
-    } finally {
-      // Both PG and MySQL2 clients support .release()
-      if (client) client.release();
+    dimensions.forEach((d) => {
+      const col = `${d.table_name}.${d.column_name}`;
+      select.push(col);
+      group_by.push(col);
+    });
+
+    facts.forEach((f) => {
+      select.push(
+        `${aggregation}(${f.table_name}.${f.column_name}) AS ${f.name}`
+      );
+    });
+
+    const { sql, params } = await buildSemanticQuery({
+      connection_id,
+      base_table,
+      select,
+      group_by,
+    });
+
+    // ✅ EXECUTE ON SOURCE DB (FIX)
+    const { pool, type } = await getPoolForConnection(connection_id);
+
+    let rows;
+    if (type === "postgres") {
+      const result = await pool.query(sql, params);
+      rows = result.rows;
+    } else if (type === "mysql") {
+      const [result] = await pool.query(sql, params);
+      rows = result;
     }
+
+    res.json({ sql, rows });
   } catch (err) {
-    console.error("Analytics query error:", err.message, err.stack);
-    res.status(500).json({ error: "Internal server error: " + err.message });
+    console.error("Analytics query error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
