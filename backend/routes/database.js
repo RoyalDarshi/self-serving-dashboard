@@ -1,5 +1,4 @@
-// routes/database.js (FULLY FIXED VERSION)
-
+// routes/database.js
 import { Router } from "express";
 import { getPoolForConnection } from "../database/connection.js";
 
@@ -95,23 +94,35 @@ router.get("/schemas", async (req, res) => {
       });
     }
 
-    const client = await pool.connect();
-
+    let client;
     try {
+      // Handle connection acquisition
+      if (type === "postgres") {
+        client = await pool.connect();
+      } else if (type === "mysql") {
+        client = await pool.getConnection();
+      }
+
       // 1️⃣ Fetch tables
       const tableParams = type === "mysql" ? [selected_db] : [];
       const tablesResult = await client.query(dbQueries.getTables, tableParams);
       const tableRows = tablesResult.rows || tablesResult[0];
-      if (!tableRows) return res.json([]);
+
+      if (!tableRows || tableRows.length === 0) {
+        return res.json([]);
+      }
 
       const schemas = [];
 
       // 2️⃣ Loop tables → Fetch + merge columns
-      for (const { table_schema, table_name } of tableRows) {
-        const columnParams =
-          type === "postgres"
-            ? [table_schema, table_name]
-            : [selected_db, table_name];
+      for (const row of tableRows) {
+        // FIX: Handle Case Sensitivity (MySQL driver often returns uppercase keys)
+        const table_schema = row.table_schema || row.TABLE_SCHEMA;
+        const table_name = row.table_name || row.TABLE_NAME;
+
+        if (!table_schema || !table_name) continue;
+
+        const columnParams = [table_schema, table_name];
 
         const columnsResult = await client.query(
           dbQueries.getColumnsAndKeys,
@@ -119,45 +130,57 @@ router.get("/schemas", async (req, res) => {
         );
 
         let columnRows = columnsResult.rows || columnsResult[0];
-        if (!columnRows) continue;
+        if (!columnRows) columnRows = [];
 
         // 🔥 3️⃣ Deduplicate and merge constraint rows
         const columnMap = {};
 
         columnRows.forEach((col) => {
-          const name = col.column_name;
+          // FIX: Handle Case Sensitivity for Columns too
+          const name = col.column_name || col.COLUMN_NAME;
+          const dataType = col.data_type || col.DATA_TYPE;
+          const isNullableRaw = col.is_nullable || col.IS_NULLABLE;
+          const constraintType = col.constraint_type || col.CONSTRAINT_TYPE; // PG only
+          const columnKey = col.column_key || col.COLUMN_KEY; // MySQL only
+
+          // FK fields
+          const foreignSchema = col.foreign_schema || col.FOREIGN_SCHEMA;
+          const foreignTable = col.foreign_table || col.FOREIGN_TABLE;
+          const foreignColumn = col.foreign_column || col.FOREIGN_COLUMN;
+
+          if (!name) return;
 
           if (!columnMap[name]) {
             columnMap[name] = {
               name,
-              type: col.data_type?.toUpperCase?.() || col.data_type,
+              type: dataType?.toUpperCase?.() || "UNKNOWN",
               isNullable:
-                col.is_nullable === "YES" ||
-                col.is_nullable === "yes" ||
-                col.is_nullable === "YES",
+                isNullableRaw === "YES" ||
+                isNullableRaw === "yes" ||
+                isNullableRaw === "YES",
               isPk: false,
               fk: null,
             };
           }
 
           // --- Merge PK ---
-          if (type === "postgres" && col.constraint_type === "PRIMARY KEY") {
+          if (type === "postgres" && constraintType === "PRIMARY KEY") {
             columnMap[name].isPk = true;
           }
-          if (type === "mysql" && col.column_key === "PRI") {
+          if (type === "mysql" && columnKey === "PRI") {
             columnMap[name].isPk = true;
           }
 
           // --- Merge FK ---
           const isFk =
-            (type === "postgres" && col.constraint_type === "FOREIGN KEY") ||
-            (type === "mysql" && col.foreign_table);
+            (type === "postgres" && constraintType === "FOREIGN KEY") ||
+            (type === "mysql" && foreignTable);
 
           if (isFk) {
             columnMap[name].fk = {
-              schema: col.foreign_schema || table_schema,
-              table: col.foreign_table,
-              column: col.foreign_column,
+              schema: foreignSchema || table_schema,
+              table: foreignTable,
+              column: foreignColumn,
             };
           }
         });
@@ -173,7 +196,7 @@ router.get("/schemas", async (req, res) => {
 
       res.json(schemas);
     } finally {
-      client.release();
+      if (client) client.release();
     }
   } catch (err) {
     console.error("Error fetching schemas:", err);

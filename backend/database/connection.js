@@ -6,6 +6,7 @@ import mysql from "mysql2/promise";
 const pools = new Map();
 
 export async function getPoolForConnection(connection_id, user_id) {
+  // Check cache first
   if (pools.has(connection_id)) {
     return pools.get(connection_id);
   }
@@ -19,6 +20,10 @@ export async function getPoolForConnection(connection_id, user_id) {
   }
 
   let pool;
+  // Determine the effective database name to return for schema filtering
+  // Usage: "selected_db" if using a switch logic, otherwise the main "database" field
+  const effectiveDB = conn.selected_db || conn.database;
+
   if (conn.type === "postgres") {
     pool = new pg.Pool({
       host: conn.hostname,
@@ -31,7 +36,6 @@ export async function getPoolForConnection(connection_id, user_id) {
     });
     const client = await pool.connect();
     try {
-      // ✅ only set search_path if selected_db is provided
       if (conn.selected_db) {
         await client.query(`SET search_path TO "${conn.selected_db}"`);
       }
@@ -48,7 +52,8 @@ export async function getPoolForConnection(connection_id, user_id) {
       connectTimeout: conn.command_timeout || 10000,
       connectionLimit: conn.max_transport_objects || 10,
     });
-    // ✅ only USE if selected_db is provided
+
+    // Only execute USE if a specific different DB is selected/overridden
     if (conn.selected_db) {
       await pool.query(`USE \`${conn.selected_db}\``);
     }
@@ -56,8 +61,15 @@ export async function getPoolForConnection(connection_id, user_id) {
     throw new Error(`Unsupported database type: ${conn.type}`);
   }
 
-  pools.set(connection_id, { pool, type: conn.type });
-  return pools.get(connection_id);
+  // FIX: Store 'selected_db' (effectiveDB) in the cache so database.js can use it
+  const poolData = {
+    pool,
+    type: conn.type,
+    selected_db: effectiveDB,
+  };
+
+  pools.set(connection_id, poolData);
+  return poolData;
 }
 
 export function quoteIdentifier(name, type) {
@@ -116,4 +128,3 @@ export async function testConnection({
     throw new Error(`Unsupported database type: ${type}`);
   }
 }
-

@@ -33,7 +33,17 @@ router.post("/query", async (req, res) => {
       connection_id,
       req.user?.userId
     );
-    const client = await pool.connect();
+
+    // FIX: Differentiate connection acquisition based on DB type
+    let client;
+    if (type === "postgres") {
+      client = await pool.connect();
+    } else if (type === "mysql") {
+      client = await pool.getConnection();
+    } else {
+      throw new Error(`Unsupported database type: ${type}`);
+    }
+
     const db = await dbPromise;
 
     try {
@@ -51,16 +61,21 @@ router.post("/query", async (req, res) => {
       console.log("Generated SQL:", sql);
 
       const result = await client.query(sql);
+      // Handle difference in result structure (Postgres: .rows, MySQL: result[0])
       const rows = result.rows || result[0];
 
       res.json({ sql, rows });
     } catch (err) {
-      if (err.message.includes("No facts") || err.message.includes("No valid")) {
+      if (
+        err.message.includes("No facts") ||
+        err.message.includes("No valid")
+      ) {
         return res.status(400).json({ error: err.message });
       }
       throw err;
     } finally {
-      client.release();
+      // Both PG and MySQL2 clients support .release()
+      if (client) client.release();
     }
   } catch (err) {
     console.error("Analytics query error:", err.message, err.stack);
