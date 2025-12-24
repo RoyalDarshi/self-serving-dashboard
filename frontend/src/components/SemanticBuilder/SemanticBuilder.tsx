@@ -41,10 +41,11 @@ interface Dimension {
   id: number;
   name: string;
   table_name: string;
-  column_name: string;
-  // NEW FIELD
+  column_name: string; // join / group key
+  display_column?: string; // 👈 NEW (display only)
   connection_name?: string;
 }
+
 interface TableRelationship {
   id: number;
   left_table: string;
@@ -118,6 +119,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
   const [dimensionName, setDimensionName] = useState("");
   const [dimensionTable, setDimensionTable] = useState("");
   const [dimensionColumn, setDimensionColumn] = useState("");
+  const [dimensionDisplayColumn, setDimensionDisplayColumn] = useState("");
 
   const [mappingFactId, setMappingFactId] = useState("");
   const [mappingDimensionId, setMappingDimensionId] = useState("");
@@ -303,6 +305,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     setDimensionName("");
     setDimensionTable("");
     setDimensionColumn("");
+    setDimensionDisplayColumn("");
     setMappingFactId("");
     setMappingDimensionId("");
     setMappingJoinTable("");
@@ -398,6 +401,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       name: dimensionName,
       table_name: dimensionTable,
       column_name: dimensionColumn,
+      display_column: dimensionDisplayColumn || dimensionColumn,
     });
     if (r.success && r.data) {
       setDimensions((p) => [
@@ -420,7 +424,9 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
       name: dimensionName,
       table_name: dimensionTable,
       column_name: dimensionColumn,
+      display_column: dimensionDisplayColumn || dimensionColumn,
     });
+
     if (r.success && r.data) {
       setDimensions((p) =>
         p.map((d) =>
@@ -448,6 +454,7 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
     setDimensionName(d.name);
     setDimensionTable(d.table_name);
     setDimensionColumn(d.column_name);
+    setDimensionDisplayColumn(d.display_column || d.column_name);
   };
 
   // Mapping handlers
@@ -710,9 +717,11 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
                     dimensionName={dimensionName}
                     dimensionTable={dimensionTable}
                     dimensionColumn={dimensionColumn}
+                    dimensionDisplayColumn={dimensionDisplayColumn} // 👈 NEW
                     setDimensionName={setDimensionName}
                     setDimensionTable={setDimensionTable}
                     setDimensionColumn={setDimensionColumn}
+                    setDimensionDisplayColumn={setDimensionDisplayColumn} // 👈 NEW
                     onCreate={handleCreateDimension}
                     onUpdate={handleUpdateDimension}
                     onCancel={clearForm}

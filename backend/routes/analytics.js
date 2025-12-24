@@ -3,6 +3,7 @@ import { Router } from "express";
 import { dbPromise } from "../database/sqliteConnection.js";
 import { getPoolForConnection } from "../database/connection.js";
 import { buildSemanticQuery } from "../utils/semanticQueryBuilder.js";
+import { safeAlias } from "../utils/sanitize.js";
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.post("/query", async (req, res) => {
     const dimensions =
       dimensionIds.length > 0
         ? await db.all(
-            `SELECT id, name, table_name, column_name
+            `SELECT id, name, table_name, column_name, display_column
              FROM dimensions WHERE id IN (${dimensionIds
                .map(() => "?")
                .join(",")})`,
@@ -47,14 +48,25 @@ router.post("/query", async (req, res) => {
     const group_by = [];
 
     dimensions.forEach((d) => {
-      const col = `${d.table_name}.${d.column_name}`;
-      select.push(col);
-      group_by.push(col);
+      const keyCol = `${d.table_name}.${d.column_name}`; // sales_id
+      const displayCol = d.display_column
+        ? `${d.table_name}.${d.display_column}` // pod
+        : keyCol;
+
+      const alias = safeAlias(d.name);
+
+      // ✅ SELECT uses display column
+      select.push(`${displayCol} AS ${alias}`);
+
+      // ✅ GROUP BY uses key column
+      group_by.push(keyCol);
     });
 
     facts.forEach((f) => {
+      const alias = safeAlias(f.name); // 👈 FIX
+
       select.push(
-        `${aggregation}(${f.table_name}.${f.column_name}) AS ${f.name}`
+        `${aggregation}(${f.table_name}.${f.column_name}) AS ${alias}`
       );
     });
 

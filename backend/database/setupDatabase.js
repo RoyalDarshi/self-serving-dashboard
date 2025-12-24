@@ -65,6 +65,7 @@ const SCHEMAS = {
       name TEXT NOT NULL,
       table_name TEXT NOT NULL,
       column_name TEXT NOT NULL,
+      display_column TEXT,  
       FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
       UNIQUE (connection_id, name)
     )

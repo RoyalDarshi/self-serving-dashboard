@@ -11,3 +11,11 @@ export function qIdent(ident) {
   if (!isSafeIdent(ident)) throw new Error(`Unsafe identifier: ${ident}`);
   return `"${ident}"`;
 }
+
+export function safeAlias(name) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_") // spaces → _
+    .replace(/[^a-z0-9_]/g, ""); // remove symbols
+}

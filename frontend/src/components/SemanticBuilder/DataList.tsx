@@ -157,7 +157,12 @@ const DataList: React.FC<DataListProps> = ({
               <div>
                 <h4 className="font-medium">{d.name}</h4>
                 <p className="text-sm text-gray-600">
-                  {d.table_name}.{d.column_name}
+                  key: {d.table_name}.{d.column_name}
+                  {d.display_column && d.display_column !== d.column_name && (
+                    <span className="ml-2 text-xs text-blue-600">
+                      display: {d.display_column}
+                    </span>
+                  )}
                 </p>
               </div>
               <div className="flex gap-2">

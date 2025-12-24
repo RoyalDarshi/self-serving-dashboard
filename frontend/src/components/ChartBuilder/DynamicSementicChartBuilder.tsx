@@ -1,4 +1,4 @@
-// Updated DynamicSemanticChartBuilder.tsx
+// DynamicSemanticChartBuilder.tsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import html2canvas from "html2canvas";
 import { v4 as uuidv4 } from "uuid";
@@ -10,6 +10,7 @@ import ChartControls from "./ChartControls";
 import ChartDisplay from "./ChartDisplay";
 import { Download, Plus } from "lucide-react";
 
+// ... [Keep Interfaces exactly as they are] ...
 interface Fact {
   id: number;
   name: string;
@@ -101,6 +102,10 @@ const DynamicSemanticChartBuilder: React.FC<
   const [activeView, setActiveView] = useState<"graph" | "table" | "query">(
     "graph"
   );
+
+  // 🟢 FIX 1: Add a Ref to track the latest request ID
+  const lastRequestId = useRef<number>(0);
+
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [showDashboardModal, setShowDashboardModal] = useState(false);
   const [selectedDashboard, setSelectedDashboard] = useState<string>("");
@@ -116,7 +121,6 @@ const DynamicSemanticChartBuilder: React.FC<
     }
   }, [success]);
 
-  // Validate and map fact's aggregate_function to AggregationType
   const getValidAggregationType = (
     aggregateFunction: string
   ): AggregationType => {
@@ -133,16 +137,11 @@ const DynamicSemanticChartBuilder: React.FC<
     const upperCaseFunction = aggregateFunction.toUpperCase();
     return validAggregations.includes(upperCaseFunction as AggregationType)
       ? (upperCaseFunction as AggregationType)
-      : "SUM"; // Fallback to SUM if invalid
+      : "SUM";
   };
 
-  // Reset chart data and related states when axes or group-by changes
-  useEffect(() => {
-    setChartData([]);
-    setYAxisColumns([]);
-    setGeneratedQuery("");
-    setError(null);
-  }, [xAxisDimension, yAxisFacts, groupByDimension]);
+  // 🟢 FIX 2: Removed the "Reset" useEffect.
+  // We will handle clearing data inside generateChartData to avoid conflicts.
 
   // Set aggregation type based on the first fact's aggregate_function
   useEffect(() => {
@@ -152,7 +151,7 @@ const DynamicSemanticChartBuilder: React.FC<
       );
       setAggregationType(newAggregationType);
     } else {
-      setAggregationType("SUM"); // Default fallback when no facts are selected
+      setAggregationType("SUM");
     }
   }, [yAxisFacts]);
 
@@ -169,7 +168,6 @@ const DynamicSemanticChartBuilder: React.FC<
     chartType,
   ]);
 
-  // Automatically select the first dashboard when modal opens if available
   useEffect(() => {
     if (showDashboardModal) {
       const availableDashboards = dashboards.filter(
@@ -178,7 +176,6 @@ const DynamicSemanticChartBuilder: React.FC<
       if (availableDashboards.length > 0 && !selectedDashboard) {
         setSelectedDashboard(availableDashboards[0].id);
       }
-      // Reset success/error when modal opens
       setSuccess(null);
       setError(null);
     }
@@ -197,8 +194,17 @@ const DynamicSemanticChartBuilder: React.FC<
       return;
     }
 
+    // 1. Setup Request ID to prevent race conditions
+    const requestId = lastRequestId.current + 1;
+    lastRequestId.current = requestId;
+
     setLoading(true);
     setError(null);
+
+    // Clear data only if we are starting a fresh valid request
+    setChartData([]);
+    setYAxisColumns([]);
+    setGeneratedQuery("");
 
     try {
       const dimensionIds = [xAxisDimension.id];
@@ -209,14 +215,16 @@ const DynamicSemanticChartBuilder: React.FC<
       const baseTable = yAxisFacts[0]?.table_name;
 
       if (!baseTable) {
-        setError("Unable to determine base table from selected fact");
-        setLoading(false);
+        if (requestId === lastRequestId.current) {
+          setError("Unable to determine base table from selected fact");
+          setLoading(false);
+        }
         return;
       }
 
       const body = {
         connection_id: selectedConnectionId,
-        base_table: baseTable, // ✅ ADD THIS
+        base_table: baseTable,
         factIds: yAxisFacts.map((f) => f.id),
         dimensionIds,
         aggregation: aggregationType,
@@ -224,93 +232,107 @@ const DynamicSemanticChartBuilder: React.FC<
 
       const res: AggregationResponse = await apiService.runQuery(body);
 
-      if (res.rows && res.sql) {
-        // --- START FIX: Robust Key Mapping ---
-        // Prepare both keys (Column Name and Friendly Name) for lookups
-        const xCol = xAxisDimension.column_name;
-        const xName = xAxisDimension.name;
+      // 2. Check for stale request
+      if (requestId !== lastRequestId.current) {
+        return;
+      }
 
-        const gCol = groupByDimension?.column_name;
-        const gName = groupByDimension?.name;
+      if (res.rows && res.sql) {
+        // ✅ HELPER: Case-insensitive value lookup
+        // This solves the issue where DB returns 'sales' but we look for 'Sales'
+        const getValue = (row: any, possibleKeys: string[]) => {
+          const rowKeys = Object.keys(row);
+          for (const key of possibleKeys) {
+            // 1. Try exact match
+            if (row[key] !== undefined && row[key] !== null) return row[key];
+
+            // 2. Try case-insensitive match
+            const foundKey = rowKeys.find(
+              (k) => k.toLowerCase() === key.toLowerCase()
+            );
+            if (
+              foundKey &&
+              row[foundKey] !== undefined &&
+              row[foundKey] !== null
+            ) {
+              return row[foundKey];
+            }
+          }
+          return null;
+        };
+
+        const xKeys = [xAxisDimension.column_name, xAxisDimension.name];
+        const gKeys = groupByDimension
+          ? [groupByDimension.column_name, groupByDimension.name]
+          : [];
 
         const dataMap = new Map<string, ChartDataItem>();
         const groupSet = new Set<string>();
 
         res.rows.forEach((row) => {
-          // 1. Resolve X-Axis Value
-          let rawX = row[xCol];
-          // Fallback to name/alias if column name not found
-          if (rawX === undefined) rawX = row[xName];
+          // A. Resolve X-Axis Value
+          const rawX = getValue(row, xKeys);
+          const xValue = rawX !== null ? String(rawX).trim() : null;
 
-          const xValue = (rawX || "").toString().trim();
           if (!xValue) return; // Skip invalid rows
 
-          // 2. Resolve Group-By Value
+          // B. Resolve Group-By Value
           let gValue: string | null = null;
           if (groupByDimension) {
-            let rawG = row[gCol!];
-            if (rawG === undefined) rawG = row[gName!];
-            gValue = (rawG || "").toString().trim();
+            const rawG = getValue(row, gKeys);
+            if (rawG !== null) {
+              gValue = String(rawG).trim();
+            }
           }
 
-          // 3. Initialize Row
+          // C. Initialize Data Item
           if (!dataMap.has(xValue)) {
             dataMap.set(xValue, { name: xValue });
           }
           const item = dataMap.get(xValue)!;
 
-          // 4. Extract Metrics (Facts)
-          if (gValue) {
-            yAxisFacts.forEach((fact) => {
-              let val = row[fact.name]; // Try alias first
-              if (val === undefined) val = row[fact.column_name]; // Try raw column name
+          // D. Extract Facts/Metrics
+          yAxisFacts.forEach((fact) => {
+            const factKeys = [fact.name, fact.column_name];
+            const val = getValue(row, factKeys);
 
-              if (val != null) {
-                const parsedVal = parseFloat(val as string);
-                if (!isNaN(parsedVal)) {
-                  item[`${gValue}_${fact.name}`] = parsedVal;
-                  groupSet.add(`${gValue}_${fact.name}`);
-                }
-              }
-            });
-          } else {
-            yAxisFacts.forEach((fact) => {
-              let val = row[fact.name]; // Try alias first
-              if (val === undefined) val = row[fact.column_name]; // Try raw column name
-
-              if (val != null) {
-                const parsedVal = parseFloat(val as string);
-                if (!isNaN(parsedVal)) {
+            if (val !== null) {
+              const parsedVal = parseFloat(String(val));
+              if (!isNaN(parsedVal)) {
+                if (gValue) {
+                  // Dynamic column for Group By (e.g., "2023_Sales")
+                  const key = `${gValue}_${fact.name}`;
+                  item[key] = parsedVal;
+                  groupSet.add(key);
+                } else {
+                  // Standard column (e.g., "Sales")
                   item[fact.name] = parsedVal;
                 }
               }
-            });
-          }
+            }
+          });
         });
-        // --- END FIX ---
 
+        // 3. Normalize and Filter Data
         let normalizedData = Array.from(dataMap.values()).filter((item) => {
           return Object.keys(item).some(
             (key) => key !== "name" && item[key] != null
           );
         });
 
+        // 4. Sort by Total Value (Desc)
         normalizedData.sort((a, b) => {
-          const aTotal = Object.entries(a)
-            .filter(([key]) => key !== "name")
-            .reduce(
-              (sum, [, value]) => sum + (typeof value === "number" ? value : 0),
-              0
-            );
-          const bTotal = Object.entries(b)
-            .filter(([key]) => key !== "name")
-            .reduce(
-              (sum, [, value]) => sum + (typeof value === "number" ? value : 0),
-              0
-            );
-          return bTotal - aTotal;
+          const getSum = (obj: any) =>
+            Object.entries(obj)
+              .filter(([key]) => key !== "name")
+              .reduce(
+                (sum, [, val]) => sum + (typeof val === "number" ? val : 0),
+                0
+              );
+          return getSum(b) - getSum(a);
         });
 
+        // 5. Generate Dynamic Columns
         const newYAxisColumns: Column[] = groupByDimension
           ? Array.from(groupSet).map((g) => ({
               key: g,
@@ -332,18 +354,19 @@ const DynamicSemanticChartBuilder: React.FC<
             (groupByDimension !== null || yAxisFacts.length > 1)
         );
       } else {
-        setError(
-          res.error ||
-            "Failed to generate chart data. Ensure fact-dimension mappings exist or run auto-mapping."
-        );
+        setError(res.error || "No data returned from query.");
         setChartData([]);
         setYAxisColumns([]);
         setGeneratedQuery("");
       }
     } catch (error) {
-      setError("Error generating chart: " + (error as Error).message);
+      if (requestId === lastRequestId.current) {
+        setError("Error generating chart: " + (error as Error).message);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === lastRequestId.current) {
+        setLoading(false);
+      }
     }
   }, [
     selectedConnectionId,
@@ -353,6 +376,9 @@ const DynamicSemanticChartBuilder: React.FC<
     aggregationType,
     chartType,
   ]);
+
+  // ... [Keep the rest of the file exactly as it is (handleDownloadGraph, handlers, return JSX)] ...
+  // (Just copy the rest of your original file from `handleDownloadGraph` onwards)
 
   const handleDownloadGraph = () => {
     if (chartContainerRef.current) {

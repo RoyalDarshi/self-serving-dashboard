@@ -154,7 +154,7 @@ router.get("/dimensions", async (req, res) => {
     }
     const db = await dbPromise;
     const dimensions = await db.all(
-      "SELECT id, name, table_name, column_name FROM dimensions WHERE connection_id = ?",
+      "SELECT id, name, table_name, column_name, display_column FROM dimensions WHERE connection_id = ?",
       [connection_id]
     );
     res.json(dimensions);
@@ -166,7 +166,8 @@ router.get("/dimensions", async (req, res) => {
 
 router.post("/dimensions", async (req, res) => {
   try {
-    const { connection_id, name, table_name, column_name } = req.body;
+    const { connection_id, name, table_name, column_name, display_column } =
+      req.body;
     if (!connection_id || !name || !table_name || !column_name) {
       return res.status(400).json({
         error: "Missing required dimension fields",
@@ -174,9 +175,9 @@ router.post("/dimensions", async (req, res) => {
     }
     const db = await dbPromise;
     const result = await db.run(
-      `INSERT INTO dimensions (connection_id, name, table_name, column_name)
-       VALUES (?, ?, ?, ?)`,
-      [connection_id, name, table_name, column_name]
+      `INSERT INTO dimensions (connection_id, name, table_name, column_name, display_column)
+       VALUES (?, ?, ?, ?, ?)`,
+      [connection_id, name, table_name, column_name, display_column]
     );
     res.json({
       id: result.lastID,
@@ -193,7 +194,8 @@ router.post("/dimensions", async (req, res) => {
 
 router.put("/dimensions/:id", async (req, res) => {
   try {
-    const { connection_id, name, table_name, column_name } = req.body;
+    const { connection_id, name, table_name, column_name, display_column } =
+      req.body;
     if (!connection_id || !name || !table_name || !column_name) {
       return res.status(400).json({
         error: "Missing required dimension fields",
@@ -202,9 +204,16 @@ router.put("/dimensions/:id", async (req, res) => {
     const db = await dbPromise;
     await db.run(
       `UPDATE dimensions SET
-        connection_id = ?, name = ?, table_name = ?, column_name = ?
+        connection_id = ?, name = ?, table_name = ?, column_name = ?, display_column = ?
        WHERE id = ?`,
-      [connection_id, name, table_name, column_name, req.params.id]
+      [
+        connection_id,
+        name,
+        table_name,
+        column_name,
+        display_column,
+        req.params.id,
+      ]
     );
     const updated = await db.get(
       "SELECT * FROM dimensions WHERE id = ?",
