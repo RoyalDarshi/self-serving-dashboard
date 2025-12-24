@@ -6,6 +6,7 @@ import {
   quoteIdentifier,
 } from "../database/connection.js";
 import { buildSemanticQuery } from "../utils/semanticQueryBuilder.js";
+import { safeAlias } from "../utils/sanitize.js";
 
 const router = Router();
 
@@ -85,11 +86,35 @@ router.get("/run", async (req, res) => {
         const vizConfig = JSON.parse(report.visualization_config || "{}");
         const { factIds, dimensionIds, kpiId, aggregation } = vizConfig;
 
+        // ✅ RESOLVE BASE TABLE FOR SEMANTIC REPORT
+        const factId = factIds?.[0] || (kpiId ? Number(kpiId) : null);
+
+        if (!factId) {
+          return res.status(400).json({
+            error: "Semantic report requires at least one fact",
+          });
+        }
+
+        // 🔥 FACT METADATA COMES FROM SQLITE
+        const factRow = await db.get(
+          "SELECT table_name FROM facts WHERE id = ?",
+          [factId]
+        );
+
+        if (!factRow?.table_name) {
+          return res.status(400).json({
+            error: "Invalid fact configuration",
+          });
+        }
+
+        const resolvedBaseTable = factRow.table_name;
+
         const { sql } = await buildSemanticQuery({
           db,
           client,
           type,
           connection_id: report.connection_id,
+          base_table: resolvedBaseTable,
           factIds,
           dimensionIds,
           kpiId,
@@ -115,15 +140,10 @@ router.get("/run", async (req, res) => {
         if (columns.length > 0) {
           const selectClause = columns
             .map((c) => {
-              // For semantic, the inner query returns columns named as the dimension/fact name
-              // We need to match that. The builder returns "TableName.ColumnName" as "Name"
-              // So we select "Name" and alias it to "Alias" if present.
-              // Actually, semanticQueryBuilder returns: `... AS "Name"`
-              // So we should select "Name".
-              // BUT, the report_columns might store "Name" as column_name.
-              // Let's assume report_columns.column_name matches the output name of semantic query.
-              return `${quote(c.column_name)} ${c.alias ? `AS ${quote(c.alias)}` : ""
-                }`;
+              const innerCol = safeAlias(c.column_name); // 🔥 always safe alias
+              return `${quote(innerCol)} ${
+                c.alias ? `AS ${quote(c.alias)}` : ""
+              }`;
             })
             .join(", ");
 
@@ -139,7 +159,6 @@ router.get("/run", async (req, res) => {
         const result = await client.query(finalSql);
         const rows = result.rows || result[0];
         res.json({ sql: finalSql, rows });
-
       } else {
         // STANDARD TABLE REPORT HANDLING
         const columns = await db.all(
@@ -159,7 +178,9 @@ router.get("/run", async (req, res) => {
           const v = JSON.parse(f.value);
           if (Array.isArray(v)) {
             where.push(
-              `${quote(f.column_name)} IN (${v.map((v2) => `'${v2}'`).join(",")})`
+              `${quote(f.column_name)} IN (${v
+                .map((v2) => `'${v2}'`)
+                .join(",")})`
             );
           } else {
             if (v !== "")
@@ -168,7 +189,10 @@ router.get("/run", async (req, res) => {
         }
 
         for (const [col, val] of Object.entries(runtimeFilters)) {
-          if (val !== "") where.push(`${quote(col)} = '${val}'`);
+          if (val !== "") {
+            const safeCol = safeAlias(col);
+            where.push(`${quote(safeCol)} = '${val}'`);
+          }
         }
 
         const selectClause =
@@ -213,7 +237,11 @@ router.post("/save", async (req, res) => {
   } = req.body;
 
   // Handle Semantic Reports: If base_table is missing but we have semantic config, set base_table to "SEMANTIC"
-  if (!base_table && visualization_config && (visualization_config.factIds || visualization_config.kpiId)) {
+  if (
+    !base_table &&
+    visualization_config &&
+    (visualization_config.factIds || visualization_config.kpiId)
+  ) {
     base_table = "SEMANTIC";
   }
 
@@ -304,129 +332,128 @@ router.post("/save", async (req, res) => {
  * PREVIEW REPORT (Runs query without saving)
  */
 router.post("/preview", async (req, res) => {
-  const db = await dbPromise;
-  const { user } = req;
-  let { connection_id, base_table, columns, filters, visualization_config } = req.body;
-
-  // Handle Semantic Preview
-  if (!base_table && visualization_config && (visualization_config.factIds || visualization_config.kpiId)) {
-    base_table = "SEMANTIC";
-  }
-
-  if (!connection_id || !base_table) {
-    return res.status(400).json({ error: "Missing connection or table" });
-  }
-
   try {
-    // 1. Check Permissions
-    if (user.role !== "admin") {
-      const accessCheck = await db.get(
-        `SELECT count(*) as count FROM connection_designations WHERE connection_id = ? AND designation = ?`,
-        [connection_id, user.designation]
-      );
-      if (!accessCheck || accessCheck.count === 0) {
-        return res.status(403).json({ error: "Access denied to this connection" });
-      }
-    }
-
-    // 2. Get DB Connection
-    const { pool, type } = await getPoolForConnection(
+    const {
       connection_id,
-      req.user?.userId
-    );
-    const client = await pool.connect();
+      base_table,
+      visualization_config,
+      columns = [],
+      filters = [],
+    } = req.body;
 
-    try {
-      if (base_table === "SEMANTIC") {
-        const { factIds, dimensionIds, kpiId, aggregation } = visualization_config || {};
-        const { sql } = await buildSemanticQuery({
-          db,
-          client,
-          type,
-          connection_id,
-          factIds,
-          dimensionIds,
-          kpiId,
-          aggregation,
-        });
-
-        // Wrap with outer SELECT to apply aliases/order from 'columns'
-        const quote = (v) => quoteIdentifier(v, type);
-        let finalSql = sql;
-
-        if (columns && columns.length > 0) {
-          const visibleColumns = columns.filter((c) => c.visible);
-          if (visibleColumns.length > 0) {
-            const selectClause = visibleColumns
-              .map((c) => {
-                return `${quote(c.column_name)} ${c.alias ? `AS ${quote(c.alias)}` : ""
-                  }`;
-              })
-              .join(", ");
-            finalSql = `SELECT ${selectClause} FROM (${sql}) AS sub`;
-          } else {
-            finalSql = `SELECT * FROM (${sql}) AS sub`;
-          }
-        } else {
-          finalSql = `SELECT * FROM (${sql}) AS sub`;
-        }
-
-        // Add LIMIT for preview safety
-        finalSql += ` LIMIT 100`;
-
-        const result = await client.query(finalSql);
-        const rows = result.rows || result[0] || [];
-        res.json({ sql: finalSql, rows });
-
-      } else {
-        // Standard Table Preview
-        const quote = (v) => quoteIdentifier(v, type);
-        let where = [];
-
-        // Process Filters from Request Body
-        if (filters && Array.isArray(filters)) {
-          for (const f of filters) {
-            let val = f.value;
-            if (f.operator === "IN" || Array.isArray(val)) {
-              const valArray = Array.isArray(val) ? val : String(val).split(',');
-              const quotedVals = valArray.map(v => `'${v.trim()}'`).join(",");
-              where.push(`${quote(f.column_name)} IN (${quotedVals})`);
-            } else {
-              if (val !== "" && val !== null && val !== undefined) {
-                where.push(`${quote(f.column_name)} ${f.operator} '${val}'`);
-              }
-            }
-          }
-        }
-
-        // Process Columns
-        const selectClause =
-          columns && columns.length > 0 && columns.some(c => c.visible)
-            ? columns
-              .filter((c) => c.visible)
-              .map((c) => {
-                return quote(c.column_name) + (c.alias ? ` AS "${c.alias}"` : "");
-              })
-              .join(", ")
-            : "*";
-
-        const sql = `
-              SELECT ${selectClause}
-              FROM ${quote(base_table)}
-              ${where.length ? "WHERE " + where.join(" AND ") : ""}
-              LIMIT 100
-            `.trim();
-
-        const result = await client.query(sql);
-        const rows = result.rows || result[0] || [];
-        res.json({ sql, rows });
-      }
-    } finally {
-      client.release();
+    if (!connection_id) {
+      return res.status(400).json({ error: "connection_id required" });
     }
+
+    // --------------------------------------------------
+    // 1️⃣ RESOLVE BASE TABLE
+    // --------------------------------------------------
+    let resolvedBaseTable = base_table;
+
+    if (base_table === "SEMANTIC") {
+      const factIds = visualization_config?.factIds;
+
+      if (!factIds || factIds.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "Semantic query requires at least one fact" });
+      }
+
+      // Get pool to read metadata
+      // ✅ READ METADATA FROM SQLITE
+      const db = await dbPromise;
+
+      const factRow = await db.get(
+        "SELECT table_name FROM facts WHERE id = ?",
+        [factIds[0]]
+      );
+
+      if (!factRow?.table_name) {
+        return res.status(400).json({ error: "Invalid fact selected" });
+      }
+
+      resolvedBaseTable = factRow.table_name;
+
+      if (!factRow?.table_name) {
+        return res.status(400).json({ error: "Invalid fact selected" });
+      }
+
+      resolvedBaseTable = factRow.table_name;
+    }
+
+    if (!resolvedBaseTable) {
+      return res.status(400).json({ error: "base_table required" });
+    }
+
+    // --------------------------------------------------
+    // 2️⃣ BUILD SELECT / GROUP BY (SAFE ALIASES ONLY)
+    // --------------------------------------------------
+    const visibleColumns = columns.filter((c) => c.visible !== false);
+
+    const select = [];
+    const group_by = [];
+
+    for (const col of visibleColumns) {
+      const alias = safeAlias(col.column_name);
+      select.push(alias);
+
+      if (col.dimensionId) {
+        group_by.push(alias);
+      }
+    }
+
+    // --------------------------------------------------
+    // 3️⃣ BUILD INNER SEMANTIC QUERY
+    // --------------------------------------------------
+    const { sql, params } = await buildSemanticQuery({
+      connection_id,
+      base_table: resolvedBaseTable,
+      select,
+      filters,
+      group_by,
+    });
+
+    // --------------------------------------------------
+    // 4️⃣ OUTER QUERY (DISPLAY NAMES)
+    // --------------------------------------------------
+    const meta = await getPoolForConnection(connection_id);
+    const { pool, type } = meta;
+
+    const q = (n) => quoteIdentifier(n, type);
+
+    const outerSelect = visibleColumns
+      .map((c) => {
+        const innerCol = q(safeAlias(c.column_name));
+        return `${innerCol} AS ${q(c.column_name)}`;
+      })
+      .join(", ");
+
+    const finalSQL = `
+      SELECT ${outerSelect}
+      FROM (
+        ${sql}
+      ) semantic_sub
+    `;
+
+    // --------------------------------------------------
+    // 5️⃣ EXECUTE
+    // --------------------------------------------------
+    let rows;
+    if (type === "postgres") {
+      const r = await pool.query(finalSQL, params);
+      rows = r.rows;
+    } else {
+      const [r] = await pool.query(finalSQL, params);
+      rows = r;
+    }
+
+    return res.json({
+      sql: finalSQL,
+      data: rows,
+    });
   } catch (err) {
-    console.error("Preview error:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("REPORT PREVIEW ERROR:", err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -646,14 +673,19 @@ router.get("/:id/drill-fields", async (req, res) => {
         `SELECT column_name, alias, data_type FROM report_columns WHERE report_id = ? ORDER BY order_index`,
         [id]
       );
-      res.json(columns.map(c => ({
-        name: c.column_name,
-        alias: c.alias || c.column_name,
-        type: c.data_type || "unknown"
-      })));
+      res.json(
+        columns.map((c) => ({
+          name: c.column_name,
+          alias: c.alias || c.column_name,
+          type: c.data_type || "unknown",
+        }))
+      );
     } else {
       // For Table Reports, return ALL columns from the base table
-      const { pool, type } = await getPoolForConnection(report.connection_id, user.userId);
+      const { pool, type } = await getPoolForConnection(
+        report.connection_id,
+        user.userId
+      );
       const client = await pool.connect();
       try {
         let columns = [];
@@ -672,11 +704,13 @@ router.get("/:id/drill-fields", async (req, res) => {
           columns = result[0]; // mysql2 returns [rows, fields]
         }
 
-        res.json(columns.map(c => ({
-          name: c.column_name,
-          alias: c.column_name, // No alias for raw table columns
-          type: c.data_type
-        })));
+        res.json(
+          columns.map((c) => ({
+            name: c.column_name,
+            alias: c.column_name, // No alias for raw table columns
+            type: c.data_type,
+          }))
+        );
       } finally {
         client.release();
       }

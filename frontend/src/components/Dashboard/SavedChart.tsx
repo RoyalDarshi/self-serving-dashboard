@@ -62,8 +62,12 @@ const SavedChart: React.FC<SavedChartProps> = ({
           dimensionIds.push(config.groupByDimension.id);
         }
 
+        const baseTable =
+          config.yAxisFacts.length > 0 ? config.yAxisFacts[0].table_name : null;
+
         const body = {
           connection_id: connectionId,
+          base_table: baseTable, // ✅ REQUIRED
           factIds: config.yAxisFacts.map((f) => f.id),
           dimensionIds,
           aggregation: config.aggregationType,

@@ -203,12 +203,12 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
 
     const visualizationConfig: any = showChart
       ? {
-        showChart: true,
-        chartType,
-        xAxisColumn: chartX?.name || "",
-        yAxisColumns: chartY.map((y) => y.name),
-        aggregation: chartY[0]?.aggregation || "SUM",
-      }
+          showChart: true,
+          chartType,
+          xAxisColumn: chartX?.name || "",
+          yAxisColumns: chartY.map((y) => y.name),
+          aggregation: chartY[0]?.aggregation || "SUM",
+        }
       : { showChart: false };
 
     // Semantic Config
@@ -227,11 +227,11 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     const drillTargets =
       drillConfig.targetReportId !== 0
         ? [
-          {
-            target_report_id: drillConfig.targetReportId,
-            mapping_json: drillConfig.mapping,
-          },
-        ]
+            {
+              target_report_id: drillConfig.targetReportId,
+              mapping_json: drillConfig.mapping,
+            },
+          ]
         : [];
 
     return {
@@ -258,6 +258,11 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     setPreviewData(null);
 
     const payload = constructPayload();
+
+    // 🔴 ADD THIS SAFETY
+    if (mode === "SEMANTIC") {
+      payload.base_table = "SEMANTIC";
+    }
 
     const config: FullReportConfig = {
       report: {
@@ -341,7 +346,9 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     }
   };
 
-  const canRun = (mode === "TABLE" && !!baseTable) || (mode === "SEMANTIC" && tableColumns.length > 0);
+  const canRun =
+    (mode === "TABLE" && !!baseTable) ||
+    (mode === "SEMANTIC" && tableColumns.length > 0);
 
   return (
     <div className="flex h-screen bg-gradient-to-br from-slate-50 to-slate-100 font-sans text-slate-800 overflow-hidden">
