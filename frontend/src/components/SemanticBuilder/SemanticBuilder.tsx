@@ -653,9 +653,9 @@ const SemanticBuilder: React.FC<SemanticBuilderProps> = ({
           <div className="flex space-x-2 bg-white p-2 rounded-xl shadow-md border border-gray-100 mb-2">
             {[
               { id: "schemas", label: "Schemas", icon: Table },
+              { id: "mappings", label: "Mappings", icon: Target },
               { id: "facts", label: "Facts", icon: BarChart3 },
               { id: "dimensions", label: "Dimensions", icon: Layers },
-              { id: "mappings", label: "Mappings", icon: Target },
               { id: "kpis", label: "KPIs", icon: Zap },
             ].map((tab) => (
               <button
