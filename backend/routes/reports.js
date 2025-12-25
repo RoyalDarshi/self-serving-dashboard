@@ -58,15 +58,28 @@ router.get("/run", async (req, res) => {
   const { reportId, ...runtimeFilters } = req.query;
   const { user } = req;
 
+  let client = null;
+  let isPgClient = false;
+
   try {
+    // --------------------------------------------------
+    // 1. LOAD REPORT
+    // --------------------------------------------------
     const report = await db.get(`SELECT * FROM reports WHERE id = ?`, [
       reportId,
     ]);
-    if (!report) return res.status(404).json({ error: "Report not found" });
+    if (!report) {
+      return res.status(404).json({ error: "Report not found" });
+    }
 
+    // --------------------------------------------------
+    // 2. ACCESS CHECK
+    // --------------------------------------------------
     if (user.role !== "admin" && report.user_id !== user.userId) {
       const accessCheck = await db.get(
-        `SELECT count(*) as count FROM connection_designations WHERE connection_id = ? AND designation = ?`,
+        `SELECT count(*) as count
+         FROM connection_designations
+         WHERE connection_id = ? AND designation = ?`,
         [report.connection_id, user.designation]
       );
       if (!accessCheck || accessCheck.count === 0) {
@@ -74,150 +87,213 @@ router.get("/run", async (req, res) => {
       }
     }
 
+    // --------------------------------------------------
+    // 3. GET DB CLIENT
+    // --------------------------------------------------
     const { pool, type } = await getPoolForConnection(
       report.connection_id,
-      req.user?.userId
+      user?.userId
     );
-    const client = await pool.connect();
 
-    try {
-      // SEMANTIC REPORT HANDLING
-      if (report.base_table === "SEMANTIC") {
-        const vizConfig = JSON.parse(report.visualization_config || "{}");
-        const { factIds, dimensionIds, kpiId, aggregation } = vizConfig;
-
-        // ✅ RESOLVE BASE TABLE FOR SEMANTIC REPORT
-        const factId = factIds?.[0] || (kpiId ? Number(kpiId) : null);
-
-        if (!factId) {
-          return res.status(400).json({
-            error: "Semantic report requires at least one fact",
-          });
-        }
-
-        // 🔥 FACT METADATA COMES FROM SQLITE
-        const factRow = await db.get(
-          "SELECT table_name FROM facts WHERE id = ?",
-          [factId]
-        );
-
-        if (!factRow?.table_name) {
-          return res.status(400).json({
-            error: "Invalid fact configuration",
-          });
-        }
-
-        const resolvedBaseTable = factRow.table_name;
-
-        const { sql } = await buildSemanticQuery({
-          db,
-          client,
-          type,
-          connection_id: report.connection_id,
-          base_table: resolvedBaseTable,
-          factIds,
-          dimensionIds,
-          kpiId,
-          aggregation,
-        });
-
-        // Fetch report columns to apply aliases and ordering
-        const columns = await db.all(
-          `SELECT column_name, alias, visible FROM report_columns WHERE report_id = ? AND visible = 1 ORDER BY order_index`,
-          [reportId]
-        );
-
-        // Apply runtime filters to the semantic query if needed
-        const quote = (v) => quoteIdentifier(v, type);
-        let where = [];
-        for (const [col, val] of Object.entries(runtimeFilters)) {
-          if (val !== "") where.push(`${quote(col)} = '${val}'`);
-        }
-
-        let finalSql = sql;
-
-        // If we have columns defined, wrap the semantic query to apply aliases/order
-        if (columns.length > 0) {
-          const selectClause = columns
-            .map((c) => {
-              const innerCol = safeAlias(c.column_name); // 🔥 always safe alias
-              return `${quote(innerCol)} ${
-                c.alias ? `AS ${quote(c.alias)}` : ""
-              }`;
-            })
-            .join(", ");
-
-          finalSql = `SELECT ${selectClause} FROM (${sql}) AS sub`;
-        } else {
-          finalSql = `SELECT * FROM (${sql}) AS sub`;
-        }
-
-        if (where.length > 0) {
-          finalSql += ` WHERE ${where.join(" AND ")}`;
-        }
-
-        const result = await client.query(finalSql);
-        const rows = result.rows || result[0];
-        res.json({ sql: finalSql, rows });
-      } else {
-        // STANDARD TABLE REPORT HANDLING
-        const columns = await db.all(
-          `SELECT column_name FROM report_columns WHERE report_id = ? AND visible = 1 ORDER BY order_index`,
-          [reportId]
-        );
-
-        const storedFilters = await db.all(
-          `SELECT column_name, operator, value FROM report_filters WHERE report_id = ?`,
-          [reportId]
-        );
-
-        const quote = (v) => quoteIdentifier(v, type);
-        let where = [];
-
-        for (const f of storedFilters) {
-          const v = JSON.parse(f.value);
-          if (Array.isArray(v)) {
-            where.push(
-              `${quote(f.column_name)} IN (${v
-                .map((v2) => `'${v2}'`)
-                .join(",")})`
-            );
-          } else {
-            if (v !== "")
-              where.push(`${quote(f.column_name)} ${f.operator} '${v}'`);
-          }
-        }
-
-        for (const [col, val] of Object.entries(runtimeFilters)) {
-          if (val !== "") {
-            const safeCol = safeAlias(col);
-            where.push(`${quote(safeCol)} = '${val}'`);
-          }
-        }
-
-        const selectClause =
-          columns.length > 0
-            ? columns.map((c) => quote(c.column_name)).join(", ")
-            : "*";
-
-        const sql = `
-          SELECT ${selectClause}
-          FROM ${quote(report.base_table)}
-          ${where.length ? "WHERE " + where.join(" AND ") : ""}
-        `.trim();
-
-        const result = await client.query(sql);
-        const rows = result.rows || result[0];
-        res.json({ sql, rows });
-      }
-    } finally {
-      client.release();
+    if (type === "postgres") {
+      client = await pool.connect();
+      isPgClient = true;
+    } else {
+      client = pool; // mysql / sqlite
     }
+
+    const quote = (v) => quoteIdentifier(v, type);
+
+    // --------------------------------------------------
+    // 4. BUILD COLUMN MAP (ALIAS → REAL COLUMN)
+    // --------------------------------------------------
+    const reportColumnRows = await db.all(
+      `SELECT column_name, alias
+       FROM report_columns
+       WHERE report_id = ?`,
+      [reportId]
+    );
+
+    const columnMap = {};
+    for (const c of reportColumnRows) {
+      if (c.alias) {
+        columnMap[c.alias.toLowerCase()] = c.column_name;
+      }
+      columnMap[c.column_name.toLowerCase()] = c.column_name;
+    }
+
+    // ==================================================
+    // =============== SEMANTIC REPORT ==================
+    // ==================================================
+    if (report.base_table === "SEMANTIC") {
+      const vizConfig = JSON.parse(report.visualization_config || "{}");
+      const { factIds, dimensionIds, kpiId, aggregation } = vizConfig;
+
+      const factId = factIds?.[0] || (kpiId ? Number(kpiId) : null);
+      if (!factId) {
+        return res
+          .status(400)
+          .json({ error: "Semantic report requires at least one fact" });
+      }
+
+      // Resolve base table from facts
+      const factRow = await db.get(
+        `SELECT table_name FROM facts WHERE id = ?`,
+        [factId]
+      );
+      if (!factRow?.table_name) {
+        return res
+          .status(400)
+          .json({ error: "Invalid fact configuration" });
+      }
+
+      const resolvedBaseTable = factRow.table_name;
+
+      // Build INNER semantic SQL
+      const { sql: baseSql } = await buildSemanticQuery({
+        db,
+        client,
+        type,
+        connection_id: report.connection_id,
+        base_table: resolvedBaseTable,
+        factIds,
+        dimensionIds,
+        kpiId,
+        aggregation,
+      });
+
+      // Visible columns
+      const columns = await db.all(
+        `SELECT column_name, alias
+         FROM report_columns
+         WHERE report_id = ? AND visible = 1
+         ORDER BY order_index`,
+        [reportId]
+      );
+
+      // Runtime drill filters (RESOLVED)
+      const where = [];
+      for (const [col, val] of Object.entries(runtimeFilters)) {
+        if (val !== "") {
+          const resolvedCol = columnMap[col.toLowerCase()];
+          if (!resolvedCol) continue;
+          where.push(`${quote(resolvedCol)} = '${val}'`);
+        }
+      }
+
+      // OUTER SELECT MUST USE safeAlias(real_column)
+      let finalSql;
+      if (columns.length > 0) {
+        const selectClause = columns
+          .map((c) => {
+            const realCol = columnMap[c.column_name.toLowerCase()];
+            const innerCol = safeAlias(realCol || c.column_name);
+            return `${quote(innerCol)}${
+              c.alias ? ` AS ${quote(c.alias)}` : ""
+            }`;
+          })
+          .join(", ");
+
+        finalSql = `SELECT ${selectClause} FROM (${baseSql}) AS sub`;
+      } else {
+        finalSql = `SELECT * FROM (${baseSql}) AS sub`;
+      }
+
+      if (where.length > 0) {
+        finalSql += ` WHERE ${where.join(" AND ")}`;
+      }
+
+      let rows;
+      if (type === "postgres") {
+        const result = await client.query(finalSql);
+        rows = result.rows;
+      } else {
+        const [result] = await client.query(finalSql);
+        rows = result;
+      }
+
+      return res.json({ sql: finalSql, rows });
+    }
+
+    // ==================================================
+    // ============ STANDARD TABLE REPORT ================
+    // ==================================================
+    const columns = await db.all(
+      `SELECT column_name
+       FROM report_columns
+       WHERE report_id = ? AND visible = 1
+       ORDER BY order_index`,
+      [reportId]
+    );
+
+    const storedFilters = await db.all(
+      `SELECT column_name, operator, value
+       FROM report_filters
+       WHERE report_id = ?`,
+      [reportId]
+    );
+
+    const where = [];
+
+    // Stored filters
+    for (const f of storedFilters) {
+      const v = JSON.parse(f.value);
+      if (Array.isArray(v)) {
+        where.push(
+          `${quote(f.column_name)} IN (${v.map((x) => `'${x}'`).join(",")})`
+        );
+      } else if (v !== "") {
+        where.push(`${quote(f.column_name)} ${f.operator} '${v}'`);
+      }
+    }
+
+    // Runtime drill filters (RESOLVED)
+    for (const [col, val] of Object.entries(runtimeFilters)) {
+      if (val !== "") {
+        const resolvedCol = columnMap[col.toLowerCase()];
+        if (!resolvedCol) continue;
+        where.push(`${quote(resolvedCol)} = '${val}'`);
+      }
+    }
+
+    const selectClause =
+      columns.length > 0
+        ? columns.map((c) => quote(c.column_name)).join(", ")
+        : "*";
+
+    const sql = `
+      SELECT ${selectClause}
+      FROM ${quote(report.base_table)}
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
+    `.trim();
+
+    let rows;
+    if (type === "postgres") {
+      const result = await client.query(sql);
+      rows = result.rows;
+    } else {
+      const [result] = await client.query(sql);
+      rows = result;
+    }
+
+    return res.json({ sql, rows });
   } catch (err) {
-    console.error("Run report error:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("Run report error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
+  } finally {
+    if (isPgClient && client) {
+      try {
+        client.release();
+      } catch {
+        // ignore
+      }
+    }
   }
 });
+
+
 
 /**
  * SAVE REPORT (Also static, keep it high up)
@@ -645,79 +721,115 @@ router.get("/:id/drill-config", async (req, res) => {
  * GET DRILL FIELDS
  * Returns available fields for drill-down based on report type.
  */
-router.get("/:id/drill-fields", async (req, res) => {
+router.get("/:reportId/drill-fields", async (req, res) => {
   const db = await dbPromise;
-  const { id } = req.params;
+  const { reportId } = req.params;
   const { user } = req;
 
-  try {
-    const report = await db.get(`SELECT * FROM reports WHERE id = ?`, [id]);
-    if (!report) return res.status(404).json({ error: "Report not found" });
+  let client = null;
+  let isPgClient = false;
 
-    // Check access
+  try {
+    // ---------------- LOAD REPORT ----------------
+    const report = await db.get(`SELECT * FROM reports WHERE id = ?`, [
+      reportId,
+    ]);
+    if (!report) {
+      return res.status(404).json({ error: "Report not found" });
+    }
+
+    // ---------------- ACCESS CHECK ----------------
     if (user.role !== "admin" && report.user_id !== user.userId) {
       const accessCheck = await db.get(
-        `SELECT count(*) as count FROM connection_designations WHERE connection_id = ? AND designation = ?`,
+        `SELECT count(*) as count
+         FROM connection_designations
+         WHERE connection_id = ? AND designation = ?`,
         [report.connection_id, user.designation]
       );
+
       if (!accessCheck || accessCheck.count === 0) {
         return res.status(403).json({ error: "Access denied" });
       }
     }
 
-    if (report.base_table === "SEMANTIC") {
-      // For Semantic Reports, return configured columns (Facts/Dimensions)
-      // We fetch from report_columns because that's what the user configured.
-      // Alternatively, we could parse visualization_config, but report_columns is easier and already has aliases.
-      const columns = await db.all(
-        `SELECT column_name, alias, data_type FROM report_columns WHERE report_id = ? ORDER BY order_index`,
-        [id]
-      );
-      res.json(
-        columns.map((c) => ({
-          name: c.column_name,
-          alias: c.alias || c.column_name,
-          type: c.data_type || "unknown",
-        }))
-      );
-    } else {
-      // For Table Reports, return ALL columns from the base table
-      const { pool, type } = await getPoolForConnection(
-        report.connection_id,
-        user.userId
-      );
-      const client = await pool.connect();
-      try {
-        let columns = [];
-        if (type === "postgres") {
-          const result = await client.query(
-            `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1`,
-            [report.base_table]
-          );
-          columns = result.rows;
-        } else {
-          // MySQL
-          const result = await client.query(
-            `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?`,
-            [report.base_table]
-          );
-          columns = result[0]; // mysql2 returns [rows, fields]
-        }
+    // ---------------- DB CONNECTION ----------------
+    const { pool, type } = await getPoolForConnection(
+      report.connection_id,
+      user?.userId
+    );
 
-        res.json(
-          columns.map((c) => ({
-            name: c.column_name,
-            alias: c.column_name, // No alias for raw table columns
-            type: c.data_type,
-          }))
-        );
-      } finally {
+    if (type === "postgres") {
+      client = await pool.connect();
+      isPgClient = true;
+    } else {
+      client = pool; // mysql2 / sqlite
+    }
+
+    // =================================================
+    // 🔥 SEMANTIC REPORT DRILL FIELDS
+    // =================================================
+    if (report.base_table === "SEMANTIC") {
+      const vizConfig = JSON.parse(report.visualization_config || "{}");
+      const { factIds, dimensionIds } = vizConfig;
+
+      if (!factIds?.length) {
+        return res.json([]);
+      }
+
+      const factRow = await db.get(
+        `SELECT table_name FROM facts WHERE id = ?`,
+        [factIds[0]]
+      );
+
+      if (!factRow?.table_name) {
+        return res.json([]);
+      }
+
+      // Fetch drillable dimensions
+      const drillFields = await db.all(
+        `
+        SELECT
+          d.name AS label,
+          d.column_name AS column,
+          d.table_name AS table_name
+        FROM dimensions d
+        WHERE d.id IN (${dimensionIds.map(() => "?").join(",")})
+        `,
+        dimensionIds
+      );
+
+      return res.json(drillFields);
+    }
+
+    // =================================================
+    // 🔥 STANDARD TABLE REPORT DRILL FIELDS
+    // =================================================
+    const columns = await db.all(
+      `
+      SELECT column_name AS column, column_name AS label
+      FROM report_columns
+      WHERE report_id = ? AND visible = 1
+      ORDER BY order_index
+      `,
+      [reportId]
+    );
+
+    return res.json(columns);
+  } catch (err) {
+    console.error("Drill fields error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
+  } finally {
+    if (isPgClient && client) {
+      try {
         client.release();
+      } catch {
+        // ignore
       }
     }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
+
 
 export default router;

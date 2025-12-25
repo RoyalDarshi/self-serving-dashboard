@@ -6,10 +6,8 @@ import ReportShareModal from "./ReportShareModal";
 import {
   ArrowLeft,
   Share2,
-  Filter,
   BarChart2,
   Table as TableIcon,
-  X,
   ChevronRight,
   ChevronLeft,
 } from "lucide-react";
@@ -22,9 +20,6 @@ import {
   Tooltip,
   CartesianGrid,
   Legend,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
 
 interface ReportViewerProps {
@@ -42,6 +37,7 @@ const COLORS = [
   "#8B5CF6",
   "#EC4899",
 ];
+
 const PAGE_SIZE = 10;
 
 type DrillHistoryItem = {
@@ -66,7 +62,6 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [shareOpen, setShareOpen] = useState(false);
 
-  // 🔥 MULTI-LEVEL DRILL HISTORY
   const [history, setHistory] = useState<DrillHistoryItem[]>([]);
 
   // ---------- helpers ----------
@@ -107,11 +102,7 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
       if (pushHistory && config) {
         setHistory((prev) => [
           ...prev,
-          {
-            reportId,
-            filters,
-            name: cfg.report.name,
-          },
+          { reportId, filters, name: cfg.report.name },
         ]);
       }
 
@@ -126,13 +117,13 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
     }
   };
 
-  // ---------- MULTI-LEVEL DRILL HANDLER ----------
+  // ---------- drill ----------
   const handleDrill = (rowInput: any, source: "table" | "chart") => {
     if (!config?.drillTargets?.length) return;
 
     const drillTarget = config.drillTargets[0];
-
     let mapping: Record<string, string> = {};
+
     try {
       mapping =
         typeof drillTarget.mapping_json === "string"
@@ -143,45 +134,36 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
     }
 
     const drillFilters: Record<string, any> = {};
-    let matchFound = false;
+    let matched = false;
 
     if (source === "chart") {
-      const xAxisLabel = config.visualization.xAxisColumn;
-      const xAxisKey = resolveRowKey(xAxisLabel);
+      const xKey = resolveRowKey(config.visualization.xAxisColumn);
+      const xVal = rowInput?.payload?.name;
 
-      const mappingEntry = Object.entries(mapping).find(
-        ([srcLabel]) => resolveRowKey(srcLabel) === xAxisKey
+      const entry = Object.entries(mapping).find(
+        ([src]) => resolveRowKey(src) === xKey
       );
 
-      if (!mappingEntry) return;
-
-      const [, targetCol] = mappingEntry;
-      const xValue = rowInput?.payload?.name;
-
-      if (xValue !== undefined && xValue !== null) {
-        drillFilters[targetCol] = xValue;
-        matchFound = true;
+      if (entry && xVal !== undefined) {
+        drillFilters[entry[1]] = xVal;
+        matched = true;
       }
     } else {
-      const row = rowInput;
-
-      Object.entries(mapping).forEach(([srcLabel, targetCol]) => {
-        const srcKey = resolveRowKey(srcLabel);
-        const val = row[srcKey];
-
-        if (val !== undefined && val !== null) {
-          drillFilters[targetCol] = val;
-          matchFound = true;
+      Object.entries(mapping).forEach(([src, target]) => {
+        const val = rowInput[resolveRowKey(src)];
+        if (val !== undefined) {
+          drillFilters[target] = val;
+          matched = true;
         }
       });
     }
 
-    if (!matchFound) return;
-
-    loadReport(drillTarget.target_report_id, drillFilters, true);
+    if (matched) {
+      loadReport(drillTarget.target_report_id, drillFilters, true);
+    }
   };
 
-  // ---------- breadcrumb click ----------
+  // ---------- breadcrumbs ----------
   const handleBreadcrumbClick = (index: number) => {
     const item = history[index];
     setHistory(history.slice(0, index));
@@ -193,27 +175,31 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
     if (!data?.rows || !config?.visualization?.showChart) return [];
 
     const vis = config.visualization;
-    const groups: Record<string, any> = {};
+    const grouped: Record<string, any> = {};
 
     data.rows.forEach((row) => {
-      const xKey = resolveRowKey(vis.xAxisColumn);
-      const xVal = row[xKey] ?? "Unknown";
+      const xVal = row[resolveRowKey(vis.xAxisColumn)] ?? "Unknown";
 
-      if (!groups[xVal]) {
-        groups[xVal] = { name: xVal };
-        vis.yAxisColumns.forEach((y) => {
-          groups[xVal][resolveRowKey(y)] = 0;
-        });
+      if (!grouped[xVal]) {
+        grouped[xVal] = { name: xVal };
+        vis.yAxisColumns.forEach(
+          (y) => (grouped[xVal][resolveRowKey(y)] = 0)
+        );
       }
 
       vis.yAxisColumns.forEach((y) => {
-        const yKey = resolveRowKey(y);
-        groups[xVal][yKey] += Number(row[yKey]) || 0;
+        grouped[xVal][resolveRowKey(y)] += Number(row[resolveRowKey(y)]) || 0;
       });
     });
 
-    return Object.values(groups);
+    return Object.values(grouped);
   }, [data?.rows, config?.visualization]);
+
+  // ---------- pagination ----------
+  const totalPages = useMemo(() => {
+    if (!data?.rows) return 1;
+    return Math.ceil(data.rows.length / PAGE_SIZE);
+  }, [data?.rows]);
 
   const paginatedRows = useMemo(() => {
     if (!data?.rows) return [];
@@ -234,7 +220,6 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
               </button>
             )}
 
-            {/* BREADCRUMBS */}
             <div className="flex items-center gap-1 text-sm">
               {history.map((h, i) => (
                 <React.Fragment key={i}>
@@ -305,7 +290,7 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                     {config?.columns
                       .filter((c) => c.visible)
                       .map((c) => (
-                        <th key={c.column_name} className="p-2">
+                        <th key={c.column_name} className="p-2 text-left">
                           {c.alias || c.column_name}
                         </th>
                       ))}
@@ -329,6 +314,40 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                   ))}
                 </tbody>
               </table>
+
+              {/* PAGINATION */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50">
+                  <div className="text-sm text-slate-600">
+                    Page {currentPage} of {totalPages} | Total rows:{" "}
+                    {data?.rows.length}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      disabled={currentPage === 1}
+                      onClick={() =>
+                        setCurrentPage((p) => Math.max(1, p - 1))
+                      }
+                      className="px-3 py-1 border rounded disabled:opacity-50"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      disabled={currentPage === totalPages}
+                      onClick={() =>
+                        setCurrentPage((p) =>
+                          Math.min(totalPages, p + 1)
+                        )
+                      }
+                      className="px-3 py-1 border rounded disabled:opacity-50"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

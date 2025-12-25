@@ -102,8 +102,17 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   useEffect(() => {
     if (drillConfig.targetReportId !== 0) {
       apiService
-        .getReportDrillFields(drillConfig.targetReportId)
-        .then(setTargetReportFields);
+  .getReportDrillFields(drillConfig.targetReportId)
+  .then((fields) => {
+    // 🔥 Normalize backend fields → UI expected shape
+    const normalized = fields.map((f: any) => ({
+      name: f.column || f.name,
+      alias: f.label || f.alias || f.column,
+      type: f.type || "string",
+    }));
+    setTargetReportFields(normalized);
+  });
+
     } else {
       setTargetReportFields([]);
     }

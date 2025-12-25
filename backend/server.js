@@ -48,7 +48,7 @@ app.use("/api/connection", connectionRouter);
     console.log("Initializing app database...");
     await initializeDatabase();
     console.log("App database initialized successfully");
-    app.listen(3001, () => console.log("Server running on port 3001"));
+    app.listen(3001,'0.0.0.0', () => console.log("Server running on port 3001"));
   } catch (error) {
     console.error("Failed to initialize app database:", error.message);
   }
