@@ -26,10 +26,13 @@ interface Props {
   onSaved?: (reportId: number) => void;
 }
 
+type ReportMode = "TABLE" | "SEMANTIC" | "SQL";
+
 const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   // UI State
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
-  const [mode, setMode] = useState<"TABLE" | "SEMANTIC">("TABLE");
+  const [mode, setMode] = useState<ReportMode>("TABLE");
+  const [sqlText, setSqlText] = useState("");
 
   // --- Data Source State ---
   const [connectionId, setConnectionId] = useState<number | null>(
@@ -102,17 +105,16 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   useEffect(() => {
     if (drillConfig.targetReportId !== 0) {
       apiService
-  .getReportDrillFields(drillConfig.targetReportId)
-  .then((fields) => {
-    // 🔥 Normalize backend fields → UI expected shape
-    const normalized = fields.map((f: any) => ({
-      name: f.column || f.name,
-      alias: f.label || f.alias || f.column,
-      type: f.type || "string",
-    }));
-    setTargetReportFields(normalized);
-  });
-
+        .getReportDrillFields(drillConfig.targetReportId)
+        .then((fields) => {
+          // 🔥 Normalize backend fields → UI expected shape
+          const normalized = fields.map((f: any) => ({
+            name: f.column || f.name,
+            alias: f.label || f.alias || f.column,
+            type: f.type || "string",
+          }));
+          setTargetReportFields(normalized);
+        });
     } else {
       setTargetReportFields([]);
     }
@@ -397,6 +399,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
           onSave={handleSave}
           saving={saving}
           canRun={canRun}
+          mode={mode}
+          setMode={setMode}
         />
 
         <div className="flex-1 overflow-y-auto p-8 space-y-6">
@@ -413,18 +417,20 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
             handleDropTable={handleDropTable}
           />
 
-          <VisualizationConfig
-            showChart={showChart}
-            setShowChart={setShowChart}
-            chartType={chartType}
-            setChartType={setChartType}
-            chartX={chartX}
-            setChartX={setChartX}
-            chartY={chartY}
-            setChartY={setChartY}
-            handleDropChartX={handleDropChartX}
-            handleDropChartY={handleDropChartY}
-          />
+          {mode !== "SQL" && (
+            <VisualizationConfig
+              showChart={showChart}
+              setShowChart={setShowChart}
+              chartType={chartType}
+              setChartType={setChartType}
+              chartX={chartX}
+              setChartX={setChartX}
+              chartY={chartY}
+              setChartY={setChartY}
+              handleDropChartX={handleDropChartX}
+              handleDropChartY={handleDropChartY}
+            />
+          )}
 
           <FiltersConfig
             filters={filters}
@@ -432,13 +438,15 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
             handleDropFilter={handleDropFilter}
           />
 
-          <DrillThroughConfig
-            drillConfig={drillConfig}
-            setDrillConfig={setDrillConfig}
-            availableReports={availableReports}
-            tableColumns={tableColumns}
-            targetReportFields={targetReportFields}
-          />
+          {mode !== "SQL" && (
+            <DrillThroughConfig
+              drillConfig={drillConfig}
+              setDrillConfig={setDrillConfig}
+              availableReports={availableReports}
+              tableColumns={tableColumns}
+              targetReportFields={targetReportFields}
+            />
+          )}
         </div>
       </div>
 

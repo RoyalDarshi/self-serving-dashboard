@@ -8,6 +8,9 @@ interface PreviewPanelProps {
   isLoadingPreview: boolean;
   previewConfig: FullReportConfig | null;
   message: { type: "success" | "error"; text: string } | null;
+
+  // 🔥 ADD THIS
+  disablePointerEvents?: boolean;
 }
 
 export const PreviewPanel: React.FC<PreviewPanelProps> = ({
@@ -15,6 +18,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   isLoadingPreview,
   previewConfig,
   message,
+  disablePointerEvents,
 }) => {
   if (isLoadingPreview) {
     return (
@@ -35,7 +39,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   const rows = Array.isArray(previewData.rows) ? previewData.rows : [];
 
   return (
-    <div className="w-[30%] bg-white border-l border-slate-200 flex flex-col z-10 shadow-xl">
+    <div className="w-[30%] bg-white border-l border-slate-200 flex flex-col z-10 shadow-xl pointer-events-none">
       <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
         <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
           Live Preview
