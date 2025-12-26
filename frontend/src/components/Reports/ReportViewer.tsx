@@ -1,24 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { apiService, FullReportConfig } from "../../services/api";
 import ReportShareModal from "./ReportShareModal";
-import {
-  ArrowLeft,
-  Share2,
-  BarChart2,
-  Table as TableIcon,
-  ChevronRight,
-  ChevronLeft,
-} from "lucide-react";
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Legend,
-} from "recharts";
+import { SqlDisplay } from "./components/SqlDisplay";
+import { ChartSection } from "./components/ChartSection";
+import { TableSection } from "./components/TableSection";
+import { ArrowLeft, Share2, BarChart2, Table as TableIcon } from "lucide-react";
 
 interface ReportViewerProps {
   initialReportId?: number;
@@ -28,8 +14,7 @@ interface ReportViewerProps {
 const COLORS = ["#6366F1", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
 const PAGE_SIZE = 10;
 
-const resolveKey = (v: string) =>
-  v?.toLowerCase().trim().replace(/\s+/g, "_");
+const resolveKey = (v: string) => v?.toLowerCase().trim().replace(/\s+/g, "_");
 
 const ReportViewer: React.FC<ReportViewerProps> = ({
   initialReportId,
@@ -43,13 +28,11 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [shareOpen, setShareOpen] = useState(false);
+
+  // State for SQL and Filters
+  const [sql, setSql] = useState<string>("");
+  const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
   const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
-  // user typing (UI only)
-const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
-
-// applied filters (sent to backend)
-const [appliedFilters, setAppliedFilters] = useState<Record<string, string>>({});
-
 
   // --------------------------------------------------
   // INIT
@@ -75,7 +58,7 @@ const [appliedFilters, setAppliedFilters] = useState<Record<string, string>>({})
       const cfgRes = await apiService.getReportConfig(reportId);
       const cfg = cfgRes.data;
 
-      // ✅ NORMALIZE VISUALIZATION CONFIG
+      // Normalize Config
       const rawViz =
         typeof cfg.report.visualization_config === "string"
           ? JSON.parse(cfg.report.visualization_config || "{}")
@@ -85,8 +68,7 @@ const [appliedFilters, setAppliedFilters] = useState<Record<string, string>>({})
         chartType: rawViz.chartType || "bar",
         xAxisColumn:
           rawViz.xAxisColumn ||
-          cfg.columns?.find((c: any) => c.data_type !== "number")
-            ?.column_name,
+          cfg.columns?.find((c: any) => c.data_type !== "number")?.column_name,
         yAxisColumns: Array.isArray(rawViz.yAxisColumns)
           ? rawViz.yAxisColumns
           : cfg.columns
@@ -109,9 +91,6 @@ const [appliedFilters, setAppliedFilters] = useState<Record<string, string>>({})
     }
   };
 
-  // --------------------------------------------------
-  // LOAD CHART
-  // --------------------------------------------------
   const loadChart = async (reportId: number, filters: any) => {
     try {
       const res = await apiService.runReport(reportId, {
@@ -119,31 +98,27 @@ const [appliedFilters, setAppliedFilters] = useState<Record<string, string>>({})
         ...filters,
       });
       setChartData(res.data?.data || []);
+      if (res.data?.sql) setSql(res.data.sql);
     } catch {
       setChartData([]);
     }
   };
 
-  // --------------------------------------------------
-  // LOAD TABLE
-  // --------------------------------------------------
-  const loadTable = async (
-    reportId: number,
-    filters: any,
-    page: number
-  ) => {
-    const res = await apiService.runReport(reportId, {
-      mode: "table",
-      page,
-      pageSize: PAGE_SIZE,
-      ...filters,
-    });
-    setTableRows(res.data?.rows || []);
+  const loadTable = async (reportId: number, filters: any, page: number) => {
+    try {
+      const res = await apiService.runReport(reportId, {
+        mode: "table",
+        page,
+        pageSize: PAGE_SIZE,
+        ...filters,
+      });
+      setTableRows(res.data?.rows || []);
+      if (res.data?.sql) setSql(res.data.sql);
+    } catch (e) {
+      console.error("Failed to load table", e);
+    }
   };
 
-  // --------------------------------------------------
-  // DRILL HANDLER
-  // --------------------------------------------------
   const handleDrill = (row: any) => {
     if (!config?.drillTargets?.length) return;
 
@@ -166,169 +141,158 @@ const [appliedFilters, setAppliedFilters] = useState<Record<string, string>>({})
     }
   };
 
-  // --------------------------------------------------
-  // RENDER
-  // --------------------------------------------------
-  const xKey = config?.visualization?.xAxisColumn
-    ? resolveKey(config.visualization.xAxisColumn)
-    : undefined;
-
   return (
-    <div className="flex h-full bg-slate-50">
-      <div className="flex-1 flex flex-col">
+    // Root: w-full and overflow-hidden prevent body scroll
+    <div className="flex h-full w-full bg-slate-50 font-sans overflow-hidden">
+      {/* Container: min-w-0 ensures flex children shrink properly */}
+      <div className="flex-1 flex flex-col min-w-0 w-full">
         {/* HEADER */}
-        <div className="bg-white border-b px-6 py-3 flex justify-between">
-          <div className="flex items-center gap-2">
+        <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm sticky top-0 z-20 flex-shrink-0">
+          <div className="flex items-center gap-3">
             {onClose && (
-              <button onClick={onClose}>
+              <button
+                onClick={onClose}
+                className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-500 hover:text-slate-800"
+              >
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
-            <span className="font-semibold">
-              {config?.report?.name || "Report"}
-            </span>
+            <div>
+              <h1 className="font-bold text-slate-800 text-lg leading-tight truncate max-w-[200px] md:max-w-md">
+                {config?.report?.name || "Report Viewer"}
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                View and analyze your data
+              </p>
+            </div>
           </div>
 
-          <div className="flex gap-2">
-            <button onClick={() => setViewMode("table")}>
-              <TableIcon />
+          <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode("table")}
+              className={`p-2 rounded-md transition-all ${
+                viewMode === "table"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+              title="Table View"
+            >
+              <TableIcon className="w-4 h-4" />
             </button>
-            <button onClick={() => setViewMode("chart")}>
-              <BarChart2 />
+            <button
+              onClick={() => setViewMode("chart")}
+              className={`p-2 rounded-md transition-all ${
+                viewMode === "chart"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+              title="Chart View"
+            >
+              <BarChart2 className="w-4 h-4" />
             </button>
-            <button onClick={() => setViewMode("both")}>ALL</button>
-            <button onClick={() => setShareOpen(true)}>
-              <Share2 />
+            <button
+              onClick={() => setViewMode("both")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                viewMode === "both"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              BOTH
             </button>
           </div>
+          <button
+            onClick={() => setShareOpen(true)}
+            className="ml-4 p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
+          >
+            <Share2 className="w-5 h-5" />
+          </button>
         </div>
 
-        <div className="flex-1 p-6 space-y-6 overflow-auto">
-          {loading && <div>Loading...</div>}
-          {error && <div className="text-red-600">{error}</div>}
-
-          {/* ===================== CHART ===================== */}
-
-          {config?.filters?.length > 0 && (
-            <div className="bg-white border rounded p-4 space-y-3">
-              <div className="font-semibold text-sm">Filters</div>
-
-              <div className="grid grid-cols-4 gap-3">
-                {config.filters.map((f: any) => (
-                  <input
-                    key={f.column_name}
-                    className="border px-2 py-1 rounded text-sm"
-                    placeholder={f.column_name}
-                    value={filterInputs[f.column_name] || ""}
-                    onChange={(e) =>
-                      setFilterInputs({
-                        ...filterInputs,
-                        [f.column_name]: e.target.value,
-                      })
-                    }
-                  />
-                ))}
-              </div>
-
-              <button
-                className="px-4 py-1 bg-indigo-600 text-white rounded text-sm"
-                onClick={() => {
-                  setAppliedFilters(filterInputs);
-                  loadReport(config.report.id, filterInputs);
-                }}
-              >
-                Apply Filters
-              </button>
+        {/* CONTENT SCROLL AREA */}
+        <div className="flex-1 p-6 space-y-6 overflow-y-auto w-full max-w-full">
+          {loading && (
+            <div className="flex items-center justify-center py-10">
+              <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
             </div>
           )}
 
-          {viewMode !== "table" &&
-            chartData.length > 0 &&
-            xKey &&
-            config?.visualization?.yAxisColumns?.length > 0 && (
-              <div className="bg-white h-96 p-4 rounded border">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey={xKey} />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
+          {error && (
+            <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
 
-                    {config.visualization.yAxisColumns.map(
-                      (col: string, i: number) => (
-                        <Bar
-                          key={col}
-                          dataKey={resolveKey(col)}
-                          fill={COLORS[i % COLORS.length]}
-                          onClick={(d) => handleDrill(d.payload)}
-                          cursor="pointer"
-                        />
-                      )
-                    )}
-                  </BarChart>
-                </ResponsiveContainer>
+          {/* FILTERS */}
+          {config?.filters?.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm w-full">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+                Filters
               </div>
-            )}
-
-          {/* ===================== TABLE ===================== */}
-          {viewMode !== "chart" && (
-            <div className="bg-white border rounded">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-100">
-                  <tr>
-                    {config?.columns
-                      ?.filter((c) => c.visible)
-                      .map((c) => (
-                        <th key={c.column_name} className="p-2 text-left">
-                          {c.alias || c.column_name}
-                        </th>
-                      ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tableRows.map((row, i) => (
-                    <tr
-                      key={i}
-                      onClick={() => handleDrill(row)}
-                      className="hover:bg-slate-50 cursor-pointer"
-                    >
-                      {config?.columns
-                        ?.filter((c) => c.visible)
-                        .map((c) => (
-                          <td key={c.column_name} className="p-2">
-                            {row[resolveKey(c.column_name)] ?? ""}
-                          </td>
-                        ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="flex justify-between px-4 py-3 border-t bg-slate-50">
-                <span>Page {currentPage}</span>
-                <div className="flex gap-2">
-                  <button
-                    disabled={currentPage === 1}
-                    onClick={() => {
-                      const p = currentPage - 1;
-                      setCurrentPage(p);
-                      loadTable(config!.report.id, activeFilters, p);
-                    }}
+              <div className="flex flex-wrap gap-3 items-end">
+                {config.filters.map((f: any) => (
+                  <div
+                    key={f.column_name}
+                    className="flex flex-col gap-1 w-full sm:w-auto"
                   >
-                    <ChevronLeft />
-                  </button>
-                  <button
-                    onClick={() => {
-                      const p = currentPage + 1;
-                      setCurrentPage(p);
-                      loadTable(config!.report.id, activeFilters, p);
-                    }}
-                  >
-                    <ChevronRight />
-                  </button>
-                </div>
+                    <label className="text-xs font-medium text-slate-700">
+                      {f.column_name}
+                    </label>
+                    <input
+                      className="border border-slate-300 px-3 py-2 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none w-full sm:w-48"
+                      placeholder="Value..."
+                      value={filterInputs[f.column_name] || ""}
+                      onChange={(e) =>
+                        setFilterInputs({
+                          ...filterInputs,
+                          [f.column_name]: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                ))}
+                <button
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm shadow-indigo-200"
+                  onClick={() => loadReport(config.report.id, filterInputs)}
+                >
+                  Apply Filters
+                </button>
               </div>
+            </div>
+          )}
+
+          {/* SQL DISPLAY */}
+          <div className="w-full max-w-full">
+            <SqlDisplay sql={sql} />
+          </div>
+
+          {/* CHART SECTION */}
+          {viewMode !== "table" && config && (
+            <div className="w-full max-w-full">
+              <ChartSection
+                data={chartData}
+                config={config}
+                resolveKey={resolveKey}
+                onDrill={handleDrill}
+                colors={COLORS}
+              />
+            </div>
+          )}
+
+          {/* TABLE SECTION */}
+          {viewMode !== "chart" && config && (
+            <div className="w-full max-w-full">
+              <TableSection
+                rows={tableRows}
+                config={config}
+                currentPage={currentPage}
+                resolveKey={resolveKey}
+                onPageChange={(p) => {
+                  setCurrentPage(p);
+                  loadTable(config.report.id, activeFilters, p);
+                }}
+                onDrill={handleDrill}
+              />
             </div>
           )}
         </div>

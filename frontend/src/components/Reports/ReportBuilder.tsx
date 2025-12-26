@@ -383,7 +383,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
       const data = res.data || res;
 
       if (data && (data.success || Array.isArray(data.data) || data.rows)) {
-        setPreviewData(data.data || data); 
+        setPreviewData(data); 
         setMessage({ type: "success", text: "Query executed successfully" });
         setTimeout(() => setMessage(null), 3000);
       } else {

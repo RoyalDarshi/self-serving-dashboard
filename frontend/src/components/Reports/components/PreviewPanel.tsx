@@ -23,11 +23,9 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
 
   // Get all rows
-  const allRows =
-    previewData || [];
+  const allRows = previewData?.data || [];
 
-  const visibleColumns =
-    previewConfig?.columns?.filter((c) => c.visible) || [];
+  const visibleColumns = previewConfig?.columns?.filter((c) => c.visible) || [];
 
   // Reset page when data changes
   useEffect(() => {
@@ -74,8 +72,8 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                     <span>
                       Chart preview is not available.
                       <br />
-                      Save the report and open it in{" "}
-                      <b>Report Viewer</b> to see charts.
+                      Save the report and open it in <b>Report Viewer</b> to see
+                      charts.
                     </span>
                   </div>
                 )}
@@ -114,7 +112,10 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                             className="border-b hover:bg-zinc-50 last:border-b-0"
                           >
                             {visibleColumns.map((c) => (
-                              <td key={c.column_name} className="p-2 whitespace-nowrap">
+                              <td
+                                key={c.column_name}
+                                className="p-2 whitespace-nowrap"
+                              >
                                 {row[resolveKey(c.column_name)] ?? ""}
                               </td>
                             ))}
@@ -132,7 +133,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                   <span className="text-[10px] text-zinc-400 font-medium">
                     Page {currentPage} of {totalPages}
                   </span>
-                  
+
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -142,7 +143,9 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                       <ChevronLeft className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      onClick={() =>
+                        setCurrentPage((p) => Math.min(totalPages, p + 1))
+                      }
                       disabled={currentPage === totalPages}
                       className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-500 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
                     >
@@ -183,9 +186,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
             ) : (
               <AlertCircle className="w-5 h-5" />
             )}
-            <span className="text-xs font-medium">
-              {message.text}
-            </span>
+            <span className="text-xs font-medium">{message.text}</span>
           </div>
         </div>
       )}
