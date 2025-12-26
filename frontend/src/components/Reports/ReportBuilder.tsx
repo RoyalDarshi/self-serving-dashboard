@@ -24,20 +24,16 @@ import { PreviewPanel } from "./components/PreviewPanel";
 interface Props {
   connections: { id: number; connection_name: string }[];
   onSaved?: (reportId: number) => void;
-  initialReportId?: number;
+  initialReportId?: number; 
 }
 
 type ReportMode = "TABLE" | "SEMANTIC" | "SQL";
 
-const ReportBuilder: React.FC<Props> = ({
-  connections,
-  onSaved,
-  initialReportId,
-}) => {
+const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId }) => {
   // UI State
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [mode, setMode] = useState<ReportMode>("TABLE");
-  const [loadingReport, setLoadingReport] = useState(false);
+  const [loadingReport, setLoadingReport] = useState(false); 
 
   // --- Data Source State ---
   const [connectionId, setConnectionId] = useState<number | null>(
@@ -55,7 +51,7 @@ const ReportBuilder: React.FC<Props> = ({
   // --- Report Meta ---
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState(false);
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(""); 
 
   //--- Configuration Shelves ---
   const [tableColumns, setTableColumns] = useState<ConfigItem[]>([]);
@@ -110,96 +106,86 @@ const ReportBuilder: React.FC<Props> = ({
   useEffect(() => {
     if (initialReportId) {
       setLoadingReport(true);
-      apiService
-        .getReportConfig(initialReportId)
+      apiService.getReportConfig(initialReportId)
         .then((res: any) => {
-          const data = res.data || res;
-          const { report, columns, filters, drillTargets } = data;
+           const data = res.data || res;
+           const { report, columns, filters, drillTargets } = data;
+           
+           if (!report) {
+             throw new Error("Report data not found");
+           }
 
-          if (!report) {
-            throw new Error("Report data not found");
-          }
+           setName(report.name);
+           setDescription(report.description || "");
+           setConnectionId(report.connection_id);
+           setMode((report.report_type as ReportMode) || "TABLE");
+           setBaseTable(report.base_table);
+           setSqlText(report.sql_text || "");
 
-          setName(report.name);
-          setDescription(report.description || "");
-          setConnectionId(report.connection_id);
-          setMode((report.report_type as ReportMode) || "TABLE");
-          setBaseTable(report.base_table);
-          setSqlText(report.sql_text || "");
+           const vizConfig = typeof report.visualization_config === 'string' 
+             ? JSON.parse(report.visualization_config || "{}") 
+             : report.visualization_config || {};
+           
+           const tCols = (columns || [])
+              .filter((c: any) => c.visible)
+              .map((c: any) => ({
+                 id: Math.random().toString(36).substr(2, 9),
+                 name: c.column_name,
+                 table_name: c.table_name || report.base_table,
+                 alias: c.alias,
+                 type: c.data_type || "string",
+              }));
+           setTableColumns(tCols);
 
-          const vizConfig =
-            typeof report.visualization_config === "string"
-              ? JSON.parse(report.visualization_config || "{}")
-              : report.visualization_config || {};
+           if (vizConfig.showChart) {
+             setShowChart(true);
+             setChartType(vizConfig.chartType || "bar");
+             
+             if (vizConfig.xAxisColumn) {
+               const xCol = columns.find((c: any) => c.column_name === vizConfig.xAxisColumn);
+               if (xCol) {
+                 setChartX({
+                   id: "chart-x",
+                   name: xCol.column_name,
+                   table_name: xCol.table_name || report.base_table,
+                   alias: xCol.alias,
+                   type: xCol.data_type || "string"
+                 });
+               }
+             }
 
-          const tCols = (columns || [])
-            .filter((c: any) => c.visible)
-            .map((c: any) => ({
-              id: Math.random().toString(36).substr(2, 9),
-              name: c.column_name,
-              table_name: c.table_name || report.base_table,
-              alias: c.alias,
-              type: c.data_type || "string",
-            }));
-          setTableColumns(tCols);
+             if (vizConfig.yAxisColumns && Array.isArray(vizConfig.yAxisColumns)) {
+               const yItems: ConfigItem[] = [];
+               vizConfig.yAxisColumns.forEach((yName: string) => {
+                 const yCol = columns.find((c: any) => c.column_name === yName);
+                 if (yCol) {
+                   yItems.push({
+                     id: Math.random().toString(36).substr(2, 9),
+                     name: yCol.column_name,
+                     table_name: yCol.table_name || report.base_table,
+                     alias: yCol.alias,
+                     type: yCol.data_type || "number",
+                     aggregation: vizConfig.aggregation || "SUM"
+                   });
+                 }
+               });
+               setChartY(yItems);
+             }
+           }
 
-          if (vizConfig.showChart) {
-            setShowChart(true);
-            setChartType(vizConfig.chartType || "bar");
+           setFilters(filters || []);
 
-            if (vizConfig.xAxisColumn) {
-              const xCol = columns.find(
-                (c: any) => c.column_name === vizConfig.xAxisColumn
-              );
-              if (xCol) {
-                setChartX({
-                  id: "chart-x",
-                  name: xCol.column_name,
-                  table_name: xCol.table_name || report.base_table,
-                  alias: xCol.alias,
-                  type: xCol.data_type || "string",
-                });
-              }
-            }
-
-            if (
-              vizConfig.yAxisColumns &&
-              Array.isArray(vizConfig.yAxisColumns)
-            ) {
-              const yItems: ConfigItem[] = [];
-              vizConfig.yAxisColumns.forEach((yName: string) => {
-                const yCol = columns.find((c: any) => c.column_name === yName);
-                if (yCol) {
-                  yItems.push({
-                    id: Math.random().toString(36).substr(2, 9),
-                    name: yCol.column_name,
-                    table_name: yCol.table_name || report.base_table,
-                    alias: yCol.alias,
-                    type: yCol.data_type || "number",
-                    aggregation: vizConfig.aggregation || "SUM",
-                  });
-                }
-              });
-              setChartY(yItems);
-            }
-          }
-
-          setFilters(filters || []);
-
-          if (drillTargets && drillTargets.length > 0) {
-            const dt = drillTargets[0];
-            setDrillConfig({
-              targetReportId: dt.target_report_id,
-              mapping: JSON.parse(dt.mapping_json || "{}"),
-            });
-          }
+           if (drillTargets && drillTargets.length > 0) {
+             const dt = drillTargets[0];
+             setDrillConfig({
+               targetReportId: dt.target_report_id,
+               mapping: JSON.parse(dt.mapping_json || "{}")
+             });
+           }
         })
         .catch((err) => {
           console.error("Failed to load report", err);
-          setMessage({
-            type: "error",
-            text: "Failed to load report for editing",
-          });
+          setMessage({ type: "error", text: "Failed to load report for editing" });
         })
         .finally(() => setLoadingReport(false));
     }
@@ -263,98 +249,88 @@ const ReportBuilder: React.FC<Props> = ({
   };
 
   const constructPayload = () => {
-    const uniqueFields = new Map<string, ConfigItem>();
-    tableColumns.forEach((c) => uniqueFields.set(c.name, { ...c }));
-    if (showChart && chartX && !uniqueFields.has(chartX.name)) {
-      uniqueFields.set(chartX.name, { ...chartX, visible: false });
-    }
-    if (showChart) {
-      chartY.forEach((c) => {
-        if (!uniqueFields.has(c.name))
-          uniqueFields.set(c.name, { ...c, visible: false });
-      });
-    }
-
-    const reportColumns: ReportColumn[] = [];
-    tableColumns.forEach((c, idx) => {
-      reportColumns.push({
-        table_name: c.table_name || baseTable,
-        column_name: c.name,
-        alias: c.alias,
-        data_type: c.type,
-        visible: true,
-        order_index: idx,
-      });
-    });
-
-    if (showChart) {
-      if (chartX && !tableColumns.find((t) => t.name === chartX.name)) {
-        reportColumns.push({
-          table_name: chartX.table_name || baseTable,
-          column_name: chartX.name,
-          alias: chartX.alias,
-          data_type: chartX.type,
-          visible: false,
-          order_index: reportColumns.length,
+      const uniqueFields = new Map<string, ConfigItem>();
+      tableColumns.forEach((c) => uniqueFields.set(c.name, { ...c }));
+      if (showChart && chartX && !uniqueFields.has(chartX.name)) {
+        uniqueFields.set(chartX.name, { ...chartX, visible: false });
+      }
+      if (showChart) {
+        chartY.forEach((c) => {
+          if (!uniqueFields.has(c.name))
+            uniqueFields.set(c.name, { ...c, visible: false });
         });
       }
-      chartY.forEach((c) => {
-        if (!tableColumns.find((t) => t.name === c.name)) {
+
+      const reportColumns: ReportColumn[] = [];
+      tableColumns.forEach((c, idx) => {
+        reportColumns.push({
+          table_name: c.table_name || baseTable,
+          column_name: c.name,
+          alias: c.alias,
+          data_type: c.type,
+          visible: true,
+          order_index: idx,
+        });
+      });
+
+      if (showChart) {
+        if (chartX && !tableColumns.find((t) => t.name === chartX.name)) {
           reportColumns.push({
-            table_name: c.table_name || baseTable,
-            column_name: c.name,
-            alias: c.alias,
-            data_type: c.type,
+            table_name: chartX.table_name || baseTable,
+            column_name: chartX.name,
+            alias: chartX.alias,
+            data_type: chartX.type,
             visible: false,
             order_index: reportColumns.length,
           });
         }
-      });
-    }
+        chartY.forEach((c) => {
+          if (!tableColumns.find((t) => t.name === c.name)) {
+            reportColumns.push({
+              table_name: c.table_name || baseTable,
+              column_name: c.name,
+              alias: c.alias,
+              data_type: c.type,
+              visible: false,
+              order_index: reportColumns.length,
+            });
+          }
+        });
+      }
 
-    const visualizationConfig: any = showChart
-      ? {
-          showChart: true,
-          chartType,
-          xAxisColumn: chartX?.name || "",
-          yAxisColumns: chartY.map((y) => y.name),
-          aggregation: chartY[0]?.aggregation || "SUM",
-        }
-      : { showChart: false };
+      const visualizationConfig: any = showChart
+        ? {
+            showChart: true,
+            chartType,
+            xAxisColumn: chartX?.name || "",
+            yAxisColumns: chartY.map((y) => y.name),
+            aggregation: chartY[0]?.aggregation || "SUM",
+          }
+        : { showChart: false };
 
-    if (mode === "SEMANTIC") {
-      const factIds = tableColumns
-        .filter((c) => c.factId)
-        .map((c) => c.factId!);
-      const dimensionIds = tableColumns
-        .filter((c) => c.dimensionId)
-        .map((c) => c.dimensionId!);
-      visualizationConfig.factIds = factIds;
-      visualizationConfig.dimensionIds = dimensionIds;
-    }
+      if (mode === "SEMANTIC") {
+        const factIds = tableColumns.filter((c) => c.factId).map((c) => c.factId!);
+        const dimensionIds = tableColumns.filter((c) => c.dimensionId).map((c) => c.dimensionId!);
+        visualizationConfig.factIds = factIds;
+        visualizationConfig.dimensionIds = dimensionIds;
+      }
 
-    const drillTargets =
-      drillConfig.targetReportId !== 0
-        ? [
-            {
-              target_report_id: drillConfig.targetReportId,
-              mapping_json: drillConfig.mapping,
-            },
-          ]
-        : [];
+      const drillTargets = drillConfig.targetReportId !== 0
+          ? [{ target_report_id: drillConfig.targetReportId, mapping_json: drillConfig.mapping }]
+          : [];
 
-    return {
-      name,
-      description,
-      connection_id: connectionId,
-      base_table: mode === "SEMANTIC" ? "SEMANTIC" : baseTable,
-      columns: reportColumns,
-      filters: filters,
-      visualization_config: visualizationConfig,
-      drillTargets: drillTargets,
-      report_type: mode,
-      sql_text: mode === "SQL" ? sqlText : null,
-    };
+      return {
+        name,
+        description,
+        connection_id: connectionId,
+        base_table: mode === "SEMANTIC" ? "SEMANTIC" : baseTable,
+        columns: reportColumns,
+        filters: filters,
+        visualization_config: visualizationConfig,
+        drillTargets: drillTargets,
+        report_type: mode,
+        sql_text: mode === "SQL" ? sqlText : null
+      };
   };
 
   const handleRun = async () => {
@@ -363,12 +339,12 @@ const ReportBuilder: React.FC<Props> = ({
       return;
     }
     if (mode === "TABLE" && !baseTable) {
-      setMessage({ type: "error", text: "Please select a table first." });
-      return;
+        setMessage({ type: "error", text: "Please select a table first." });
+        return;
     }
     if (mode === "SQL" && !sqlText.trim()) {
-      setMessage({ type: "error", text: "Please enter a SQL query." });
-      return;
+        setMessage({ type: "error", text: "Please enter a SQL query." });
+        return;
     }
 
     setIsLoadingPreview(true);
@@ -397,7 +373,7 @@ const ReportBuilder: React.FC<Props> = ({
       const data = res.data || res;
 
       if (data && (data.success || Array.isArray(data.data) || data.rows)) {
-        setPreviewData(data.data || data);
+        setPreviewData(data.data || data); 
         setMessage({ type: "success", text: "Query executed successfully" });
         setTimeout(() => setMessage(null), 3000);
       } else {
@@ -430,7 +406,7 @@ const ReportBuilder: React.FC<Props> = ({
     setSaving(true);
     try {
       const payload = constructPayload();
-
+      
       let res;
       if (initialReportId) {
         res = await apiService.updateReport(initialReportId, payload as any);
@@ -443,12 +419,7 @@ const ReportBuilder: React.FC<Props> = ({
       const reportId = data.reportId || initialReportId;
 
       if (success) {
-        setMessage({
-          type: "success",
-          text: initialReportId
-            ? "Report updated successfully!"
-            : "Report created successfully!",
-        });
+        setMessage({ type: "success", text: initialReportId ? "Report updated successfully!" : "Report created successfully!" });
         setTimeout(() => setMessage(null), 3000);
         if (onSaved && reportId) onSaved(reportId);
       } else {
@@ -462,16 +433,14 @@ const ReportBuilder: React.FC<Props> = ({
   };
 
   if (loadingReport) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-[#fafafa]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-          <p className="text-zinc-500 font-medium animate-pulse">
-            Loading report configuration...
-          </p>
-        </div>
-      </div>
-    );
+      return (
+          <div className="h-screen w-full flex items-center justify-center bg-[#fafafa]">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                  <p className="text-zinc-500 font-medium animate-pulse">Loading report configuration...</p>
+              </div>
+          </div>
+      );
   }
 
   const canRun =
@@ -482,6 +451,7 @@ const ReportBuilder: React.FC<Props> = ({
   // --- UPDATED LAYOUT CLASS ---
   return (
     <div className="flex flex-col lg:flex-row h-screen w-full bg-[#fafafa] font-sans text-slate-800 overflow-hidden relative">
+      
       {/* 1. LEFT PANEL: Data Source */}
       <DataSourcePanel
         leftPanelCollapsed={leftPanelCollapsed}
@@ -491,8 +461,8 @@ const ReportBuilder: React.FC<Props> = ({
         onConnectionChange={(id) => {
           setConnectionId(id);
           if (!loadingReport) {
-            setBaseTable("");
-            setTableColumns([]);
+             setBaseTable("");
+             setTableColumns([]);
           }
         }}
         mode={mode}
@@ -526,63 +496,62 @@ const ReportBuilder: React.FC<Props> = ({
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-6">
           <div className="max-w-4xl mx-auto space-y-6 pb-20">
-            {mode === "SQL" ? (
-              <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden flex flex-col h-[500px]">
-                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
-                  <h3 className="text-sm font-bold text-slate-800">
-                    SQL Query Editor
-                  </h3>
-                </div>
-                <textarea
-                  className="flex-1 p-4 font-mono text-sm focus:outline-none resize-none"
-                  placeholder="SELECT * FROM users WHERE..."
-                  value={sqlText}
-                  onChange={(e) => setSqlText(e.target.value)}
-                />
-              </div>
-            ) : (
-              <>
-                <ProgressIndicator
-                  mode={mode}
-                  baseTable={baseTable}
-                  tableColumns={tableColumns}
-                  name={name}
-                />
+             
+             {mode === "SQL" ? (
+                 <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden flex flex-col h-[500px]">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                        <h3 className="text-sm font-bold text-slate-800">SQL Query Editor</h3>
+                    </div>
+                    <textarea 
+                        className="flex-1 p-4 font-mono text-sm focus:outline-none resize-none"
+                        placeholder="SELECT * FROM users WHERE..."
+                        value={sqlText}
+                        onChange={(e) => setSqlText(e.target.value)}
+                    />
+                 </div>
+             ) : (
+                <>
+                    <ProgressIndicator
+                        mode={mode}
+                        baseTable={baseTable}
+                        tableColumns={tableColumns}
+                        name={name}
+                    />
 
-                <TableConfig
-                  tableColumns={tableColumns}
-                  setTableColumns={setTableColumns}
-                  handleDropTable={handleDropTable}
-                />
+                    <TableConfig
+                        tableColumns={tableColumns}
+                        setTableColumns={setTableColumns}
+                        handleDropTable={handleDropTable}
+                    />
 
-                <VisualizationConfig
-                  showChart={showChart}
-                  setShowChart={setShowChart}
-                  chartType={chartType}
-                  setChartType={setChartType}
-                  chartX={chartX}
-                  setChartX={setChartX}
-                  chartY={chartY}
-                  setChartY={setChartY}
-                  handleDropChartX={handleDropChartX}
-                  handleDropChartY={handleDropChartY}
-                />
+                    <VisualizationConfig
+                        showChart={showChart}
+                        setShowChart={setShowChart}
+                        chartType={chartType}
+                        setChartType={setChartType}
+                        chartX={chartX}
+                        setChartX={setChartX}
+                        chartY={chartY}
+                        setChartY={setChartY}
+                        handleDropChartX={handleDropChartX}
+                        handleDropChartY={handleDropChartY}
+                    />
 
-                <FiltersConfig
-                  filters={filters}
-                  setFilters={setFilters}
-                  handleDropFilter={handleDropFilter}
-                />
+                    <FiltersConfig
+                        filters={filters}
+                        setFilters={setFilters}
+                        handleDropFilter={handleDropFilter}
+                    />
 
-                <DrillThroughConfig
-                  drillConfig={drillConfig}
-                  setDrillConfig={setDrillConfig}
-                  availableReports={availableReports}
-                  tableColumns={tableColumns}
-                  targetReportFields={targetReportFields}
-                />
-              </>
-            )}
+                    <DrillThroughConfig
+                        drillConfig={drillConfig}
+                        setDrillConfig={setDrillConfig}
+                        availableReports={availableReports}
+                        tableColumns={tableColumns}
+                        targetReportFields={targetReportFields}
+                    />
+                </>
+             )}
           </div>
         </div>
       </div>
