@@ -114,7 +114,9 @@ export const SqlDisplay: React.FC<SqlDisplayProps> = ({ sql }) => {
           )}
         </button>
       </div>
-      <div className="p-4 bg-[#f8fafc]">
+
+      {/* CHANGE: Add 'max-h-60' and 'overflow-y-auto' to constrain height */}
+      <div className="p-4 bg-[#f8fafc] max-h-60 overflow-y-auto custom-scrollbar">
         <pre className="text-md font-mono leading-relaxed whitespace-pre-wrap">
           {formattedSql.split("\n").map((line, i) => (
             <div key={i}>{highlightSql(line)}</div>

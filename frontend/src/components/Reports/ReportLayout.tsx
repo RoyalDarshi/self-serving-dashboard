@@ -13,7 +13,6 @@ const ReportLayout: React.FC<{ connections: Connection[] }> = ({
   const [activeReportId, setActiveReportId] = useState<number | null>(null);
 
   // --- ACTIONS ---
-
   const handleCreateNew = () => {
     setActiveReportId(null);
     setMode("BUILD");
@@ -39,14 +38,11 @@ const ReportLayout: React.FC<{ connections: Connection[] }> = ({
     setActiveReportId(null);
   };
 
-  // --- RENDER ---
-
   return (
-    // CHANGE 1: Use h-screen to lock height to viewport and overflow-hidden to prevent body scroll
-    <div className="h-screen w-full bg-slate-50 overflow-hidden flex flex-col">
+    // FIX: min-h-screen allows vertical scroll. overflow-x-hidden prevents window horizontal scroll.
+    <div className="min-h-screen w-full bg-slate-50 overflow-x-hidden flex flex-col">
       {mode === "LIST" && (
-        // CHANGE 2: Wrap List in a scrollable container so only the list area scrolls
-        <div className="h-full w-full overflow-y-auto">
+        <div className="w-full">
           <ReportList
             onOpenReport={handleOpenReport}
             onCreateNew={handleCreateNew}
@@ -56,10 +52,7 @@ const ReportLayout: React.FC<{ connections: Connection[] }> = ({
       )}
 
       {mode === "BUILD" && (
-        // CHANGE 3: Ensure Builder takes full height but contains its own overflow
-        // If ReportBuilder has its own scrollbars (e.g. sidebar/canvas), keep this overflow-hidden.
-        // If ReportBuilder is just a long form, change to overflow-y-auto.
-        <div className="h-full w-full relative z-0 overflow-hidden">
+        <div className="w-full relative z-0">
           <button
             onClick={handleClose}
             className="fixed top-4 right-4 z-50 px-4 py-2 bg-white/90 backdrop-blur text-slate-600 text-xs font-bold rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50"
@@ -75,8 +68,7 @@ const ReportLayout: React.FC<{ connections: Connection[] }> = ({
       )}
 
       {mode === "VIEW" && activeReportId && (
-        // CHANGE 4: Viewer usually needs its own scroll
-        <div className="h-full w-full overflow-y-auto">
+        <div className="w-full">
           <ReportViewer
             initialReportId={activeReportId}
             onClose={handleClose}

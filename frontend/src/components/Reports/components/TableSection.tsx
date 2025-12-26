@@ -22,12 +22,11 @@ export const TableSection: React.FC<TableSectionProps> = ({
   const visibleColumns = config.columns?.filter((c) => c.visible) || [];
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+    // FIX: w-full and max-w-full ensures it doesn't exceed parent width
+    <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col w-full max-w-full">
       {/* Scrollable Container */}
-      <div className="overflow-x-auto custom-scrollbar">
+      <div className="overflow-x-auto custom-scrollbar w-full">
         <table className="w-full text-sm min-w-[800px]">
-          {" "}
-          {/* min-w forces scroll on small screens */}
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               {visibleColumns.map((c) => (
