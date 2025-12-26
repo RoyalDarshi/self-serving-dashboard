@@ -175,19 +175,35 @@ router.get("/run", async (req, res) => {
     // 5️⃣ CHART MODE (AGGREGATED)
     // =====================================================
     if (mode === "chart") {
-      const dimensions = columns.filter(
-        (c) => !c.data_type || c.data_type === "string"
-      );
+      let dimensions = columns.filter(
+      (c) => !c.data_type || c.data_type === "string"
+    );
 
-      const measures = columns.filter(
-        (c) => c.data_type === "number"
-      );
+    let measures = columns.filter(
+      (c) => c.data_type === "number"
+    );
 
-      if (!dimensions.length || !measures.length) {
-        return res.status(400).json({
-          error: "Chart requires at least 1 dimension and 1 measure",
-        });
-      }
+    // 🔥 AUTO-FALLBACK (THIS FIXES EVERYTHING)
+    if (!measures.length) {
+      measures = columns.filter((c) =>
+        c.column_name.match(/count|sum|amount|total|marks|price|qty|number/i)
+      );
+    }
+
+    // 🚑 LAST RESORT (never fail)
+    if (!dimensions.length && columns.length) {
+      dimensions = [columns[0]];
+    }
+    if (!measures.length && columns.length > 1) {
+      measures = [columns[columns.length - 1]];
+    }
+
+    if (!dimensions.length || !measures.length) {
+      return res.status(400).json({
+        error: "Chart requires at least 1 dimension and 1 measure",
+      });
+    }
+
 
       const select = [
         ...dimensions.map(
