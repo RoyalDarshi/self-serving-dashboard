@@ -24,16 +24,20 @@ import { PreviewPanel } from "./components/PreviewPanel";
 interface Props {
   connections: { id: number; connection_name: string }[];
   onSaved?: (reportId: number) => void;
-  initialReportId?: number; 
+  initialReportId?: number;
 }
 
 type ReportMode = "TABLE" | "SEMANTIC" | "SQL";
 
-const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId }) => {
+const ReportBuilder: React.FC<Props> = ({
+  connections,
+  onSaved,
+  initialReportId,
+}) => {
   // UI State
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [mode, setMode] = useState<ReportMode>("TABLE");
-  const [loadingReport, setLoadingReport] = useState(false); 
+  const [loadingReport, setLoadingReport] = useState(false);
 
   // --- Data Source State ---
   const [connectionId, setConnectionId] = useState<number | null>(
@@ -51,7 +55,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
   // --- Report Meta ---
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState(false);
-  const [description, setDescription] = useState(""); 
+  const [description, setDescription] = useState("");
 
   //--- Configuration Shelves ---
   const [tableColumns, setTableColumns] = useState<ConfigItem[]>([]);
@@ -126,6 +130,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
   }, [connectionId]);
 
   // 2. Load Existing Report for Editing
+  // 2. Load Existing Report for Editing
   useEffect(() => {
     if (initialReportId) {
       setLoadingReport(true);
@@ -139,6 +144,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
             throw new Error("Report data not found");
           }
 
+          // --- 1. Basic Info ---
           setName(report.name);
           setDescription(report.description || "");
           setConnectionId(report.connection_id);
@@ -146,6 +152,17 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
           setBaseTable(report.base_table);
           setSqlText(report.sql_text || "");
 
+          // --- 2. Template Info (New Fix) ---
+          setTemplateType(report.template_type || null);
+          if (report.template_json) {
+            setTemplateJson(
+              typeof report.template_json === "string"
+                ? JSON.parse(report.template_json)
+                : report.template_json
+            );
+          }
+
+          // --- 3. Columns & Charts ---
           const vizConfig =
             typeof report.visualization_config === "string"
               ? JSON.parse(report.visualization_config || "{}")
@@ -153,13 +170,31 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
 
           const tCols = (columns || [])
             .filter((c: any) => c.visible)
-            .map((c: any) => ({
-              id: Math.random().toString(36).substr(2, 9),
-              name: c.column_name,
-              table_name: c.table_name || report.base_table,
-              alias: c.alias,
-              type: c.data_type || "string",
-            }));
+            .map((c: any) => {
+              // 🧹 CLEAN ALIAS: Remove extra quotes/slashes if present
+              let cleanAlias = c.alias;
+              if (cleanAlias && typeof cleanAlias === "string") {
+                try {
+                  // If it looks like a JSON string (starts with quotes), try to parse it
+                  if (
+                    cleanAlias.startsWith('"') ||
+                    cleanAlias.startsWith("'")
+                  ) {
+                    cleanAlias = JSON.parse(cleanAlias);
+                  }
+                } catch (e) {
+                  // If parsing fails, just use the original
+                }
+              }
+
+              return {
+                id: Math.random().toString(36).substr(2, 9),
+                name: c.column_name,
+                table_name: c.table_name || report.base_table,
+                alias: cleanAlias, // ✅ Use the cleaned alias
+                type: c.data_type || "string",
+              };
+            });
           setTableColumns(tCols);
 
           if (vizConfig.showChart) {
@@ -203,8 +238,30 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
             }
           }
 
-          setFilters(filters || []);
+          // --- 4. Filters (Fix: Ensure boolean conversion) ---
+          const loadedFilters = (filters || []).map((f: any) => {
+            let val = f.value;
+            try {
+              // The backend sends values as JSON strings (e.g., "\"Draft\"")
+              // We must parse them back to raw values (e.g., "Draft")
+              if (typeof val === "string") {
+                val = JSON.parse(val);
+              }
+            } catch (e) {
+              // If it wasn't valid JSON, just use the raw value
+              console.warn("Could not parse filter value:", val);
+            }
 
+            return {
+              ...f,
+              value: val, // ✅ Correctly parsed value
+              is_mandatory: Boolean(f.is_mandatory),
+              is_user_editable: f.is_user_editable !== 0,
+            };
+          });
+          setFilters(loadedFilters);
+
+          // --- 5. Drill Targets ---
           if (drillTargets && drillTargets.length > 0) {
             const dt = drillTargets[0];
             setDrillConfig({
@@ -675,6 +732,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                 key={idx}
                                 className="flex gap-2 items-center"
                               >
+                                {/* Label Input (Fixed) */}
                                 <input
                                   className="border px-2 py-1 text-sm w-40"
                                   placeholder="Label"
@@ -685,11 +743,9 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                       (s: any) => s.type === "header"
                                     );
                                     if (!header) return;
-                                    header.fields.push({
-                                      label: "",
-                                      column: "",
-                                    });
 
+                                    // ✅ FIX: Update existing index
+                                    header.fields[idx].label = e.target.value;
                                     setTemplateJson({
                                       ...templateJson,
                                       sections,
@@ -697,6 +753,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                   }}
                                 />
 
+                                {/* Column Select */}
                                 <select
                                   className="border px-2 py-1 text-sm flex-1"
                                   value={f.column || ""}
@@ -719,6 +776,28 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                     </option>
                                   ))}
                                 </select>
+
+                                {/* ❌ DELETE BUTTON */}
+                                <button
+                                  className="text-red-500 hover:text-red-700 px-2 font-bold"
+                                  title="Remove Field"
+                                  onClick={() => {
+                                    const sections = [...templateJson.sections];
+                                    const header = sections.find(
+                                      (s: any) => s.type === "header"
+                                    );
+                                    if (!header) return;
+
+                                    // Remove item at specific index
+                                    header.fields.splice(idx, 1);
+                                    setTemplateJson({
+                                      ...templateJson,
+                                      sections,
+                                    });
+                                  }}
+                                >
+                                  ✕
+                                </button>
                               </div>
                             ))}
 
@@ -772,6 +851,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                 key={idx}
                                 className="flex gap-2 items-center"
                               >
+                                {/* Column Label Input */}
                                 <input
                                   className="border px-2 py-1 text-sm w-40"
                                   placeholder="Column Label"
@@ -781,6 +861,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                     const table = sections.find(
                                       (s) => s.type === "table"
                                     );
+                                    // ✅ Update existing index
                                     table.columns[idx].label = e.target.value;
                                     setTemplateJson({
                                       ...templateJson,
@@ -789,6 +870,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                   }}
                                 />
 
+                                {/* Column Select */}
                                 <select
                                   className="border px-2 py-1 text-sm flex-1"
                                   value={c.column || ""}
@@ -811,6 +893,28 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
                                     </option>
                                   ))}
                                 </select>
+
+                                {/* ❌ DELETE BUTTON */}
+                                <button
+                                  className="text-red-500 hover:text-red-700 px-2 font-bold"
+                                  title="Remove Column"
+                                  onClick={() => {
+                                    const sections = [...templateJson.sections];
+                                    const table = sections.find(
+                                      (s: any) => s.type === "table"
+                                    );
+                                    if (!table) return;
+
+                                    // Remove item at specific index
+                                    table.columns.splice(idx, 1);
+                                    setTemplateJson({
+                                      ...templateJson,
+                                      sections,
+                                    });
+                                  }}
+                                >
+                                  ✕
+                                </button>
                               </div>
                             ))}
 

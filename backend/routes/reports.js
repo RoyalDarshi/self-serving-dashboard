@@ -12,9 +12,36 @@ import { extractSqlParams } from "../utils/sqlParams.js";
 
 const router = Router();
 
+// 🔥 HELPER: recursively unwrap strings to fix "/////" explosion
+const cleanJsonValue = (val) => {
+  if (val === undefined || val === null) return JSON.stringify("");
+
+  // If it's not a string (e.g. number 123), just stringify it and return
+  if (typeof val !== "string") return JSON.stringify(val);
+
+  // If it IS a string, try to parse it down to its rawest form
+  let current = val;
+  try {
+    // Loop: while 'current' is a string that looks like JSON, unwrap it
+    // e.g. "\"\\\"Draft\\\"\"" -> "\"Draft\"" -> "Draft"
+    while (typeof current === "string") {
+      const parsed = JSON.parse(current);
+      current = parsed;
+    }
+  } catch (e) {
+    // We hit the bottom (e.g. "Draft" which isn't valid JSON).
+    // 'current' is now the raw value.
+  }
+
+  // Finally, wrap it ONCE correctly
+  return JSON.stringify(current);
+};
+
 // ==================================================================
-// 1. STATIC ROUTES (Must come BEFORE /:id)
+// 1. STATIC ROUTES
 // ==================================================================
+
+// ... (Keep /list and /run routes exactly as they are) ...
 
 /**
  * LIST REPORTS
@@ -53,7 +80,7 @@ router.get("/list", async (req, res) => {
 });
 
 /**
- * RUN REPORT (Moved UP to prevent conflict with /:id)
+ * RUN REPORT
  */
 router.get("/run", async (req, res) => {
   const db = await dbPromise;
@@ -227,7 +254,7 @@ router.get("/run", async (req, res) => {
 });
 
 /**
- * SAVE REPORT (Also static, keep it high up)
+ * SAVE REPORT
  */
 router.post("/save", async (req, res) => {
   const db = await dbPromise;
@@ -244,7 +271,7 @@ router.post("/save", async (req, res) => {
     drillTargets = [],
     report_type = "TABLE",
     sql_text = null,
-    template_json = null, // 🔥 NEW
+    template_json = null,
     template_type = null,
   } = req.body;
 
@@ -254,12 +281,9 @@ router.post("/save", async (req, res) => {
     });
   }
 
-  // --------------------------------------------
   // SQL REPORT VALIDATION
-  // --------------------------------------------
   if (report_type === "SQL") {
     validateSelectSQL(sql_text);
-
     const params = extractSqlParams(sql_text);
     filters = params.map((p, idx) => ({
       column_name: p,
@@ -269,14 +293,12 @@ router.post("/save", async (req, res) => {
       is_user_editable: true,
       order_index: idx,
     }));
-
     base_table = "__SQL__";
   }
 
   try {
     await db.run("BEGIN TRANSACTION");
 
-    // ---------------- SAVE REPORT ----------------
     const result = await db.run(
       `INSERT INTO reports (
   user_id, connection_id, name, description, base_table,
@@ -301,12 +323,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
     const reportId = result.lastID;
 
-    // ---------------- SAVE COLUMNS ----------------
+    // SAVE COLUMNS
     for (const col of columns) {
       if (!col.column_name) {
         throw new Error("column_name is required in columns");
       }
-
       await db.run(
         `INSERT INTO report_columns
          (report_id, table_name, column_name, alias, data_type, visible, order_index)
@@ -323,7 +344,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       );
     }
 
-    // ---------------- SAVE FILTERS ----------------
+    // SAVE FILTERS (🔥 USING CLEAN FUNCTION)
     for (const f of filters || []) {
       await db.run(
         `INSERT INTO report_filters
@@ -334,15 +355,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           f.table_name,
           f.column_name,
           f.operator || "=",
-          JSON.stringify(f.value ?? ""),
+          cleanJsonValue(f.value), // ✅ CLEANED HERE
           f.is_user_editable ? 1 : 0,
-          f.is_mandatory ? 1 : 0, // 🔥 NEW
+          f.is_mandatory ? 1 : 0,
           f.order_index || 0,
         ]
       );
     }
 
-    // ---------------- SAVE DRILL TARGETS ----------------
+    // SAVE DRILL TARGETS
     for (const dt of drillTargets || []) {
       await db.run(
         `INSERT INTO report_drillthrough
@@ -362,7 +383,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 });
 
 /**
- * PREVIEW REPORT (Runs query without saving)
+ * PREVIEW REPORT
  */
 router.post("/preview", async (req, res) => {
   try {
@@ -378,39 +399,22 @@ router.post("/preview", async (req, res) => {
       return res.status(400).json({ error: "connection_id required" });
     }
 
-    // --------------------------------------------------
-    // 1️⃣ RESOLVE BASE TABLE
-    // --------------------------------------------------
     let resolvedBaseTable = base_table;
-
     if (base_table === "SEMANTIC") {
       const factIds = visualization_config?.factIds;
-
       if (!factIds || factIds.length === 0) {
         return res
           .status(400)
           .json({ error: "Semantic query requires at least one fact" });
       }
-
-      // Get pool to read metadata
-      // ✅ READ METADATA FROM SQLITE
       const db = await dbPromise;
-
       const factRow = await db.get(
         "SELECT table_name FROM facts WHERE id = ?",
         [factIds[0]]
       );
-
       if (!factRow?.table_name) {
         return res.status(400).json({ error: "Invalid fact selected" });
       }
-
-      resolvedBaseTable = factRow.table_name;
-
-      if (!factRow?.table_name) {
-        return res.status(400).json({ error: "Invalid fact selected" });
-      }
-
       resolvedBaseTable = factRow.table_name;
     }
 
@@ -418,50 +422,36 @@ router.post("/preview", async (req, res) => {
       return res.status(400).json({ error: "base_table required" });
     }
 
-    // --------------------------------------------------
-    // 2️⃣ BUILD SELECT / GROUP BY (SAFE ALIASES ONLY)
-    // --------------------------------------------------
     const visibleColumns = columns.filter((c) => c.visible !== false);
-
     const select = [];
     const group_by = [];
 
-    /**
-     * IMPORTANT:
-     * - Inner query MUST use table.column
-     * - Alias only for outer query
-     */
     for (const col of visibleColumns) {
       if (!col.table_name || !col.column_name) {
         return res.status(400).json({
           error: "Preview columns must include table_name and column_name",
         });
       }
-
       const qualifiedCol = `${col.table_name}.${col.column_name}`;
       const alias = safeAlias(`${col.table_name}_${col.column_name}`);
-
       select.push(`${qualifiedCol} AS ${alias}`);
-
       if (col.dimensionId) {
         group_by.push(qualifiedCol);
       }
     }
 
+    // For preview, we trust the incoming value as-is (frontend handles it)
     const fixedFilters = filters
       .filter(
         (f) => f.value !== "" && f.value !== null && f.value !== undefined
       )
       .map((f) => ({
-        column: `${f.table_name}.${f.column_name}`, // ✅ NO GUESSING
+        column: `${f.table_name}.${f.column_name}`,
         operator: f.operator,
         value: f.value,
       }));
 
     const limit = 100;
-    // --------------------------------------------------
-    // 3️⃣ BUILD INNER SEMANTIC QUERY
-    // --------------------------------------------------
     const { sql, params } = await buildSemanticQuery({
       connection_id,
       base_table: resolvedBaseTable,
@@ -471,12 +461,8 @@ router.post("/preview", async (req, res) => {
       limit,
     });
 
-    // --------------------------------------------------
-    // 4️⃣ OUTER QUERY (DISPLAY NAMES)
-    // --------------------------------------------------
     const meta = await getPoolForConnection(connection_id);
     const { pool, type } = meta;
-
     const q = (n) => quoteIdentifier(n, type);
 
     const outerSelect = visibleColumns
@@ -493,9 +479,6 @@ router.post("/preview", async (req, res) => {
       ) semantic_sub
     `;
 
-    // --------------------------------------------------
-    // 5️⃣ EXECUTE
-    // --------------------------------------------------
     let rows;
     if (type === "postgres") {
       const r = await pool.query(finalSQL, params);
@@ -505,10 +488,7 @@ router.post("/preview", async (req, res) => {
       rows = r;
     }
 
-    return res.json({
-      sql: finalSQL,
-      data: rows,
-    });
+    return res.json({ sql: finalSQL, data: rows });
   } catch (err) {
     console.error("REPORT PREVIEW ERROR:", err);
     return res.status(500).json({ error: err.message });
@@ -516,11 +496,11 @@ router.post("/preview", async (req, res) => {
 });
 
 // ==================================================================
-// 2. DYNAMIC ROUTES (Must come AFTER static routes)
+// 2. DYNAMIC ROUTES
 // ==================================================================
 
 /**
- * GET REPORT CONFIG (Dynamic ID)
+ * GET REPORT CONFIG
  */
 router.get("/:id", async (req, res) => {
   const db = await dbPromise;
@@ -563,7 +543,7 @@ router.get("/:id", async (req, res) => {
 });
 
 /**
- * UPDATE REPORT (Dynamic ID)
+ * UPDATE REPORT
  */
 router.put("/:id", async (req, res) => {
   const db = await dbPromise;
@@ -577,7 +557,7 @@ router.put("/:id", async (req, res) => {
     filters = [],
     visualization_config,
     drillTargets = [],
-    template_json = null, // 🔥 NEW
+    template_json = null,
     template_type = null,
   } = req.body;
 
@@ -598,7 +578,7 @@ router.put("/:id", async (req, res) => {
 
     await db.run("BEGIN TRANSACTION");
 
-    // ---------------- UPDATE REPORT META ----------------
+    // UPDATE REPORT META
     await db.run(
       `
   UPDATE reports
@@ -616,14 +596,13 @@ router.put("/:id", async (req, res) => {
         description || null,
         JSON.stringify(visualization_config || {}),
         template_json ? JSON.stringify(template_json) : null,
-        template_type || null, // ✅ THIS WAS MISSING
-        id, // ✅ WHERE id = ?
+        template_type || null,
+        id,
       ]
     );
 
-    // ---------------- REPLACE COLUMNS ----------------
+    // REPLACE COLUMNS
     await db.run(`DELETE FROM report_columns WHERE report_id = ?`, [id]);
-
     for (const col of columns) {
       await db.run(
         `INSERT INTO report_columns
@@ -631,7 +610,7 @@ router.put("/:id", async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
-          col.table_name || null, // 🔥 CRITICAL
+          col.table_name || null,
           col.column_name,
           col.alias || null,
           col.data_type || null,
@@ -641,31 +620,30 @@ router.put("/:id", async (req, res) => {
       );
     }
 
-    // ---------------- REPLACE FILTERS ----------------
+    // REPLACE FILTERS (🔥 USING CLEAN FUNCTION)
     await db.run(`DELETE FROM report_filters WHERE report_id = ?`, [id]);
-
     for (const f of filters || []) {
       await db.run(
         `INSERT INTO report_filters
-         (report_id, table_name, column_name, operator, value, is_user_editable, order_index)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (report_id, table_name, column_name, operator, value, is_user_editable, is_mandatory, order_index)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
-          f.table_name || null, // 🔥 CRITICAL
+          f.table_name || null,
           f.column_name,
           f.operator || "=",
-          JSON.stringify(f.value ?? ""),
+          cleanJsonValue(f.value), // ✅ CLEANED HERE
           f.is_user_editable ? 1 : 0,
+          f.is_mandatory ? 1 : 0, // Added missing is_mandatory check
           f.order_index || 0,
         ]
       );
     }
 
-    // ---------------- REPLACE DRILL TARGETS ----------------
+    // REPLACE DRILL TARGETS
     await db.run(`DELETE FROM report_drillthrough WHERE parent_report_id = ?`, [
       id,
     ]);
-
     for (const dt of drillTargets || []) {
       await db.run(
         `INSERT INTO report_drillthrough
@@ -730,7 +708,6 @@ router.get("/:id/drill-config", async (req, res) => {
 
 /**
  * GET DRILL FIELDS
- * Returns available fields for drill-down based on report type.
  */
 router.get("/:reportId/drill-fields", async (req, res) => {
   const db = await dbPromise;
@@ -741,7 +718,6 @@ router.get("/:reportId/drill-fields", async (req, res) => {
   let isPgClient = false;
 
   try {
-    // ---------------- LOAD REPORT ----------------
     const report = await db.get(`SELECT * FROM reports WHERE id = ?`, [
       reportId,
     ]);
@@ -749,7 +725,6 @@ router.get("/:reportId/drill-fields", async (req, res) => {
       return res.status(404).json({ error: "Report not found" });
     }
 
-    // ---------------- ACCESS CHECK ----------------
     if (user.role !== "admin" && report.user_id !== user.userId) {
       const accessCheck = await db.get(
         `SELECT count(*) as count
@@ -763,7 +738,6 @@ router.get("/:reportId/drill-fields", async (req, res) => {
       }
     }
 
-    // ---------------- DB CONNECTION ----------------
     const { pool, type } = await getPoolForConnection(
       report.connection_id,
       user?.userId
@@ -773,12 +747,9 @@ router.get("/:reportId/drill-fields", async (req, res) => {
       client = await pool.connect();
       isPgClient = true;
     } else {
-      client = pool; // mysql2 / sqlite
+      client = pool;
     }
 
-    // =================================================
-    // 🔥 SEMANTIC REPORT DRILL FIELDS
-    // =================================================
     if (report.base_table === "SEMANTIC") {
       const vizConfig = JSON.parse(report.visualization_config || "{}");
       const { factIds, dimensionIds } = vizConfig;
@@ -796,7 +767,6 @@ router.get("/:reportId/drill-fields", async (req, res) => {
         return res.json([]);
       }
 
-      // Fetch drillable dimensions
       const drillFields = await db.all(
         `
         SELECT
@@ -812,9 +782,6 @@ router.get("/:reportId/drill-fields", async (req, res) => {
       return res.json(drillFields);
     }
 
-    // =================================================
-    // 🔥 STANDARD TABLE REPORT DRILL FIELDS
-    // =================================================
     const columns = await db.all(
       `
       SELECT column_name AS column, column_name AS label

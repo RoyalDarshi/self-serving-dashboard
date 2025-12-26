@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { apiService, FullReportConfig } from "../../services/api";
 import ReportShareModal from "./ReportShareModal";
-import { SqlDisplay } from "./components/SqlDisplay";
+// import { SqlDisplay } from "./components/SqlDisplay"; // (Uncomment if needed)
 import { ChartSection } from "./components/ChartSection";
 import { TableSection } from "./components/TableSection";
-import { ArrowLeft, Share2, BarChart2, Table as TableIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  Share2,
+  BarChart2,
+  Table as TableIcon,
+  Download, // 🔥 NEW IMPORT
+} from "lucide-react";
 import TemplateRenderer from "./components/TemplateRenderer";
 
 interface ReportViewerProps {
@@ -38,10 +44,10 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
       ? JSON.parse(config.report.template_json)
       : config?.report?.template_json;
 
-  const templateJson =
-    typeof config?.report?.template_json === "string"
-      ? JSON.parse(config.report.template_json)
-      : config?.report?.template_json;
+  // 🔥 NEW: Handle Printing/Downloading
+  const handleDownload = () => {
+    window.print(); // Triggers browser "Save as PDF" dialog
+  };
 
   useEffect(() => {
     if (initialReportId) {
@@ -83,7 +89,6 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
       setActiveFilters(filters);
       setCurrentPage(1);
 
-      // 🔥 ONLY RUN WHEN ALLOWED
       if (autoRun && !hasMissingMandatoryFilters(cfg, filters)) {
         await Promise.all([
           loadChart(reportId, filters),
@@ -99,7 +104,6 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
 
   const hasMissingMandatoryFilters = (cfg = config, inputs = filterInputs) => {
     if (!cfg?.filters) return false;
-
     return cfg.filters.some(
       (f: any) =>
         f.is_mandatory &&
@@ -156,10 +160,36 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   };
 
   return (
-    // FIX: Main wrapper is w-full and overflow-hidden horizontally
     <div className="flex flex-col w-full bg-slate-50 font-sans min-h-screen overflow-x-hidden">
+      {/* 🔥 CSS FOR PRINTING ONLY THE TEMPLATE */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #template-container, #template-container * {
+            visibility: visible;
+          }
+          #template-container {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            padding: 20px;
+            background: white;
+            border: none;
+            box-shadow: none;
+          }
+          /* Hide headers/footers browser might add */
+          @page {
+            margin: 0.5cm; 
+          }
+        }
+      `}</style>
+
       {/* HEADER */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm sticky top-0 z-30">
+      <div className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm sticky top-0 z-30 print:hidden">
         <div className="flex items-center gap-3">
           {onClose && (
             <button
@@ -179,66 +209,80 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           </div>
         </div>
 
-        {!templateType && (
-          <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+        <div className="flex items-center gap-2">
+          {/* 🔥 DOWNLOAD BUTTON (Only shows if template exists) */}
+          {templateType && (
             <button
-              onClick={() => setViewMode("table")}
-              className={`p-2 rounded-md transition-all ${
-                viewMode === "table"
-                  ? "bg-white text-indigo-600 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
+              onClick={handleDownload}
+              className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm mr-2"
+              title="Download Template PDF"
             >
-              <TableIcon className="w-4 h-4" />
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Download</span>
             </button>
-            <button
-              onClick={() => setViewMode("chart")}
-              className={`p-2 rounded-md transition-all ${
-                viewMode === "chart"
-                  ? "bg-white text-indigo-600 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <BarChart2 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode("both")}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                viewMode === "both"
-                  ? "bg-white text-indigo-600 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              BOTH
-            </button>
-          </div>
-        )}
-        <button
-          onClick={() => setShareOpen(true)}
-          className="ml-4 p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
-        >
-          <Share2 className="w-5 h-5" />
-        </button>
+          )}
+
+          {!templateType && (
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+              <button
+                onClick={() => setViewMode("table")}
+                className={`p-2 rounded-md transition-all ${
+                  viewMode === "table"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <TableIcon className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("chart")}
+                className={`p-2 rounded-md transition-all ${
+                  viewMode === "chart"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <BarChart2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("both")}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                  viewMode === "both"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                BOTH
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={() => setShareOpen(true)}
+            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
+          >
+            <Share2 className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* CONTENT AREA */}
-      {/* FIX: min-w-0 ensures flex children don't overflow the parent container width */}
-      <div className="flex flex-col flex-1 p-6 space-y-6 w-full max-w-full min-w-0">
+      <div className="flex flex-col flex-1 p-6 space-y-6 w-full max-w-full min-w-0 print:p-0">
         {loading && (
-          <div className="flex items-center justify-center py-10">
+          <div className="flex items-center justify-center py-10 print:hidden">
             <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
           </div>
         )}
 
         {error && (
-          <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm">
+          <div className="p-4 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm print:hidden">
             {error}
           </div>
         )}
 
-        {/* FILTERS */}
+        {/* FILTERS (Hidden during print) */}
         {config?.filters?.length > 0 && (
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm w-full">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm w-full print:hidden">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
               Filters
             </div>
@@ -279,13 +323,8 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           </div>
         )}
 
-        {/* SQL */}
-        <div className="w-full min-w-0">
-          <SqlDisplay sql={sql} />
-        </div>
-
         {hasMissingMandatoryFilters() && (
-          <div className="p-6 bg-yellow-50 border border-yellow-300 rounded-xl">
+          <div className="p-6 bg-yellow-50 border border-yellow-300 rounded-xl print:hidden">
             <h3 className="font-bold text-yellow-800 mb-2">Filters Required</h3>
             <p className="text-sm text-yellow-700">
               Please fill all mandatory filters to view this report.
@@ -293,22 +332,23 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           </div>
         )}
 
-        {/* CHART */}
         {/* ================= TEMPLATE RENDERING ================= */}
 
-        {templateType === "MARKSHEET" && !hasMissingMandatoryFilters() && (
-          <TemplateRenderer rows={tableRows} template={templateJson} />
-        )}
+        {/* 🔥 WRAPPER DIV WITH ID FOR PRINTING */}
+        <div id="template-container">
+          {(templateType === "MARKSHEET" || template?.sections?.length) &&
+            !hasMissingMandatoryFilters() && (
+              <TemplateRenderer rows={tableRows} template={template} />
+            )}
+        </div>
 
         {/* ================= NORMAL REPORT ================= */}
-
         {!templateType && (
           <>
-            {/* CHART */}
             {viewMode !== "table" &&
               config &&
               !hasMissingMandatoryFilters() && (
-                <div className="w-full min-w-0">
+                <div className="w-full min-w-0 print:hidden">
                   <ChartSection
                     data={chartData}
                     config={config}
@@ -319,27 +359,23 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                 </div>
               )}
 
-            {/* TABLE */}
-            {config &&
-            !hasMissingMandatoryFilters() &&
-            template?.sections?.length ? (
-              <TemplateRenderer rows={tableRows} template={template} />
-            ) : (
-              viewMode !== "chart" &&
-              config && (
-                <TableSection
-                  rows={tableRows}
-                  config={config}
-                  currentPage={currentPage}
-                  resolveKey={resolveKey}
-                  onPageChange={(p) => {
-                    setCurrentPage(p);
-                    loadTable(config.report.id, activeFilters, p);
-                  }}
-                  onDrill={handleDrill}
-                />
-              )
-            )}
+            {viewMode !== "chart" &&
+              config &&
+              !hasMissingMandatoryFilters() && (
+                <div className="print:hidden">
+                  <TableSection
+                    rows={tableRows}
+                    config={config}
+                    currentPage={currentPage}
+                    resolveKey={resolveKey}
+                    onPageChange={(p) => {
+                      setCurrentPage(p);
+                      loadTable(config.report.id, activeFilters, p);
+                    }}
+                    onDrill={handleDrill}
+                  />
+                </div>
+              )}
           </>
         )}
       </div>
