@@ -59,34 +59,27 @@ router.get("/run", async (req, res) => {
   const db = await dbPromise;
   const {
     reportId,
-    mode = "table", // chart | table
+    mode = "table",
     page = 1,
     pageSize = 50,
     ...runtimeFilters
   } = req.query;
-
-  const { user } = req;
 
   if (!reportId) {
     return res.status(400).json({ error: "reportId required" });
   }
 
   try {
-    // =====================================================
-    // 1️⃣ LOAD REPORT
-    // =====================================================
+    // 1️⃣ Load report
     const report = await db.get(
       `SELECT * FROM reports WHERE id = ?`,
       [reportId]
     );
-
     if (!report) {
       return res.status(404).json({ error: "Report not found" });
     }
 
-    // =====================================================
-    // 2️⃣ SQL REPORT (CUSTOM QUERY)
-    // =====================================================
+    // 2️⃣ SQL report
     if (report.report_type === "SQL") {
       validateSelectSQL(report.sql_text);
 
@@ -96,129 +89,79 @@ router.get("/run", async (req, res) => {
 
       for (const p of params) {
         if (!(p in runtimeFilters)) {
-          return res.status(400).json({
-            error: `Missing parameter: ${p}`,
-          });
+          return res.status(400).json({ error: `Missing parameter: ${p}` });
         }
         values.push(runtimeFilters[p]);
         finalSql = finalSql.replace(`:${p}`, "?");
       }
 
-      // ⚠️ FORCE LIMIT for safety
       finalSql += " LIMIT 1000";
 
-      const { pool, type } = await getPoolForConnection(
-        report.connection_id,
-        user?.userId
-      );
+      const { pool, type } = await getPoolForConnection(report.connection_id);
+      const [rows] = type === "postgres"
+        ? [ (await pool.query(finalSql, values)).rows ]
+        : await pool.query(finalSql, values);
 
-      let rows;
-      if (type === "postgres") {
-        const r = await pool.query(finalSql, values);
-        rows = r.rows;
-      } else {
-        const [r] = await pool.query(finalSql, values);
-        rows = r;
+      return res.json({ sql: finalSql, rows });
+    }
+
+    // 3️⃣ Load columns + filters
+    const columns = await db.all(
+      `SELECT * FROM report_columns WHERE report_id = ? ORDER BY order_index`,
+      [reportId]
+    );
+
+    const filtersFromDB = await db.all(
+      `SELECT * FROM report_filters WHERE report_id = ? ORDER BY order_index`,
+      [reportId]
+    );
+
+    // 4️⃣ Build FINAL FILTERS (ONLY from report_filters)
+    const finalFilters = [];
+
+    for (const f of filtersFromDB) {
+      const runtimeVal = runtimeFilters[f.column_name];
+
+      if (
+        runtimeVal === "" ||
+        runtimeVal === null ||
+        runtimeVal === undefined
+      ) {
+        continue;
       }
 
-      return res.json({
-        mode: "sql",
-        sql: finalSql,
-        rowCount: rows.length,
-        preview: rows.slice(0, 100),
+      if (!f.table_name) {
+        console.warn("Filter missing table_name:", f);
+        continue;
+      }
+
+      finalFilters.push({
+        column: `${f.table_name}.${f.column_name}`,
+        operator: f.operator || "=",
+        value: runtimeVal,
       });
     }
 
-    // =====================================================
-    // 3️⃣ LOAD COLUMNS & FILTERS
-    // =====================================================
-    const columns = await db.all(
-      `SELECT * FROM report_columns
-       WHERE report_id = ?
-       ORDER BY order_index`,
-      [reportId]
-    );
-
-    const savedFilters = await db.all(
-      `SELECT * FROM report_filters
-       WHERE report_id = ?
-       ORDER BY order_index`,
-      [reportId]
-    );
-
-    // =====================================================
-    // 4️⃣ MERGE FILTERS (Saved + Runtime)
-    // =====================================================
-    const finalFiltersMap = {};
-
-    for (const f of savedFilters) {
-      finalFiltersMap[f.column_name] = {
-        column: f.column_name.includes(".")
-          ? f.column_name
-          : `${report.base_table}.${f.column_name}`,
-        operator: f.operator,
-        value: JSON.parse(f.value ?? "null"),
-      };
-    }
-
-    for (const [key, val] of Object.entries(runtimeFilters)) {
-      finalFiltersMap[key] = {
-        column: `${report.base_table}.${key}`,
-        operator: "=",
-        value: val,
-      };
-    }
-
-    const finalFilters = Object.values(finalFiltersMap);
-
-    // =====================================================
-    // 5️⃣ CHART MODE (AGGREGATED)
-    // =====================================================
+    // 5️⃣ Chart mode
     if (mode === "chart") {
-      let dimensions = columns.filter(
-      (c) => !c.data_type || c.data_type === "string"
-    );
+      const dimensions = columns.filter(c => c.data_type !== "number");
+      const measures = columns.filter(c => c.data_type === "number");
 
-    let measures = columns.filter(
-      (c) => c.data_type === "number"
-    );
-
-    // 🔥 AUTO-FALLBACK (THIS FIXES EVERYTHING)
-    if (!measures.length) {
-      measures = columns.filter((c) =>
-        c.column_name.match(/count|sum|amount|total|marks|price|qty|number/i)
-      );
-    }
-
-    // 🚑 LAST RESORT (never fail)
-    if (!dimensions.length && columns.length) {
-      dimensions = [columns[0]];
-    }
-    if (!measures.length && columns.length > 1) {
-      measures = [columns[columns.length - 1]];
-    }
-
-    if (!dimensions.length || !measures.length) {
-      return res.status(400).json({
-        error: "Chart requires at least 1 dimension and 1 measure",
-      });
-    }
-
+      if (!dimensions.length || !measures.length) {
+        return res.status(400).json({
+          error: "Chart requires at least 1 dimension and 1 measure",
+        });
+      }
 
       const select = [
-        ...dimensions.map(
-          (c) => `${c.table_name}.${c.column_name}`
-        ),
+        ...dimensions.map(c => `${c.table_name}.${c.column_name}`),
         ...measures.map(
-          (c) =>
-            `SUM(${c.table_name}.${c.column_name}) AS ${safeAlias(
-              c.column_name
-            )}`
+          c => `SUM(${c.table_name}.${c.column_name}) AS ${safeAlias(c.column_name)}`
         ),
       ];
 
       const group_by = dimensions.map(
-        (c) => `${c.table_name}.${c.column_name}`
+        c => `${c.table_name}.${c.column_name}`
       );
 
       const { sql, params } = await buildSemanticQuery({
@@ -230,35 +173,20 @@ router.get("/run", async (req, res) => {
         limit: 1000,
       });
 
-      const { pool, type } = await getPoolForConnection(
-        report.connection_id,
-        user?.userId
-      );
+      const { pool, type } = await getPoolForConnection(report.connection_id);
+      const [rows] = type === "postgres"
+        ? [ (await pool.query(sql, params)).rows ]
+        : await pool.query(sql, params);
 
-      let rows;
-      if (type === "postgres") {
-        const r = await pool.query(sql, params);
-        rows = r.rows;
-      } else {
-        const [r] = await pool.query(sql, params);
-        rows = r;
-      }
-
-      return res.json({
-        mode: "chart",
-        sql,
-        data: rows,
-      });
+      return res.json({ sql, data: rows });
     }
 
-    // =====================================================
-    // 6️⃣ TABLE MODE (PAGINATED RAW DATA)
-    // =====================================================
+    // 6️⃣ Table mode
     const limit = Math.min(Number(pageSize), 100);
     const offset = (Number(page) - 1) * limit;
 
     const select = columns.map(
-      (c) => `${c.table_name}.${c.column_name}`
+      c => `${c.table_name}.${c.column_name}`
     );
 
     const { sql, params } = await buildSemanticQuery({
@@ -270,27 +198,12 @@ router.get("/run", async (req, res) => {
       offset,
     });
 
-    const { pool, type } = await getPoolForConnection(
-      report.connection_id,
-      user?.userId
-    );
+    const { pool, type } = await getPoolForConnection(report.connection_id);
+    const [rows] = type === "postgres"
+      ? [ (await pool.query(sql, params)).rows ]
+      : await pool.query(sql, params);
 
-    let rows;
-    if (type === "postgres") {
-      const r = await pool.query(sql, params);
-      rows = r.rows;
-    } else {
-      const [r] = await pool.query(sql, params);
-      rows = r;
-    }
-
-    return res.json({
-      mode: "table",
-      sql,
-      page: Number(page),
-      pageSize: limit,
-      rows,
-    });
+    return res.json({ sql, rows });
   } catch (err) {
     console.error("Run report error:", err);
     return res.status(500).json({ error: err.message });
@@ -314,8 +227,8 @@ router.post("/save", async (req, res) => {
     filters = [],
     visualization_config,
     drillTargets = [],
-    report_type = "TABLE", // 🔥 NEW
-    sql_text = null, // 🔥 NEW
+    report_type = "TABLE",
+    sql_text = null,
   } = req.body;
 
   if (!name || !connection_id) {
@@ -325,42 +238,30 @@ router.post("/save", async (req, res) => {
   }
 
   // --------------------------------------------
-  // 🔐 SQL REPORT VALIDATION
+  // SQL REPORT VALIDATION
   // --------------------------------------------
   if (report_type === "SQL") {
     validateSelectSQL(sql_text);
 
-    // Auto-create filters from :params
     const params = extractSqlParams(sql_text);
     filters = params.map((p, idx) => ({
       column_name: p,
+      table_name: null,
       operator: "=",
       value: "",
       is_user_editable: true,
       order_index: idx,
     }));
 
-    base_table = "__SQL__"; // placeholder (not used)
-  }
-
-  // --------------------------------------------
-  // SEMANTIC SAFETY
-  // --------------------------------------------
-  if (
-    report_type === "SEMANTIC" &&
-    (!visualization_config ||
-      (!visualization_config.factIds && !visualization_config.kpiId))
-  ) {
-    return res.status(400).json({
-      error: "Semantic report requires facts or KPI",
-    });
+    base_table = "__SQL__";
   }
 
   try {
     await db.run("BEGIN TRANSACTION");
 
+    // ---------------- SAVE REPORT ----------------
     const result = await db.run(
-      `INSERT INTO reports 
+      `INSERT INTO reports
        (user_id, connection_id, name, description, base_table, visualization_config, report_type, sql_text)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -377,21 +278,19 @@ router.post("/save", async (req, res) => {
 
     const reportId = result.lastID;
 
-    // --------------------------------------------
-    // SAVE COLUMNS (TABLE / SEMANTIC)
-    // --------------------------------------------
+    // ---------------- SAVE COLUMNS ----------------
     for (const col of columns) {
       if (!col.column_name) {
-        throw new Error("column_name is required");
+        throw new Error("column_name is required in columns");
       }
 
       await db.run(
         `INSERT INTO report_columns
-        (report_id, table_name, column_name, alias, data_type, visible, order_index)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         (report_id, table_name, column_name, alias, data_type, visible, order_index)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           reportId,
-          col.table_name || null,  // 🔥 SAVE TABLE NAME
+          col.table_name || null,
           col.column_name,
           col.alias || null,
           col.data_type || null,
@@ -401,19 +300,17 @@ router.post("/save", async (req, res) => {
       );
     }
 
-
-    // --------------------------------------------
-    // SAVE FILTERS (AUTO for SQL)
-    // --------------------------------------------
-    for (const f of filters) {
+    // ---------------- SAVE FILTERS ----------------
+    for (const f of filters || []) {
       await db.run(
         `INSERT INTO report_filters
-         (report_id, column_name, operator, value, is_user_editable, order_index)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+         (report_id, table_name, column_name, operator, value, is_user_editable, order_index)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           reportId,
+          f.table_name || null,          // 🔥 CRITICAL
           f.column_name,
-          f.operator,
+          f.operator || "=",
           JSON.stringify(f.value ?? ""),
           f.is_user_editable ? 1 : 0,
           f.order_index || 0,
@@ -421,10 +318,8 @@ router.post("/save", async (req, res) => {
       );
     }
 
-    // --------------------------------------------
-    // DRILL-THROUGH
-    // --------------------------------------------
-    for (const dt of drillTargets) {
+    // ---------------- SAVE DRILL TARGETS ----------------
+    for (const dt of drillTargets || []) {
       await db.run(
         `INSERT INTO report_drillthrough
          (parent_report_id, target_report_id, mapping_json)
@@ -434,10 +329,10 @@ router.post("/save", async (req, res) => {
     }
 
     await db.run("COMMIT");
-
     res.json({ success: true, reportId });
   } catch (err) {
     await db.run("ROLLBACK");
+    console.error("SAVE REPORT ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -529,12 +424,15 @@ router.post("/preview", async (req, res) => {
       }
     }
 
-    const fixedFilters = (filters || []).map((f) => ({
-      ...f,
-      column: f.column.includes(".")
-        ? f.column
-        : `${resolvedBaseTable}.${f.column}`,
-    }));
+    const fixedFilters = filters
+      .filter(f => f.value !== "" && f.value !== null && f.value !== undefined)
+      .map(f => ({
+        column: `${f.table_name}.${f.column_name}`, // ✅ NO GUESSING
+        operator: f.operator,
+        value: f.value,
+      }));
+
+
     const limit = 100;
     // --------------------------------------------------
     // 3️⃣ BUILD INNER SEMANTIC QUERY
@@ -648,31 +546,39 @@ router.put("/:id", async (req, res) => {
   const db = await dbPromise;
   const { id } = req.params;
   const { user } = req;
+
   const {
     name,
     description,
-    columns,
-    filters,
+    columns = [],
+    filters = [],
     visualization_config,
-    drillTargets,
+    drillTargets = [],
   } = req.body;
 
   try {
-    const report = await db.get("SELECT user_id FROM reports WHERE id = ?", [
-      id,
-    ]);
-    if (!report) return res.status(404).json({ error: "Report not found" });
+    const report = await db.get(
+      `SELECT user_id FROM reports WHERE id = ?`,
+      [id]
+    );
+
+    if (!report) {
+      return res.status(404).json({ error: "Report not found" });
+    }
 
     if (user.role !== "admin" && report.user_id !== user.userId) {
-      return res
-        .status(403)
-        .json({ error: "Only the creator or admin can edit this report" });
+      return res.status(403).json({
+        error: "Only creator or admin can update this report",
+      });
     }
 
     await db.run("BEGIN TRANSACTION");
 
+    // ---------------- UPDATE REPORT META ----------------
     await db.run(
-      `UPDATE reports SET name = ?, description = ?, visualization_config = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE reports
+       SET name = ?, description = ?, visualization_config = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
       [
         name,
         description || null,
@@ -681,58 +587,66 @@ router.put("/:id", async (req, res) => {
       ]
     );
 
+    // ---------------- REPLACE COLUMNS ----------------
     await db.run(`DELETE FROM report_columns WHERE report_id = ?`, [id]);
-    for (const col of columns || []) {
-      await db.run(
-      `INSERT INTO report_columns
-      (report_id, table_name, column_name, alias, data_type, visible, order_index)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        col.table_name || null,   // 🔥 CRITICAL
-        col.column_name,
-        col.alias || null,
-        col.data_type || null,
-        col.visible ? 1 : 0,
-        col.order_index || 0,
-      ]
-    );
 
-    }
-
-    await db.run(`DELETE FROM report_filters WHERE report_id = ?`, [id]);
-    for (const f of filters || []) {
+    for (const col of columns) {
       await db.run(
-        `INSERT INTO report_filters (report_id, column_name, operator, value, is_user_editable, order_index)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO report_columns
+         (report_id, table_name, column_name, alias, data_type, visible, order_index)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
+          col.table_name || null,     // 🔥 CRITICAL
+          col.column_name,
+          col.alias || null,
+          col.data_type || null,
+          col.visible ? 1 : 0,
+          col.order_index || 0,
+        ]
+      );
+    }
+
+    // ---------------- REPLACE FILTERS ----------------
+    await db.run(`DELETE FROM report_filters WHERE report_id = ?`, [id]);
+
+    for (const f of filters || []) {
+      await db.run(
+        `INSERT INTO report_filters
+         (report_id, table_name, column_name, operator, value, is_user_editable, order_index)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          f.table_name || null,       // 🔥 CRITICAL
           f.column_name,
-          f.operator,
-          JSON.stringify(f.value),
+          f.operator || "=",
+          JSON.stringify(f.value ?? ""),
           f.is_user_editable ? 1 : 0,
           f.order_index || 0,
         ]
       );
     }
 
-    await db.run(`DELETE FROM report_drillthrough WHERE parent_report_id = ?`, [
-      id,
-    ]);
-    if (drillTargets && drillTargets.length > 0) {
-      for (const dt of drillTargets) {
-        await db.run(
-          `INSERT INTO report_drillthrough (parent_report_id, target_report_id, mapping_json)
-                 VALUES (?, ?, ?)`,
-          [id, dt.target_report_id, JSON.stringify(dt.mapping_json)]
-        );
-      }
+    // ---------------- REPLACE DRILL TARGETS ----------------
+    await db.run(
+      `DELETE FROM report_drillthrough WHERE parent_report_id = ?`,
+      [id]
+    );
+
+    for (const dt of drillTargets || []) {
+      await db.run(
+        `INSERT INTO report_drillthrough
+         (parent_report_id, target_report_id, mapping_json)
+         VALUES (?, ?, ?)`,
+        [id, dt.target_report_id, JSON.stringify(dt.mapping_json)]
+      );
     }
 
     await db.run("COMMIT");
-    res.json({ success: true, message: "Report updated" });
+    res.json({ success: true, message: "Report updated successfully" });
   } catch (err) {
     await db.run("ROLLBACK");
+    console.error("UPDATE REPORT ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });

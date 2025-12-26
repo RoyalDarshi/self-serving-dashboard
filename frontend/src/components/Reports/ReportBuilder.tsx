@@ -235,11 +235,20 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
   };
 
   const handleDropFilter = (item: DragItem) => {
+    // 🚑 HARD STOP: never allow filter without table_name
+    if (!item.table_name) {
+      console.error(
+        "❌ Filter column missing table_name. Filter NOT created.",
+        item
+      );
+      return;
+    }
+
     setFilters([
       ...filters,
       {
         column_name: item.name,
-        table_name: item.table_name || baseTable,
+        table_name: item.table_name, // ✅ ALWAYS REAL TABLE
         operator: "=",
         value: "",
         is_user_editable: true,
@@ -247,6 +256,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId 
       },
     ]);
   };
+
 
   const constructPayload = () => {
       const uniqueFields = new Map<string, ConfigItem>();

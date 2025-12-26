@@ -44,6 +44,12 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [shareOpen, setShareOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
+  // user typing (UI only)
+const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
+
+// applied filters (sent to backend)
+const [appliedFilters, setAppliedFilters] = useState<Record<string, string>>({});
+
 
   // --------------------------------------------------
   // INIT
@@ -202,6 +208,40 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           {error && <div className="text-red-600">{error}</div>}
 
           {/* ===================== CHART ===================== */}
+
+          {config?.filters?.length > 0 && (
+            <div className="bg-white border rounded p-4 space-y-3">
+              <div className="font-semibold text-sm">Filters</div>
+
+              <div className="grid grid-cols-4 gap-3">
+                {config.filters.map((f: any) => (
+                  <input
+                    key={f.column_name}
+                    className="border px-2 py-1 rounded text-sm"
+                    placeholder={f.column_name}
+                    value={filterInputs[f.column_name] || ""}
+                    onChange={(e) =>
+                      setFilterInputs({
+                        ...filterInputs,
+                        [f.column_name]: e.target.value,
+                      })
+                    }
+                  />
+                ))}
+              </div>
+
+              <button
+                className="px-4 py-1 bg-indigo-600 text-white rounded text-sm"
+                onClick={() => {
+                  setAppliedFilters(filterInputs);
+                  loadReport(config.report.id, filterInputs);
+                }}
+              >
+                Apply Filters
+              </button>
+            </div>
+          )}
+
           {viewMode !== "table" &&
             chartData.length > 0 &&
             xKey &&
