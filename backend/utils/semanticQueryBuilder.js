@@ -153,11 +153,17 @@ export async function buildSemanticQuery({
      WHERE
   --------------------------------------------- */
   const params = [];
+
   if (filters.length) {
     const whereParts = filters.map((f) => {
+      const qualifiedColumn = f.column.includes(".")
+        ? f.column
+        : `${base_table}.${f.column}`;
+
       params.push(f.value);
-      return `${f.column} ${f.operator} ?`;
+      return `${qualifiedColumn} ${f.operator} ?`;
     });
+
     sql += ` WHERE ${whereParts.join(" AND ")}`;
   }
 

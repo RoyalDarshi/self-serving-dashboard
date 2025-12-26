@@ -28,8 +28,19 @@ export interface ChartConfig {
 }
 
 export interface DragItem {
+  name: string;              // column_name
+  label?: string;            // display name
+  table_name?: string;       // 🔥 REQUIRED
   type: string;
-  column: Column;
+  factId?: number;
+  dimensionId?: number;
+  aggregation?: string;
+}
+
+export interface ConfigItem extends DragItem {
+  id: string;
+  alias?: string;
+  visible?: boolean;
 }
 
 export interface MultiColumnChart {

@@ -12,13 +12,19 @@ export const DraggableSemanticItem = ({
 }) => {
   const handleDragStart = (e: React.DragEvent) => {
     const dragData: DragItem = {
-      name: item.name,
+      name: item.column_name,        // 🔥 REAL COLUMN
+      label: item.name,              // display name
+      table_name:
+        type === "fact"
+          ? (item as Fact).table_name
+          : undefined,               // dimensions will be resolved later
       type: type === "fact" ? "number" : "string",
       factId: type === "fact" ? (item as Fact).id : undefined,
       dimensionId: type === "dimension" ? (item as Dimension).id : undefined,
       aggregation:
         type === "fact" ? (item as Fact).aggregate_function : undefined,
     };
+
     e.dataTransfer.setData("field", JSON.stringify(dragData));
     e.dataTransfer.effectAllowed = "copy";
   };

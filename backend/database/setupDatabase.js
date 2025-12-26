@@ -209,6 +209,7 @@ const SCHEMAS = {
     CREATE TABLE IF NOT EXISTS report_columns (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       report_id INTEGER NOT NULL,
+      table_name TEXT,              -- 🔥 NEW
       column_name TEXT NOT NULL,
       alias TEXT,
       data_type TEXT,

@@ -65,20 +65,21 @@ router.get("/run", async (req, res) => {
   }
 
   try {
-    // --------------------------------------------
+    // =====================================================
     // LOAD REPORT
-    // --------------------------------------------
-    const report = await db.get(`SELECT * FROM reports WHERE id = ?`, [
-      reportId,
-    ]);
+    // =====================================================
+    const report = await db.get(
+      `SELECT * FROM reports WHERE id = ?`,
+      [reportId]
+    );
 
     if (!report) {
       return res.status(404).json({ error: "Report not found" });
     }
 
-    // --------------------------------------------
-    // 🔥 SQL REPORT EXECUTION
-    // --------------------------------------------
+    // =====================================================
+    // 1️⃣ SQL REPORT
+    // =====================================================
     if (report.report_type === "SQL") {
       validateSelectSQL(report.sql_text);
 
@@ -113,18 +114,137 @@ router.get("/run", async (req, res) => {
       return res.json({ sql: finalSql, rows });
     }
 
-    // --------------------------------------------
-    // ⬇️ FALLBACK: EXISTING LOGIC
-    // --------------------------------------------
-    // TABLE and SEMANTIC reports continue EXACTLY
-    // as you already implemented (no change)
+    // =====================================================
+    // 2️⃣ TABLE / SEMANTIC REPORT
+    // =====================================================
 
-    return res.status(500).json({ error: "Non-SQL execution not shown here" });
+    // SAFETY
+    if (!report.base_table) {
+      return res.status(400).json({
+        error: "base_table required for TABLE / SEMANTIC reports",
+      });
+    }
+
+    // -----------------------------------------------------
+    // LOAD COLUMNS
+    // -----------------------------------------------------
+    const columns = await db.all(
+      `SELECT * FROM report_columns
+       WHERE report_id = ?
+       ORDER BY order_index`,
+      [reportId]
+    );
+
+    // -----------------------------------------------------
+    // LOAD FILTERS
+    // -----------------------------------------------------
+    const savedFilters = await db.all(
+      `SELECT * FROM report_filters
+       WHERE report_id = ?
+       ORDER BY order_index`,
+      [reportId]
+    );
+
+    // -----------------------------------------------------
+    // MERGE RUNTIME FILTERS
+    // -----------------------------------------------------
+    // -----------------------------------------------------
+    // BUILD FILTERS (SAVED + RUNTIME) 🔥
+    // -----------------------------------------------------
+    const finalFiltersMap = {};
+
+    // 1️⃣ Saved filters (base)
+    for (const f of savedFilters) {
+      finalFiltersMap[f.column_name] = {
+        column: f.column_name.includes(".")
+          ? f.column_name
+          : `${report.base_table}.${f.column_name}`,
+        operator: f.operator,
+        value: JSON.parse(f.value ?? "null"),
+      };
+    }
+
+    // 2️⃣ Runtime filters (drill-down / URL params)
+    for (const [key, val] of Object.entries(runtimeFilters)) {
+      finalFiltersMap[key] = {
+        column: `${report.base_table}.${key}`,
+        operator: "=",
+        value: val,
+      };
+    }
+
+    // 3️⃣ Final list
+    const finalFilters = Object.values(finalFiltersMap);
+
+
+
+    // -----------------------------------------------------
+    // BUILD SELECT CLAUSE
+    // -----------------------------------------------------
+    const select = columns.map((c) => {
+      if (!c.table_name || !c.column_name) {
+        throw new Error(
+          "Saved report columns must include table_name and column_name"
+        );
+      }
+
+      const qualifiedCol = `${c.table_name}.${c.column_name}`;
+      return c.alias
+        ? `${qualifiedCol} AS ${c.alias}`
+        : qualifiedCol;
+    });
+
+    // -----------------------------------------------------
+    // GROUP BY (basic safe rule)
+    // -----------------------------------------------------
+    const group_by =
+      report.report_type === "SEMANTIC"
+        ? columns
+            .filter(
+              (c) =>
+                !c.data_type ||
+                c.data_type === "string"
+            )
+            .map((c) => `${c.table_name}.${c.column_name}`)
+        : [];
+
+
+    // -----------------------------------------------------
+    // BUILD SQL USING semanticQueryBuilder
+    // -----------------------------------------------------
+    const { sql, params } = await buildSemanticQuery({
+      connection_id: report.connection_id,
+      base_table: report.base_table,
+      select,
+      filters: finalFilters,
+      group_by,
+    });
+
+    // -----------------------------------------------------
+    // EXECUTE SQL
+    // -----------------------------------------------------
+    const { pool, type } = await getPoolForConnection(
+      report.connection_id,
+      user?.userId
+    );
+
+    let rows;
+    if (type === "postgres") {
+      const r = await pool.query(sql, params);
+      rows = r.rows;
+    } else {
+      const [r] = await pool.query(sql, params);
+      rows = r;
+    }
+    console.log(sql)
+    return res.json({ sql, rows });
+
   } catch (err) {
     console.error("Run report error:", err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
+
 
 /**
  * SAVE REPORT (Also static, keep it high up)
@@ -209,12 +329,17 @@ router.post("/save", async (req, res) => {
     // SAVE COLUMNS (TABLE / SEMANTIC)
     // --------------------------------------------
     for (const col of columns) {
+      if (!col.column_name) {
+        throw new Error("column_name is required");
+      }
+
       await db.run(
         `INSERT INTO report_columns
-         (report_id, column_name, alias, data_type, visible, order_index)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        (report_id, table_name, column_name, alias, data_type, visible, order_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           reportId,
+          col.table_name || null,  // 🔥 SAVE TABLE NAME
           col.column_name,
           col.alias || null,
           col.data_type || null,
@@ -223,6 +348,7 @@ router.post("/save", async (req, res) => {
         ]
       );
     }
+
 
     // --------------------------------------------
     // SAVE FILTERS (AUTO for SQL)
@@ -329,14 +455,34 @@ router.post("/preview", async (req, res) => {
     const select = [];
     const group_by = [];
 
+    /**
+     * IMPORTANT:
+     * - Inner query MUST use table.column
+     * - Alias only for outer query
+     */
     for (const col of visibleColumns) {
-      const alias = safeAlias(col.column_name);
-      select.push(alias);
+      if (!col.table_name || !col.column_name) {
+        return res.status(400).json({
+          error: "Preview columns must include table_name and column_name",
+        });
+      }
+
+      const qualifiedCol = `${col.table_name}.${col.column_name}`;
+      const alias = safeAlias(`${col.table_name}_${col.column_name}`);
+
+      select.push(`${qualifiedCol} AS ${alias}`);
 
       if (col.dimensionId) {
-        group_by.push(alias);
+        group_by.push(qualifiedCol);
       }
     }
+
+    const fixedFilters = (filters || []).map((f) => ({
+      ...f,
+      column: f.column.includes(".")
+        ? f.column
+        : `${resolvedBaseTable}.${f.column}`,
+    }));
 
     // --------------------------------------------------
     // 3️⃣ BUILD INNER SEMANTIC QUERY
@@ -345,9 +491,10 @@ router.post("/preview", async (req, res) => {
       connection_id,
       base_table: resolvedBaseTable,
       select,
-      filters,
+      filters: fixedFilters,
       group_by,
     });
+
 
     // --------------------------------------------------
     // 4️⃣ OUTER QUERY (DISPLAY NAMES)
@@ -359,10 +506,11 @@ router.post("/preview", async (req, res) => {
 
     const outerSelect = visibleColumns
       .map((c) => {
-        const innerCol = q(safeAlias(c.column_name));
-        return `${innerCol} AS ${q(c.column_name)}`;
+        const innerAlias = safeAlias(`${c.table_name}_${c.column_name}`);
+        return `${q(innerAlias)} AS ${q(c.column_name)}`;
       })
       .join(", ");
+
 
     const finalSQL = `
       SELECT ${outerSelect}

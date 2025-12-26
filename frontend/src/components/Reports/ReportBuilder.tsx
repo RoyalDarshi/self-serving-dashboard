@@ -153,6 +153,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       ...filters,
       {
         column_name: item.name,
+        table_name: item.table_name || baseTable,
         operator: "=",
         value: "",
         is_user_editable: true,
@@ -181,17 +182,19 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
 
     tableColumns.forEach((c, idx) => {
       reportColumns.push({
-        column_name: c.name,
-        alias: c.alias,
-        data_type: c.type,
-        visible: true,
-        order_index: idx,
-      });
+      table_name: c.table_name || baseTable,   // 🔥 CRITICAL
+      column_name: c.name,
+      alias: c.alias,
+      data_type: c.type,
+      visible: true,
+      order_index: idx,
+    });
     });
 
     if (showChart) {
       if (chartX && !tableColumns.find((t) => t.name === chartX.name)) {
         reportColumns.push({
+          table_name: chartX.table_name || baseTable,
           column_name: chartX.name,
           alias: chartX.alias,
           data_type: chartX.type,
@@ -202,6 +205,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       chartY.forEach((c) => {
         if (!tableColumns.find((t) => t.name === c.name)) {
           reportColumns.push({
+            table_name: c.table_name || baseTable,
             column_name: c.name,
             alias: c.alias,
             data_type: c.type,

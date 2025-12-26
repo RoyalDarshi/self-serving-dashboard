@@ -18,9 +18,9 @@ router.post("/query", async (req, res) => {
       aggregation,
     } = req.body;
 
-    if (!base_table) {
-      return res.status(400).json({ error: "base_table is required" });
-    }
+    // if (!base_table) {
+    //   return res.status(400).json({ error: "base_table is required" });
+    // }
 
     const db = await dbPromise;
 
@@ -43,6 +43,19 @@ router.post("/query", async (req, res) => {
             dimensionIds
           )
         : [];
+    
+    // 🔥 AUTO-DETERMINE BASE TABLE (MULTI-TABLE SUPPORT)
+    const resolvedBaseTable =
+      facts.length > 0
+        ? facts[0].table_name
+        : dimensions.length > 0
+        ? dimensions[0].table_name
+        : base_table;
+
+    if (!resolvedBaseTable) {
+      return res.status(400).json({ error: "Unable to determine base table" });
+    }
+
 
     const select = [];
     const group_by = [];
@@ -56,7 +69,7 @@ router.post("/query", async (req, res) => {
       const alias = safeAlias(d.name);
 
       // ✅ SELECT uses display column
-      select.push(`${displayCol} AS ${alias}`);
+      select.push(`${d.table_name}.${d.display_column || d.column_name} AS ${alias}`);
 
       // ✅ GROUP BY uses key column
       group_by.push(keyCol);
@@ -72,10 +85,11 @@ router.post("/query", async (req, res) => {
 
     const { sql, params } = await buildSemanticQuery({
       connection_id,
-      base_table,
+      base_table: resolvedBaseTable,
       select,
       group_by,
     });
+
 
     // ✅ EXECUTE ON SOURCE DB (FIX)
     const { pool, type } = await getPoolForConnection(connection_id);

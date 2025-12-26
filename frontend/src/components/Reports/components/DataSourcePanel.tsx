@@ -152,10 +152,12 @@ export const DataSourcePanel: React.FC<DataSourcePanelProps> = ({
                                     {filteredColumns.map((col) => (
                                         <DraggableField
                                             key={col.name}
-                                            name={col.name}
+                                            name={col.name}              // column_name
+                                            label={col.name}             // optional display
+                                            table_name={baseTable}       // 🔥 THIS IS THE FIX
                                             type={col.type}
                                         />
-                                    ))}
+                                        ))}
                                 </div>
                             </div>
                         )

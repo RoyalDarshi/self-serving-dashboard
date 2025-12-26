@@ -68,6 +68,24 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   const resolveRowKey = (label: string) =>
     label.toLowerCase().trim().replace(/\s+/g, "_");
 
+  const getRowValue = (row: any, key: string) => {
+    if (!row) return undefined;
+
+    // 1️⃣ direct match
+    if (row[key] !== undefined) return row[key];
+
+    // 2️⃣ snake_case
+    const resolved = resolveRowKey(key);
+    if (row[resolved] !== undefined) return row[resolved];
+
+    // 3️⃣ fallback (case-insensitive)
+    const foundKey = Object.keys(row).find(
+      (k) => k.toLowerCase() === resolved
+    );
+    return foundKey ? row[foundKey] : undefined;
+  };
+
+
   // ---------- init ----------
   useEffect(() => {
     if (previewConfig && previewData) {
@@ -150,13 +168,14 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
       }
     } else {
       Object.entries(mapping).forEach(([src, target]) => {
-        const val = rowInput[resolveRowKey(src)];
+        const val = getRowValue(rowInput, src);
         if (val !== undefined) {
           drillFilters[target] = val;
           matched = true;
         }
       });
     }
+
 
     if (matched) {
       loadReport(drillTarget.target_report_id, drillFilters, true);

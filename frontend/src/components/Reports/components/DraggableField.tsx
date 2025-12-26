@@ -4,15 +4,27 @@ import { FieldIcon } from "./FieldIcon";
 
 export const DraggableField = ({
   name,
+  label,
+  table_name,
   type,
 }: {
-  name: string;
+  name: string;          // column_name
+  label?: string;        // display
+  table_name: string;    // 🔥 REQUIRED
   type: string;
 }) => {
   const handleDragStart = (e: React.DragEvent) => {
-    e.dataTransfer.setData("field", JSON.stringify({ name, type }));
+    const dragItem = {
+      name,              // column_name
+      label: label || name,
+      table_name,        // 🔥 PASSED HERE
+      type,
+    };
+
+    e.dataTransfer.setData("field", JSON.stringify(dragItem));
     e.dataTransfer.effectAllowed = "copy";
   };
+
 
   return (
     <div
