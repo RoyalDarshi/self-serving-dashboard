@@ -1,6 +1,5 @@
-// src/components/ReportViewer.tsx
 import React, { useEffect, useState, useMemo } from "react";
-import { FullReportConfig, RunReportResponse } from "../../services/api";
+import { FullReportConfig } from "../../services/api";
 import { apiService } from "../../services/api";
 import ReportShareModal from "./ReportShareModal";
 import {
@@ -25,8 +24,6 @@ import {
 interface ReportViewerProps {
   initialReportId?: number;
   onClose?: () => void;
-  previewConfig?: FullReportConfig;
-  previewData?: RunReportResponse;
 }
 
 const COLORS = [
@@ -49,11 +46,12 @@ type DrillHistoryItem = {
 const ReportViewer: React.FC<ReportViewerProps> = ({
   initialReportId,
   onClose,
-  previewConfig,
-  previewData,
 }) => {
   const [config, setConfig] = useState<FullReportConfig | null>(null);
-  const [data, setData] = useState<RunReportResponse | null>(null);
+
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [tableRows, setTableRows] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,41 +61,20 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   const [shareOpen, setShareOpen] = useState(false);
 
   const [history, setHistory] = useState<DrillHistoryItem[]>([]);
+  const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
 
   // ---------- helpers ----------
-  const resolveRowKey = (label: string) =>
+  const resolveKey = (label: string) =>
     label.toLowerCase().trim().replace(/\s+/g, "_");
-
-  const getRowValue = (row: any, key: string) => {
-    if (!row) return undefined;
-
-    // 1️⃣ direct match
-    if (row[key] !== undefined) return row[key];
-
-    // 2️⃣ snake_case
-    const resolved = resolveRowKey(key);
-    if (row[resolved] !== undefined) return row[resolved];
-
-    // 3️⃣ fallback (case-insensitive)
-    const foundKey = Object.keys(row).find(
-      (k) => k.toLowerCase() === resolved
-    );
-    return foundKey ? row[foundKey] : undefined;
-  };
-
 
   // ---------- init ----------
   useEffect(() => {
-    if (previewConfig && previewData) {
-      setConfig(previewConfig);
-      setData(previewData);
-      setChartKey((k) => k + 1);
-    } else if (initialReportId) {
+    if (initialReportId) {
       loadReport(initialReportId, {}, true);
     }
-  }, [initialReportId, previewConfig, previewData]);
+  }, [initialReportId]);
 
-  // ---------- load report ----------
+  // ---------- main loader ----------
   const loadReport = async (
     reportId: number,
     filters: Record<string, any>,
@@ -115,8 +92,6 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           ? JSON.parse(cfg.report.visualization_config)
           : cfg.report.visualization_config;
 
-      const dataRes = await apiService.runReport(reportId, filters);
-
       if (pushHistory && config) {
         setHistory((prev) => [
           ...prev,
@@ -125,18 +100,50 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
       }
 
       setConfig(cfg);
-      setData(dataRes.data || { sql: "", rows: [] });
-      setChartKey((k) => k + 1);
+      setActiveFilters(filters);
       setCurrentPage(1);
+
+      await Promise.all([
+        loadChart(reportId, filters),
+        loadTable(reportId, filters, 1),
+      ]);
     } catch (e: any) {
-      setError(e.message);
+      setError(null);
     } finally {
       setLoading(false);
     }
   };
 
+  // ---------- chart ----------
+  const loadChart = async (
+    reportId: number,
+    filters: Record<string, any>
+  ) => {
+    const res = await apiService.runReport(reportId, {
+      mode: "chart",
+      ...filters,
+    });
+    setChartData(res.data.data || []);
+    setChartKey((k) => k + 1);
+  };
+
+  // ---------- table ----------
+  const loadTable = async (
+    reportId: number,
+    filters: Record<string, any>,
+    page: number
+  ) => {
+    const res = await apiService.runReport(reportId, {
+      mode: "table",
+      page,
+      pageSize: PAGE_SIZE,
+      ...filters,
+    });
+    setTableRows(res.data.rows || []);
+  };
+
   // ---------- drill ----------
-  const handleDrill = (rowInput: any, source: "table" | "chart") => {
+  const handleDrill = (payload: any, source: "chart" | "table") => {
     if (!config?.drillTargets?.length) return;
 
     const drillTarget = config.drillTargets[0];
@@ -155,27 +162,21 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
     let matched = false;
 
     if (source === "chart") {
-      const xKey = resolveRowKey(config.visualization.xAxisColumn);
-      const xVal = rowInput?.payload?.name;
-
-      const entry = Object.entries(mapping).find(
-        ([src]) => resolveRowKey(src) === xKey
-      );
-
-      if (entry && xVal !== undefined) {
-        drillFilters[entry[1]] = xVal;
+      const xVal = payload?.name ?? payload?.payload?.name;
+      const mapEntry = Object.entries(mapping)[0];
+      if (mapEntry && xVal !== undefined) {
+        drillFilters[mapEntry[1]] = xVal;
         matched = true;
       }
     } else {
       Object.entries(mapping).forEach(([src, target]) => {
-        const val = getRowValue(rowInput, src);
-        if (val !== undefined) {
-          drillFilters[target] = val;
+        const key = resolveKey(src);
+        if (payload[key] !== undefined) {
+          drillFilters[target] = payload[key];
           matched = true;
         }
       });
     }
-
 
     if (matched) {
       loadReport(drillTarget.target_report_id, drillFilters, true);
@@ -188,43 +189,6 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
     setHistory(history.slice(0, index));
     loadReport(item.reportId, item.filters, false);
   };
-
-  // ---------- chart data ----------
-  const chartData = useMemo(() => {
-    if (!data?.rows || !config?.visualization?.showChart) return [];
-
-    const vis = config.visualization;
-    const grouped: Record<string, any> = {};
-
-    data.rows.forEach((row) => {
-      const xVal = row[resolveRowKey(vis.xAxisColumn)] ?? "Unknown";
-
-      if (!grouped[xVal]) {
-        grouped[xVal] = { name: xVal };
-        vis.yAxisColumns.forEach(
-          (y) => (grouped[xVal][resolveRowKey(y)] = 0)
-        );
-      }
-
-      vis.yAxisColumns.forEach((y) => {
-        grouped[xVal][resolveRowKey(y)] += Number(row[resolveRowKey(y)]) || 0;
-      });
-    });
-
-    return Object.values(grouped);
-  }, [data?.rows, config?.visualization]);
-
-  // ---------- pagination ----------
-  const totalPages = useMemo(() => {
-    if (!data?.rows) return 1;
-    return Math.ceil(data.rows.length / PAGE_SIZE);
-  }, [data?.rows]);
-
-  const paginatedRows = useMemo(() => {
-    if (!data?.rows) return [];
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return data.rows.slice(start, start + PAGE_SIZE);
-  }, [data?.rows, currentPage]);
 
   // ---------- render ----------
   return (
@@ -289,7 +253,7 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                   {config?.visualization.yAxisColumns.map((col, i) => (
                     <Bar
                       key={col}
-                      dataKey={resolveRowKey(col)}
+                      dataKey={resolveKey(col)}
                       fill={COLORS[i % COLORS.length]}
                       onClick={(d) => handleDrill(d, "chart")}
                       cursor="pointer"
@@ -316,7 +280,7 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedRows.map((row, i) => (
+                  {tableRows.map((row, i) => (
                     <tr
                       key={i}
                       className="hover:bg-slate-50 cursor-pointer"
@@ -326,7 +290,7 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                         .filter((c) => c.visible)
                         .map((c) => (
                           <td key={c.column_name} className="p-2">
-                            {row[resolveRowKey(c.column_name)] ?? ""}
+                            {row[resolveKey(c.column_name)] ?? ""}
                           </td>
                         ))}
                     </tr>
@@ -335,38 +299,44 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
               </table>
 
               {/* PAGINATION */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50">
-                  <div className="text-sm text-slate-600">
-                    Page {currentPage} of {totalPages} | Total rows:{" "}
-                    {data?.rows.length}
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      disabled={currentPage === 1}
-                      onClick={() =>
-                        setCurrentPage((p) => Math.max(1, p - 1))
-                      }
-                      className="px-3 py-1 border rounded disabled:opacity-50"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      disabled={currentPage === totalPages}
-                      onClick={() =>
-                        setCurrentPage((p) =>
-                          Math.min(totalPages, p + 1)
-                        )
-                      }
-                      className="px-3 py-1 border rounded disabled:opacity-50"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+              <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50">
+                <div className="text-sm text-slate-600">
+                  Page {currentPage}
                 </div>
-              )}
+
+                <div className="flex gap-2">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => {
+                      const p = currentPage - 1;
+                      setCurrentPage(p);
+                      loadTable(
+                        config!.report.id,
+                        activeFilters,
+                        p
+                      );
+                    }}
+                    className="px-3 py-1 border rounded disabled:opacity-50"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const p = currentPage + 1;
+                      setCurrentPage(p);
+                      loadTable(
+                        config!.report.id,
+                        activeFilters,
+                        p
+                      );
+                    }}
+                    className="px-3 py-1 border rounded"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

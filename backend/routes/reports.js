@@ -57,7 +57,14 @@ router.get("/list", async (req, res) => {
  */
 router.get("/run", async (req, res) => {
   const db = await dbPromise;
-  const { reportId, ...runtimeFilters } = req.query;
+  const {
+    reportId,
+    mode = "table", // chart | table
+    page = 1,
+    pageSize = 50,
+    ...runtimeFilters
+  } = req.query;
+
   const { user } = req;
 
   if (!reportId) {
@@ -66,7 +73,7 @@ router.get("/run", async (req, res) => {
 
   try {
     // =====================================================
-    // LOAD REPORT
+    // 1️⃣ LOAD REPORT
     // =====================================================
     const report = await db.get(
       `SELECT * FROM reports WHERE id = ?`,
@@ -78,7 +85,7 @@ router.get("/run", async (req, res) => {
     }
 
     // =====================================================
-    // 1️⃣ SQL REPORT
+    // 2️⃣ SQL REPORT (CUSTOM QUERY)
     // =====================================================
     if (report.report_type === "SQL") {
       validateSelectSQL(report.sql_text);
@@ -97,6 +104,9 @@ router.get("/run", async (req, res) => {
         finalSql = finalSql.replace(`:${p}`, "?");
       }
 
+      // ⚠️ FORCE LIMIT for safety
+      finalSql += " LIMIT 1000";
+
       const { pool, type } = await getPoolForConnection(
         report.connection_id,
         user?.userId
@@ -111,23 +121,17 @@ router.get("/run", async (req, res) => {
         rows = r;
       }
 
-      return res.json({ sql: finalSql, rows });
-    }
-
-    // =====================================================
-    // 2️⃣ TABLE / SEMANTIC REPORT
-    // =====================================================
-
-    // SAFETY
-    if (!report.base_table) {
-      return res.status(400).json({
-        error: "base_table required for TABLE / SEMANTIC reports",
+      return res.json({
+        mode: "sql",
+        sql: finalSql,
+        rowCount: rows.length,
+        preview: rows.slice(0, 100),
       });
     }
 
-    // -----------------------------------------------------
-    // LOAD COLUMNS
-    // -----------------------------------------------------
+    // =====================================================
+    // 3️⃣ LOAD COLUMNS & FILTERS
+    // =====================================================
     const columns = await db.all(
       `SELECT * FROM report_columns
        WHERE report_id = ?
@@ -135,9 +139,6 @@ router.get("/run", async (req, res) => {
       [reportId]
     );
 
-    // -----------------------------------------------------
-    // LOAD FILTERS
-    // -----------------------------------------------------
     const savedFilters = await db.all(
       `SELECT * FROM report_filters
        WHERE report_id = ?
@@ -145,15 +146,11 @@ router.get("/run", async (req, res) => {
       [reportId]
     );
 
-    // -----------------------------------------------------
-    // MERGE RUNTIME FILTERS
-    // -----------------------------------------------------
-    // -----------------------------------------------------
-    // BUILD FILTERS (SAVED + RUNTIME) 🔥
-    // -----------------------------------------------------
+    // =====================================================
+    // 4️⃣ MERGE FILTERS (Saved + Runtime)
+    // =====================================================
     const finalFiltersMap = {};
 
-    // 1️⃣ Saved filters (base)
     for (const f of savedFilters) {
       finalFiltersMap[f.column_name] = {
         column: f.column_name.includes(".")
@@ -164,7 +161,6 @@ router.get("/run", async (req, res) => {
       };
     }
 
-    // 2️⃣ Runtime filters (drill-down / URL params)
     for (const [key, val] of Object.entries(runtimeFilters)) {
       finalFiltersMap[key] = {
         column: `${report.base_table}.${key}`,
@@ -173,56 +169,91 @@ router.get("/run", async (req, res) => {
       };
     }
 
-    // 3️⃣ Final list
     const finalFilters = Object.values(finalFiltersMap);
 
+    // =====================================================
+    // 5️⃣ CHART MODE (AGGREGATED)
+    // =====================================================
+    if (mode === "chart") {
+      const dimensions = columns.filter(
+        (c) => !c.data_type || c.data_type === "string"
+      );
 
+      const measures = columns.filter(
+        (c) => c.data_type === "number"
+      );
 
-    // -----------------------------------------------------
-    // BUILD SELECT CLAUSE
-    // -----------------------------------------------------
-    const select = columns.map((c) => {
-      if (!c.table_name || !c.column_name) {
-        throw new Error(
-          "Saved report columns must include table_name and column_name"
-        );
+      if (!dimensions.length || !measures.length) {
+        return res.status(400).json({
+          error: "Chart requires at least 1 dimension and 1 measure",
+        });
       }
 
-      const qualifiedCol = `${c.table_name}.${c.column_name}`;
-      return c.alias
-        ? `${qualifiedCol} AS ${c.alias}`
-        : qualifiedCol;
-    });
+      const select = [
+        ...dimensions.map(
+          (c) => `${c.table_name}.${c.column_name}`
+        ),
+        ...measures.map(
+          (c) =>
+            `SUM(${c.table_name}.${c.column_name}) AS ${safeAlias(
+              c.column_name
+            )}`
+        ),
+      ];
 
-    // -----------------------------------------------------
-    // GROUP BY (basic safe rule)
-    // -----------------------------------------------------
-    const group_by =
-      report.report_type === "SEMANTIC"
-        ? columns
-            .filter(
-              (c) =>
-                !c.data_type ||
-                c.data_type === "string"
-            )
-            .map((c) => `${c.table_name}.${c.column_name}`)
-        : [];
+      const group_by = dimensions.map(
+        (c) => `${c.table_name}.${c.column_name}`
+      );
 
+      const { sql, params } = await buildSemanticQuery({
+        connection_id: report.connection_id,
+        base_table: report.base_table,
+        select,
+        filters: finalFilters,
+        group_by,
+        limit: 1000,
+      });
 
-    // -----------------------------------------------------
-    // BUILD SQL USING semanticQueryBuilder
-    // -----------------------------------------------------
+      const { pool, type } = await getPoolForConnection(
+        report.connection_id,
+        user?.userId
+      );
+
+      let rows;
+      if (type === "postgres") {
+        const r = await pool.query(sql, params);
+        rows = r.rows;
+      } else {
+        const [r] = await pool.query(sql, params);
+        rows = r;
+      }
+
+      return res.json({
+        mode: "chart",
+        sql,
+        data: rows,
+      });
+    }
+
+    // =====================================================
+    // 6️⃣ TABLE MODE (PAGINATED RAW DATA)
+    // =====================================================
+    const limit = Math.min(Number(pageSize), 100);
+    const offset = (Number(page) - 1) * limit;
+
+    const select = columns.map(
+      (c) => `${c.table_name}.${c.column_name}`
+    );
+
     const { sql, params } = await buildSemanticQuery({
       connection_id: report.connection_id,
       base_table: report.base_table,
       select,
       filters: finalFilters,
-      group_by,
+      limit,
+      offset,
     });
 
-    // -----------------------------------------------------
-    // EXECUTE SQL
-    // -----------------------------------------------------
     const { pool, type } = await getPoolForConnection(
       report.connection_id,
       user?.userId
@@ -236,9 +267,14 @@ router.get("/run", async (req, res) => {
       const [r] = await pool.query(sql, params);
       rows = r;
     }
-    console.log(sql)
-    return res.json({ sql, rows });
 
+    return res.json({
+      mode: "table",
+      sql,
+      page: Number(page),
+      pageSize: limit,
+      rows,
+    });
   } catch (err) {
     console.error("Run report error:", err);
     return res.status(500).json({ error: err.message });

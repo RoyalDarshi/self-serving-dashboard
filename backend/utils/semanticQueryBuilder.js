@@ -1,4 +1,3 @@
-// semanticQueryBuilder.js
 import { dbPromise } from "../database/sqliteConnection.js";
 
 /* =========================================================
@@ -7,23 +6,20 @@ import { dbPromise } from "../database/sqliteConnection.js";
 function getTableFromColumn(expr) {
   if (!expr) return null;
 
-  // Remove aliases: "AS total"
   let cleaned = expr.replace(/\s+AS\s+.*/i, "").trim();
 
-  // Extract inside aggregation: SUM(table.col)
   const aggMatch = cleaned.match(/\(([^)]+)\)/);
   if (aggMatch) {
     cleaned = aggMatch[1];
   }
 
-  // Expect table.column
   if (!cleaned.includes(".")) return null;
 
   return cleaned.split(".")[0].trim();
 }
 
 /* =========================================================
-   Build relationship graph from table_relationships
+   Build relationship graph
 ========================================================= */
 function buildRelationshipGraph(relationships) {
   const graph = {};
@@ -38,7 +34,6 @@ function buildRelationshipGraph(relationships) {
       join_type: r.join_type,
     });
 
-    // reverse edge (needed for traversal)
     graph[r.right_table].push({
       table: r.left_table,
       on: `${r.right_table}.${r.right_column} = ${r.left_table}.${r.left_column}`,
@@ -50,7 +45,7 @@ function buildRelationshipGraph(relationships) {
 }
 
 /* =========================================================
-   Find JOIN path using BFS
+   Find JOIN path
 ========================================================= */
 function findJoinPath(graph, start, target) {
   if (start === target) return [];
@@ -85,15 +80,13 @@ export async function buildSemanticQuery({
   group_by = [],
   order_by = [],
   limit,
+  offset, // ✅ ADDED
 }) {
   if (!connection_id) throw new Error("connection_id required");
   if (!base_table) throw new Error("base_table required");
 
   const db = await dbPromise;
 
-  /* ---------------------------------------------
-     Load table relationships
-  --------------------------------------------- */
   const relationships = await db.all(
     `SELECT left_table, left_column, right_table, right_column, join_type
      FROM table_relationships
@@ -103,9 +96,6 @@ export async function buildSemanticQuery({
 
   const graph = buildRelationshipGraph(relationships);
 
-  /* ---------------------------------------------
-     Determine required tables
-  --------------------------------------------- */
   const requiredTables = new Set([base_table]);
 
   [...select, ...filters.map((f) => f.column), ...group_by].forEach((c) => {
@@ -113,9 +103,6 @@ export async function buildSemanticQuery({
     if (t) requiredTables.add(t);
   });
 
-  /* ---------------------------------------------
-     Build JOIN clauses
-  --------------------------------------------- */
   const joins = [];
   const joinedTables = new Set([base_table]);
 
@@ -127,19 +114,14 @@ export async function buildSemanticQuery({
       throw new Error(`No join path found from ${base_table} to ${table}`);
     }
 
-    let current = base_table;
     for (const step of path) {
       if (!joinedTables.has(step.table)) {
         joins.push(`${step.join_type} JOIN ${step.table} ON ${step.on}`);
         joinedTables.add(step.table);
       }
-      current = step.table;
     }
   }
 
-  /* ---------------------------------------------
-     SELECT
-  --------------------------------------------- */
   const selectClause =
     select.length > 0 ? select.join(", ") : `${base_table}.*`;
 
@@ -149,9 +131,6 @@ export async function buildSemanticQuery({
     sql += " " + joins.join(" ");
   }
 
-  /* ---------------------------------------------
-     WHERE
-  --------------------------------------------- */
   const params = [];
 
   if (filters.length) {
@@ -167,26 +146,22 @@ export async function buildSemanticQuery({
     sql += ` WHERE ${whereParts.join(" AND ")}`;
   }
 
-  /* ---------------------------------------------
-     GROUP BY
-  --------------------------------------------- */
   if (group_by.length) {
     sql += ` GROUP BY ${group_by.join(", ")}`;
   }
 
-  /* ---------------------------------------------
-     ORDER BY
-  --------------------------------------------- */
   if (order_by.length) {
     const parts = order_by.map((o) => `${o.column} ${o.direction || "ASC"}`);
     sql += ` ORDER BY ${parts.join(", ")}`;
   }
 
-  /* ---------------------------------------------
-     LIMIT
-  --------------------------------------------- */
-  if (limit) {
+  // ✅ FIXED PAGINATION
+  if (limit !== undefined) {
     sql += ` LIMIT ${limit}`;
+  }
+
+  if (offset !== undefined) {
+    sql += ` OFFSET ${offset}`;
   }
 
   return { sql, params };

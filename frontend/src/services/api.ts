@@ -116,9 +116,22 @@ export interface FullReportConfig {
 }
 
 export interface RunReportResponse {
+  mode: "chart" | "table" | "sql";
   sql: string;
-  rows: Record<string, any>[];
+
+  // chart mode
+  data?: Record<string, any>[];
+
+  // table mode
+  rows?: Record<string, any>[];
+  page?: number;
+  pageSize?: number;
+
+  // sql mode
+  preview?: Record<string, any>[];
+  rowCount?: number;
 }
+
 
 export interface AggregationResponse {
   sql?: string;
