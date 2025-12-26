@@ -683,17 +683,20 @@ router.put("/:id", async (req, res) => {
     await db.run(`DELETE FROM report_columns WHERE report_id = ?`, [id]);
     for (const col of columns || []) {
       await db.run(
-        `INSERT INTO report_columns (report_id, column_name, alias, data_type, visible, order_index)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          col.column_name,
-          col.alias || null,
-          col.data_type || null,
-          col.visible ? 1 : 0,
-          col.order_index || 0,
-        ]
-      );
+      `INSERT INTO report_columns
+      (report_id, table_name, column_name, alias, data_type, visible, order_index)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        col.table_name || null,   // 🔥 CRITICAL
+        col.column_name,
+        col.alias || null,
+        col.data_type || null,
+        col.visible ? 1 : 0,
+        col.order_index || 0,
+      ]
+    );
+
     }
 
     await db.run(`DELETE FROM report_filters WHERE report_id = ?`, [id]);
