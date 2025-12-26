@@ -33,22 +33,23 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
 
   useEffect(() => {
     if (initialReportId) {
-      loadReport(initialReportId, {}, false);
+      loadReport(initialReportId, {}, false, true);
     }
   }, [initialReportId]);
 
   const loadReport = async (
     reportId: number,
     filters: Record<string, any>,
-    pushHistory = false
+    pushHistory = false,
+    autoRun = true
   ) => {
     try {
       setLoading(true);
       setError(null);
+
       const cfgRes = await apiService.getReportConfig(reportId);
       const cfg = cfgRes.data;
 
-      // Config Normalization
       const rawViz =
         typeof cfg.report.visualization_config === "string"
           ? JSON.parse(cfg.report.visualization_config || "{}")
@@ -70,15 +71,28 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
       setActiveFilters(filters);
       setCurrentPage(1);
 
-      await Promise.all([
-        loadChart(reportId, filters),
-        loadTable(reportId, filters, 1),
-      ]);
+      // 🔥 ONLY RUN WHEN ALLOWED
+      if (autoRun && !hasMissingMandatoryFilters(cfg, filters)) {
+        await Promise.all([
+          loadChart(reportId, filters),
+          loadTable(reportId, filters, 1),
+        ]);
+      }
     } catch (e: any) {
       setError(e.message || "Failed to load report");
     } finally {
       setLoading(false);
     }
+  };
+
+  const hasMissingMandatoryFilters = (cfg = config, inputs = filterInputs) => {
+    if (!cfg?.filters) return false;
+
+    return cfg.filters.some(
+      (f: any) =>
+        f.is_mandatory &&
+        (inputs[f.column_name] === undefined || inputs[f.column_name] === "")
+    );
   };
 
   const loadChart = async (reportId: number, filters: any) => {
@@ -237,7 +251,12 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
                 </div>
               ))}
               <button
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm shadow-indigo-200"
+                disabled={hasMissingMandatoryFilters()}
+                className={`px-5 py-2 rounded-lg text-sm font-medium ${
+                  hasMissingMandatoryFilters()
+                    ? "bg-gray-300 cursor-not-allowed"
+                    : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                }`}
                 onClick={() => loadReport(config.report.id, filterInputs)}
               >
                 Apply Filters
@@ -251,8 +270,17 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           <SqlDisplay sql={sql} />
         </div>
 
+        {hasMissingMandatoryFilters() && (
+          <div className="p-6 bg-yellow-50 border border-yellow-300 rounded-xl">
+            <h3 className="font-bold text-yellow-800 mb-2">Filters Required</h3>
+            <p className="text-sm text-yellow-700">
+              Please fill all mandatory filters to view this report.
+            </p>
+          </div>
+        )}
+
         {/* CHART */}
-        {viewMode !== "table" && config && (
+        {viewMode !== "table" && config && !hasMissingMandatoryFilters() && (
           <div className="w-full min-w-0">
             <ChartSection
               data={chartData}
@@ -265,8 +293,7 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
         )}
 
         {/* TABLE */}
-        {viewMode !== "chart" && config && (
-          // FIX: min-w-0 prevents table from blowing out width
+        {viewMode !== "chart" && config && !hasMissingMandatoryFilters() && (
           <div className="w-full min-w-0">
             <TableSection
               rows={tableRows}

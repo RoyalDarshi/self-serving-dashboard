@@ -223,9 +223,10 @@ const SCHEMAS = {
     CREATE TABLE IF NOT EXISTS report_filters (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       report_id INTEGER NOT NULL,
-      table_name TEXT NOT NULL,              -- 🔥 NEW
+      table_name TEXT NOT NULL,          -- 🔥 NEW
       column_name TEXT NOT NULL,
       operator TEXT NOT NULL,
+      is_mandatory BOOLEAN DEFAULT FALSE,
       value TEXT,
       is_user_editable BOOLEAN DEFAULT TRUE,
       order_index INTEGER,

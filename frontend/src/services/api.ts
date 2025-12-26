@@ -98,13 +98,13 @@ export interface ReportVisualization {
 
 export interface ReportFilter {
   id?: number;
-  report_id?: number;
+  table_name: string;
   column_name: string;
-  table_name?: string; // Added
   operator: string;
-  value: any; 
-  is_user_editable?: boolean;
-  order_index?: number;
+  value: any;
+  is_user_editable: boolean;
+  is_mandatory?: boolean; // 🔥 NEW
+  order_index: number;
 }
 
 export interface ReportDrillConfig {

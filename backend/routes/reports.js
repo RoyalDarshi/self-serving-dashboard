@@ -71,10 +71,9 @@ router.get("/run", async (req, res) => {
 
   try {
     // 1️⃣ Load report
-    const report = await db.get(
-      `SELECT * FROM reports WHERE id = ?`,
-      [reportId]
-    );
+    const report = await db.get(`SELECT * FROM reports WHERE id = ?`, [
+      reportId,
+    ]);
     if (!report) {
       return res.status(404).json({ error: "Report not found" });
     }
@@ -98,9 +97,10 @@ router.get("/run", async (req, res) => {
       finalSql += " LIMIT 1000";
 
       const { pool, type } = await getPoolForConnection(report.connection_id);
-      const [rows] = type === "postgres"
-        ? [ (await pool.query(finalSql, values)).rows ]
-        : await pool.query(finalSql, values);
+      const [rows] =
+        type === "postgres"
+          ? [(await pool.query(finalSql, values)).rows]
+          : await pool.query(finalSql, values);
 
       return res.json({ sql: finalSql, rows });
     }
@@ -144,8 +144,8 @@ router.get("/run", async (req, res) => {
 
     // 5️⃣ Chart mode
     if (mode === "chart") {
-      const dimensions = columns.filter(c => c.data_type !== "number");
-      const measures = columns.filter(c => c.data_type === "number");
+      const dimensions = columns.filter((c) => c.data_type !== "number");
+      const measures = columns.filter((c) => c.data_type === "number");
 
       if (!dimensions.length || !measures.length) {
         return res.status(400).json({
@@ -154,15 +154,31 @@ router.get("/run", async (req, res) => {
       }
 
       const select = [
-        ...dimensions.map(c => `${c.table_name}.${c.column_name}`),
+        ...dimensions.map((c) => `${c.table_name}.${c.column_name}`),
         ...measures.map(
-          c => `SUM(${c.table_name}.${c.column_name}) AS ${safeAlias(c.column_name)}`
+          (c) =>
+            `SUM(${c.table_name}.${c.column_name}) AS ${safeAlias(
+              c.column_name
+            )}`
         ),
       ];
 
       const group_by = dimensions.map(
-        c => `${c.table_name}.${c.column_name}`
+        (c) => `${c.table_name}.${c.column_name}`
       );
+
+      // Mandatory filter validation
+      for (const f of filtersFromDB) {
+        if (f.is_mandatory) {
+          const val = runtimeFilters[f.column_name];
+          if (val === undefined || val === null || val === "") {
+            return res.status(400).json({
+              error: `Mandatory filter missing: ${f.column_name}`,
+              code: "MANDATORY_FILTER_MISSING",
+            });
+          }
+        }
+      }
 
       const { sql, params } = await buildSemanticQuery({
         connection_id: report.connection_id,
@@ -174,9 +190,10 @@ router.get("/run", async (req, res) => {
       });
 
       const { pool, type } = await getPoolForConnection(report.connection_id);
-      const [rows] = type === "postgres"
-        ? [ (await pool.query(sql, params)).rows ]
-        : await pool.query(sql, params);
+      const [rows] =
+        type === "postgres"
+          ? [(await pool.query(sql, params)).rows]
+          : await pool.query(sql, params);
 
       return res.json({ sql, data: rows });
     }
@@ -185,9 +202,7 @@ router.get("/run", async (req, res) => {
     const limit = Math.min(Number(pageSize), 100);
     const offset = (Number(page) - 1) * limit;
 
-    const select = columns.map(
-      c => `${c.table_name}.${c.column_name}`
-    );
+    const select = columns.map((c) => `${c.table_name}.${c.column_name}`);
 
     const { sql, params } = await buildSemanticQuery({
       connection_id: report.connection_id,
@@ -199,9 +214,10 @@ router.get("/run", async (req, res) => {
     });
 
     const { pool, type } = await getPoolForConnection(report.connection_id);
-    const [rows] = type === "postgres"
-      ? [ (await pool.query(sql, params)).rows ]
-      : await pool.query(sql, params);
+    const [rows] =
+      type === "postgres"
+        ? [(await pool.query(sql, params)).rows]
+        : await pool.query(sql, params);
 
     return res.json({ sql, rows });
   } catch (err) {
@@ -209,7 +225,6 @@ router.get("/run", async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 });
-
 
 /**
  * SAVE REPORT (Also static, keep it high up)
@@ -304,15 +319,16 @@ router.post("/save", async (req, res) => {
     for (const f of filters || []) {
       await db.run(
         `INSERT INTO report_filters
-         (report_id, table_name, column_name, operator, value, is_user_editable, order_index)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+   (report_id, table_name, column_name, operator, value, is_user_editable, is_mandatory, order_index)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           reportId,
-          f.table_name || null,          // 🔥 CRITICAL
+          f.table_name,
           f.column_name,
           f.operator || "=",
           JSON.stringify(f.value ?? ""),
           f.is_user_editable ? 1 : 0,
+          f.is_mandatory ? 1 : 0, // 🔥 NEW
           f.order_index || 0,
         ]
       );
