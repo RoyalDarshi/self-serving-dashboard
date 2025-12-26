@@ -9,8 +9,7 @@ interface PreviewPanelProps {
   message: { type: "success" | "error"; text: string } | null;
 }
 
-const resolveKey = (v: string) =>
-  v?.toLowerCase().trim().replace(/\s+/g, "_");
+const resolveKey = (v: string) => v?.toLowerCase().trim().replace(/\s+/g, "_");
 
 export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   previewData,
@@ -18,18 +17,14 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
   previewConfig,
   message,
 }) => {
-  // ✅ PREVIEW API RETURNS `data` (not chart rows)
-  const rows =
-    previewData?.data ||
-    previewData?.rows ||
-    [];
+  const rows = previewData?.data || previewData?.rows || [];
 
-  const visibleColumns =
-    previewConfig?.columns?.filter((c) => c.visible) || [];
+  const visibleColumns = previewConfig?.columns?.filter((c) => c.visible) || [];
 
+  // --- UPDATED CLASSES FOR RESPONSIVENESS ---
   return (
     <>
-      <div className="w-[35%] bg-white/80 backdrop-blur-xl border-l border-zinc-200 flex flex-col z-20 shadow-[0_0_40px_-10px_rgba(0,0,0,0.1)]">
+      <div className="w-full lg:w-[35%] h-96 lg:h-auto bg-white/80 backdrop-blur-xl border-t lg:border-t-0 lg:border-l border-zinc-200 flex flex-col z-20 shadow-[0_0_40px_-10px_rgba(0,0,0,0.1)] flex-shrink-0">
         {/* HEADER */}
         <div className="h-16 px-6 border-b border-zinc-100 flex items-center justify-between bg-white/50">
           <h3 className="text-xs font-extrabold text-zinc-500 uppercase tracking-widest">
@@ -54,15 +49,15 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
             </div>
           ) : previewData ? (
             <div className="h-full overflow-auto p-4 space-y-4">
-              {/* ⚠️ CHART INFO */}
+              {/* CHART INFO */}
               {previewConfig?.visualization?.showChart && (
                 <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs">
                   <BarChart2 className="w-4 h-4 mt-0.5" />
                   <span>
                     Chart preview is not available.
                     <br />
-                    Save the report and open it in{" "}
-                    <b>Report Viewer</b> to see charts.
+                    Save the report and open it in <b>Report Viewer</b> to see
+                    charts.
                   </span>
                 </div>
               )}
@@ -96,10 +91,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
                     </thead>
                     <tbody>
                       {rows.map((row, i) => (
-                        <tr
-                          key={i}
-                          className="border-b hover:bg-zinc-50"
-                        >
+                        <tr key={i} className="border-b hover:bg-zinc-50">
                           {visibleColumns.map((c) => (
                             <td key={c.column_name} className="p-2">
                               {row[resolveKey(c.column_name)] ?? ""}
@@ -143,9 +135,7 @@ export const PreviewPanel: React.FC<PreviewPanelProps> = ({
             ) : (
               <AlertCircle className="w-5 h-5" />
             )}
-            <span className="text-xs font-medium">
-              {message.text}
-            </span>
+            <span className="text-xs font-medium">{message.text}</span>
           </div>
         </div>
       )}
