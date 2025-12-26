@@ -535,7 +535,7 @@ router.post("/preview", async (req, res) => {
         ? f.column
         : `${resolvedBaseTable}.${f.column}`,
     }));
-
+    const limit = 100;
     // --------------------------------------------------
     // 3️⃣ BUILD INNER SEMANTIC QUERY
     // --------------------------------------------------
@@ -545,6 +545,7 @@ router.post("/preview", async (req, res) => {
       select,
       filters: fixedFilters,
       group_by,
+      limit,
     });
 
 
