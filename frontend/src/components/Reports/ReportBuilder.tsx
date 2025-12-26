@@ -24,15 +24,16 @@ import { PreviewPanel } from "./components/PreviewPanel";
 interface Props {
   connections: { id: number; connection_name: string }[];
   onSaved?: (reportId: number) => void;
+  initialReportId?: number; 
 }
 
 type ReportMode = "TABLE" | "SEMANTIC" | "SQL";
 
-const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
+const ReportBuilder: React.FC<Props> = ({ connections, onSaved, initialReportId }) => {
   // UI State
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [mode, setMode] = useState<ReportMode>("TABLE");
-  const [sqlText, setSqlText] = useState("");
+  const [loadingReport, setLoadingReport] = useState(false); 
 
   // --- Data Source State ---
   const [connectionId, setConnectionId] = useState<number | null>(
@@ -41,6 +42,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   const [baseTable, setBaseTable] = useState<string>("");
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sqlText, setSqlText] = useState("");
 
   // Semantic Data
   const [facts, setFacts] = useState<Fact[]>([]);
@@ -49,7 +51,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   // --- Report Meta ---
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState(false);
-  const [description] = useState(""); 
+  const [description, setDescription] = useState(""); 
 
   //--- Configuration Shelves ---
   const [tableColumns, setTableColumns] = useState<ConfigItem[]>([]);
@@ -90,7 +92,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     text: string;
   } | null>(null);
 
-  // Load Initial Data
+  // 1. Load Initial Data (Schemas, Facts, Reports list)
   useEffect(() => {
     if (connectionId) {
       apiService.getSchemas(connectionId).then(setSchemas);
@@ -99,6 +101,104 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     }
     apiService.getReports().then(setAvailableReports);
   }, [connectionId]);
+
+  // 2. 🔥 Load Existing Report for Editing (FIXED)
+  useEffect(() => {
+    if (initialReportId) {
+      setLoadingReport(true);
+      apiService.getReportConfig(initialReportId)
+        .then((res: any) => {
+           // 🔥 FIX: Handle response wrapper vs direct data
+           const data = res.data || res;
+           const { report, columns, filters, drillTargets } = data;
+           
+           if (!report) {
+             throw new Error("Report data not found");
+           }
+
+           setName(report.name);
+           setDescription(report.description || "");
+           setConnectionId(report.connection_id);
+           setMode((report.report_type as ReportMode) || "TABLE");
+           setBaseTable(report.base_table);
+           setSqlText(report.sql_text || "");
+
+           // Reconstruct Columns (Table vs Chart)
+           const vizConfig = typeof report.visualization_config === 'string' 
+             ? JSON.parse(report.visualization_config || "{}") 
+             : report.visualization_config || {};
+           
+           // A. Table Columns (visible = 1)
+           const tCols = (columns || [])
+              .filter((c: any) => c.visible)
+              .map((c: any) => ({
+                 id: Math.random().toString(36).substr(2, 9),
+                 name: c.column_name,
+                 table_name: c.table_name || report.base_table,
+                 alias: c.alias,
+                 type: c.data_type || "string",
+              }));
+           setTableColumns(tCols);
+
+           // B. Chart Configuration
+           if (vizConfig.showChart) {
+             setShowChart(true);
+             setChartType(vizConfig.chartType || "bar");
+             
+             // X-Axis
+             if (vizConfig.xAxisColumn) {
+               const xCol = columns.find((c: any) => c.column_name === vizConfig.xAxisColumn);
+               if (xCol) {
+                 setChartX({
+                   id: "chart-x",
+                   name: xCol.column_name,
+                   table_name: xCol.table_name || report.base_table,
+                   alias: xCol.alias,
+                   type: xCol.data_type || "string"
+                 });
+               }
+             }
+
+             // Y-Axis
+             if (vizConfig.yAxisColumns && Array.isArray(vizConfig.yAxisColumns)) {
+               const yItems: ConfigItem[] = [];
+               vizConfig.yAxisColumns.forEach((yName: string) => {
+                 const yCol = columns.find((c: any) => c.column_name === yName);
+                 if (yCol) {
+                   yItems.push({
+                     id: Math.random().toString(36).substr(2, 9),
+                     name: yCol.column_name,
+                     table_name: yCol.table_name || report.base_table,
+                     alias: yCol.alias,
+                     type: yCol.data_type || "number",
+                     aggregation: vizConfig.aggregation || "SUM"
+                   });
+                 }
+               });
+               setChartY(yItems);
+             }
+           }
+
+           // C. Filters
+           setFilters(filters || []);
+
+           // D. Drill Targets
+           if (drillTargets && drillTargets.length > 0) {
+             const dt = drillTargets[0];
+             setDrillConfig({
+               targetReportId: dt.target_report_id,
+               mapping: JSON.parse(dt.mapping_json || "{}")
+             });
+           }
+        })
+        .catch((err) => {
+          console.error("Failed to load report", err);
+          setMessage({ type: "error", text: "Failed to load report for editing" });
+        })
+        .finally(() => setLoadingReport(false));
+    }
+  }, [initialReportId]);
+
 
   // Fetch Drill Fields when Target Report Changes
   useEffect(() => {
@@ -118,8 +218,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     }
   }, [drillConfig.targetReportId]);
 
-  // --- Handlers (Drag & Drop, Payload Construction, Run, Save) ---
-  // ... (Keep existing handlers exactly as they are: handleDropTable, handleDropChartX, handleDropChartY, handleDropFilter, constructPayload) ...
+  // --- Handlers ---
   
   const handleDropTable = (item: DragItem) => {
     if (tableColumns.find((c) => c.name === item.name)) return;
@@ -162,7 +261,6 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
   };
 
   const constructPayload = () => {
-      // (Copy logic from previous file - omitted for brevity, functionality remains same)
       const uniqueFields = new Map<string, ConfigItem>();
       tableColumns.forEach((c) => uniqueFields.set(c.name, { ...c }));
       if (showChart && chartX && !uniqueFields.has(chartX.name)) {
@@ -242,6 +340,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
         filters: filters,
         visualization_config: visualizationConfig,
         drillTargets: drillTargets,
+        report_type: mode,
+        sql_text: mode === "SQL" ? sqlText : null
       };
   };
 
@@ -254,8 +354,8 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
         setMessage({ type: "error", text: "Please select a table first." });
         return;
     }
-    if (mode === "SEMANTIC" && tableColumns.length === 0) {
-        setMessage({ type: "error", text: "Please drag fields to columns first." });
+    if (mode === "SQL" && !sqlText.trim()) {
+        setMessage({ type: "error", text: "Please enter a SQL query." });
         return;
     }
 
@@ -269,7 +369,7 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
 
       const config: FullReportConfig = {
         report: {
-          id: 0,
+          id: initialReportId || 0,
           name,
           connection_id: connectionId!,
           base_table: payload.base_table,
@@ -282,16 +382,20 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
       };
 
       setPreviewConfig(config);
+      
       const res = await apiService.previewReport(payload);
 
-      if (res.success && res.data) {
-        setPreviewData(res.data);
+      // Handle wrapped response
+      const data = res.data || res;
+
+      if (data && (data.success || Array.isArray(data.data) || data.rows)) {
+        setPreviewData(data.data || data); // Accommodate different preview structures
         setMessage({ type: "success", text: "Query executed successfully" });
         setTimeout(() => setMessage(null), 3000);
       } else {
         setMessage({
           type: "error",
-          text: res.error || "Failed to fetch preview data",
+          text: data.error || "Failed to fetch preview data",
         });
       }
     } catch (err: any) {
@@ -318,14 +422,25 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     setSaving(true);
     try {
       const payload = constructPayload();
-      const res = await apiService.saveReport(payload as any);
-      console.log(res)
-      if (res.data["success"] && res.data["reportId"]) {
-        setMessage({ type: "success", text: "Report saved successfully!" });
-        setTimeout(() => setMessage(null), 3000);
-        if (onSaved) onSaved(res.data["reportId"]);
+      
+      let res;
+      if (initialReportId) {
+        res = await apiService.updateReport(initialReportId, payload as any);
       } else {
-        setMessage({ type: "error", text: res.error || "Failed to save." });
+        res = await apiService.saveReport(payload as any);
+      }
+
+      // Handle wrapped response
+      const data = res.data || res;
+      const success = data.success;
+      const reportId = data.reportId || initialReportId;
+
+      if (success) {
+        setMessage({ type: "success", text: initialReportId ? "Report updated successfully!" : "Report created successfully!" });
+        setTimeout(() => setMessage(null), 3000);
+        if (onSaved && reportId) onSaved(reportId);
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to save." });
       }
     } catch (err: any) {
       setMessage({ type: "error", text: err.message });
@@ -334,9 +449,21 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
     }
   };
 
+  if (loadingReport) {
+      return (
+          <div className="h-screen w-full flex items-center justify-center bg-[#fafafa]">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+                  <p className="text-zinc-500 font-medium animate-pulse">Loading report configuration...</p>
+              </div>
+          </div>
+      );
+  }
+
   const canRun =
     (mode === "TABLE" && !!baseTable) ||
-    (mode === "SEMANTIC" && tableColumns.length > 0);
+    (mode === "SEMANTIC" && tableColumns.length > 0) ||
+    (mode === "SQL" && !!sqlText);
 
   return (
     <div className="flex h-screen w-full bg-[#fafafa] font-sans text-slate-800 overflow-hidden relative">
@@ -348,8 +475,10 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
         connectionId={connectionId}
         onConnectionChange={(id) => {
           setConnectionId(id);
-          setBaseTable("");
-          setTableColumns([]);
+          if (!loadingReport) {
+             setBaseTable("");
+             setTableColumns([]);
+          }
         }}
         mode={mode}
         onModeChange={(m) => {
@@ -382,49 +511,62 @@ const ReportBuilder: React.FC<Props> = ({ connections, onSaved }) => {
 
         <div className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-6">
           <div className="max-w-4xl mx-auto space-y-6 pb-20">
-             <ProgressIndicator
-                mode={mode}
-                baseTable={baseTable}
-                tableColumns={tableColumns}
-                name={name}
-              />
+             
+             {mode === "SQL" ? (
+                 <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden flex flex-col h-[500px]">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                        <h3 className="text-sm font-bold text-slate-800">SQL Query Editor</h3>
+                    </div>
+                    <textarea 
+                        className="flex-1 p-4 font-mono text-sm focus:outline-none resize-none"
+                        placeholder="SELECT * FROM users WHERE..."
+                        value={sqlText}
+                        onChange={(e) => setSqlText(e.target.value)}
+                    />
+                 </div>
+             ) : (
+                <>
+                    <ProgressIndicator
+                        mode={mode}
+                        baseTable={baseTable}
+                        tableColumns={tableColumns}
+                        name={name}
+                    />
 
-              <TableConfig
-                tableColumns={tableColumns}
-                setTableColumns={setTableColumns}
-                handleDropTable={handleDropTable}
-              />
+                    <TableConfig
+                        tableColumns={tableColumns}
+                        setTableColumns={setTableColumns}
+                        handleDropTable={handleDropTable}
+                    />
 
-              {mode !== "SQL" && (
-                <VisualizationConfig
-                  showChart={showChart}
-                  setShowChart={setShowChart}
-                  chartType={chartType}
-                  setChartType={setChartType}
-                  chartX={chartX}
-                  setChartX={setChartX}
-                  chartY={chartY}
-                  setChartY={setChartY}
-                  handleDropChartX={handleDropChartX}
-                  handleDropChartY={handleDropChartY}
-                />
-              )}
+                    <VisualizationConfig
+                        showChart={showChart}
+                        setShowChart={setShowChart}
+                        chartType={chartType}
+                        setChartType={setChartType}
+                        chartX={chartX}
+                        setChartX={setChartX}
+                        chartY={chartY}
+                        setChartY={setChartY}
+                        handleDropChartX={handleDropChartX}
+                        handleDropChartY={handleDropChartY}
+                    />
 
-              <FiltersConfig
-                filters={filters}
-                setFilters={setFilters}
-                handleDropFilter={handleDropFilter}
-              />
+                    <FiltersConfig
+                        filters={filters}
+                        setFilters={setFilters}
+                        handleDropFilter={handleDropFilter}
+                    />
 
-              {mode !== "SQL" && (
-                <DrillThroughConfig
-                  drillConfig={drillConfig}
-                  setDrillConfig={setDrillConfig}
-                  availableReports={availableReports}
-                  tableColumns={tableColumns}
-                  targetReportFields={targetReportFields}
-                />
-              )}
+                    <DrillThroughConfig
+                        drillConfig={drillConfig}
+                        setDrillConfig={setDrillConfig}
+                        availableReports={availableReports}
+                        tableColumns={tableColumns}
+                        targetReportFields={targetReportFields}
+                    />
+                </>
+             )}
           </div>
         </div>
       </div>

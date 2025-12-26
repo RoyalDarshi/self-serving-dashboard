@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Database, Search, Table2, Layers, Binary, ChevronLeft, ChevronRight, LayoutGrid } from "lucide-react";
+import { Database, Search, Table2, Layers, Binary, ChevronLeft, ChevronRight, LayoutGrid, XCircle } from "lucide-react";
 import { Schema, Fact, Dimension } from "../../../services/api";
 import { DraggableField } from "./DraggableField";
 import { DraggableSemanticItem } from "./DraggableSemanticItem";
@@ -37,22 +37,41 @@ export const DataSourcePanel: React.FC<DataSourcePanelProps> = ({
     searchQuery,
     onSearchQueryChange,
 }) => {
-    // Derived Data
+    // --- 1. Filter Tables (Schemas) ---
+    const filteredSchemas = useMemo(() => {
+        if (!searchQuery) return schemas;
+        return schemas.filter((s) => 
+            s.tableName.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [schemas, searchQuery]);
+
+    // --- 2. Filter Columns (for selected table) ---
     const availableColumns = useMemo(() => {
         if (!baseTable) return [];
         return schemas.find((s) => s.tableName === baseTable)?.columns || [];
     }, [baseTable, schemas]);
 
-    const filteredColumns = availableColumns.filter((c) =>
-        c.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredColumns = useMemo(() => {
+        if (!searchQuery) return availableColumns;
+        return availableColumns.filter((c) =>
+            c.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [availableColumns, searchQuery]);
 
-    const filteredFacts = facts.filter((f) =>
-        f.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    const filteredDimensions = dimensions.filter((d) =>
-        d.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // --- 3. Filter Semantic Items ---
+    const filteredFacts = useMemo(() => {
+        if (!searchQuery) return facts;
+        return facts.filter((f) =>
+            f.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [facts, searchQuery]);
+
+    const filteredDimensions = useMemo(() => {
+        if (!searchQuery) return dimensions;
+        return dimensions.filter((d) =>
+            d.name.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [dimensions, searchQuery]);
 
     return (
         <>
@@ -86,11 +105,19 @@ export const DataSourcePanel: React.FC<DataSourcePanelProps> = ({
                     <div className="relative group">
                         <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-400 group-focus-within:text-indigo-500 transition-colors" />
                         <input
-                            className="w-full pl-10 pr-3 py-2 text-sm bg-zinc-50 border border-transparent focus:bg-white focus:border-indigo-200 focus:ring-4 focus:ring-indigo-50/50 rounded-xl outline-none transition-all placeholder:text-zinc-400"
-                            placeholder="Search fields..."
+                            className="w-full pl-10 pr-8 py-2 text-sm bg-zinc-50 border border-transparent focus:bg-white focus:border-indigo-200 focus:ring-4 focus:ring-indigo-50/50 rounded-xl outline-none transition-all placeholder:text-zinc-400"
+                            placeholder={baseTable ? `Search in ${baseTable}...` : "Search tables..."}
                             value={searchQuery}
                             onChange={(e) => onSearchQueryChange(e.target.value)}
                         />
+                        {searchQuery && (
+                            <button 
+                                onClick={() => onSearchQueryChange("")}
+                                className="absolute right-3 top-2.5 text-zinc-400 hover:text-zinc-600"
+                            >
+                                <XCircle className="w-4 h-4" />
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -100,16 +127,26 @@ export const DataSourcePanel: React.FC<DataSourcePanelProps> = ({
                         !baseTable ? (
                             <div className="space-y-1">
                                 <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2 px-2">
-                                    Select Source Table
+                                    {searchQuery ? "Matching Tables" : "Select Source Table"}
                                 </p>
-                                {schemas.map((s) => (
+                                {filteredSchemas.length === 0 && searchQuery && (
+                                     <div className="text-center py-8 text-xs text-zinc-400">
+                                        No tables found matching "{searchQuery}"
+                                     </div>
+                                )}
+                                {filteredSchemas.map((s) => (
                                     <button
                                         key={s.tableName}
-                                        onClick={() => onBaseTableChange(s.tableName)}
+                                        onClick={() => {
+                                            onBaseTableChange(s.tableName);
+                                            onSearchQueryChange(""); // Clear search on selection
+                                        }}
                                         className="w-full text-left px-3 py-2.5 text-sm text-zinc-600 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg transition-all flex items-center gap-3 group border border-transparent hover:border-indigo-100"
                                     >
                                         <Table2 className="w-4 h-4 text-zinc-400 group-hover:text-indigo-500" />
-                                        <span className="font-medium">{s.tableName}</span>
+                                        <span className="font-medium truncate" title={s.tableName}>
+                                            {s.tableName}
+                                        </span>
                                     </button>
                                 ))}
                             </div>
@@ -123,14 +160,24 @@ export const DataSourcePanel: React.FC<DataSourcePanelProps> = ({
                                         </span>
                                     </div>
                                     <button
-                                        onClick={() => onBaseTableChange("")}
+                                        onClick={() => {
+                                            onBaseTableChange("");
+                                            onSearchQueryChange("");
+                                        }}
                                         className="text-[10px] bg-white border border-indigo-200 text-indigo-600 hover:text-indigo-800 font-bold px-2 py-1 rounded-lg hover:bg-indigo-50 transition-colors shadow-sm"
                                     >
                                         Change
                                     </button>
                                 </div>
                                 <div className="space-y-1.5 pt-1">
-                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">Columns</p>
+                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">
+                                        {searchQuery ? "Matching Columns" : "Columns"}
+                                    </p>
+                                    {filteredColumns.length === 0 && searchQuery && (
+                                         <div className="text-center py-4 text-xs text-zinc-400">
+                                            No columns found
+                                         </div>
+                                    )}
                                     {filteredColumns.map((col) => (
                                         <DraggableField
                                             key={col.name}
@@ -149,6 +196,9 @@ export const DataSourcePanel: React.FC<DataSourcePanelProps> = ({
                                 <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2 px-2 flex items-center gap-1.5">
                                     <Binary className="w-3.5 h-3.5" /> Facts (Metrics)
                                 </h3>
+                                {filteredFacts.length === 0 && searchQuery && (
+                                    <div className="text-xs text-zinc-400 px-2 italic">No matching metrics</div>
+                                )}
                                 <div className="space-y-1.5">
                                     {filteredFacts.map((fact) => (
                                         <DraggableSemanticItem
@@ -164,6 +214,9 @@ export const DataSourcePanel: React.FC<DataSourcePanelProps> = ({
                                 <h3 className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2 px-2 flex items-center gap-1.5">
                                     <LayoutGrid className="w-3.5 h-3.5" /> Dimensions
                                 </h3>
+                                {filteredDimensions.length === 0 && searchQuery && (
+                                    <div className="text-xs text-zinc-400 px-2 italic">No matching dimensions</div>
+                                )}
                                 <div className="space-y-1.5">
                                     {filteredDimensions.map((dim) => (
                                         <DraggableSemanticItem

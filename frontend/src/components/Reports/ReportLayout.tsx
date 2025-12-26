@@ -1,54 +1,78 @@
-// Simple layout combining list + viewer + builder
 import React, { useState } from "react";
 import ReportList from "./ReportList";
 import ReportViewer from "./ReportViewer";
 import ReportBuilder from "./ReportBuilder";
 import { Connection } from "../../services/api";
 
-const ReportLayout: React.FC<{ connections: Connection[] }> = ({ connections }) => {
-  const [mode, setMode] = useState<"list" | "view" | "build">("list");
-  const [currentReportId, setCurrentReportId] = useState<number | null>(null);
+type ViewMode = "LIST" | "VIEW" | "BUILD";
 
-  const handleOpenReport = (id: number) => {
-    setCurrentReportId(id);
-    setMode("view");
+const ReportLayout: React.FC<{ connections: Connection[] }> = ({ connections }) => {
+  const [mode, setMode] = useState<ViewMode>("LIST");
+  const [activeReportId, setActiveReportId] = useState<number | null>(null);
+
+  // --- ACTIONS ---
+
+  const handleCreateNew = () => {
+    setActiveReportId(null); // Clear ID for new report
+    setMode("BUILD");
   };
 
-  const handleNewReport = () => {
-    setMode("build");
+  const handleEditReport = (id: number) => {
+    setActiveReportId(id);
+    setMode("BUILD");
+  };
+
+  const handleOpenReport = (id: number) => {
+    setActiveReportId(id);
+    setMode("VIEW");
   };
 
   const handleSaved = (id: number) => {
-    setCurrentReportId(id);
-    setMode("view");
+    setActiveReportId(id);
+    setMode("VIEW"); // Go to view mode after saving
   };
 
+  const handleClose = () => {
+    setMode("LIST");
+    setActiveReportId(null);
+  };
+
+  // --- RENDER ---
+
   return (
-    <div className="flex h-full">
-      <div className="w-1/3 border-r border-slate-200">
+    <div className="h-full w-full bg-slate-50">
+      {mode === "LIST" && (
         <ReportList
           onOpenReport={handleOpenReport}
-          onCreateNew={handleNewReport}
+          onCreateNew={handleCreateNew}
+          onEditReport={handleEditReport}
         />
-      </div>
-      <div className="flex-1">
-        {mode === "view" && currentReportId && (
-          <ReportViewer
-            initialReportId={currentReportId}
-          />
-        )}
-        {mode === "build" && (
-          <ReportBuilder
-            connections={connections}
-            onSaved={handleSaved}
-          />
-        )}
-        {mode === "list" && !currentReportId && (
-          <div className="flex items-center justify-center h-full text-sm text-slate-500">
-            Select a report from the left or create a new one.
-          </div>
-        )}
-      </div>
+      )}
+
+      {mode === "BUILD" && (
+        <div className="h-full relative z-0">
+            {/* Optional: Add a 'Back' button overlay if needed, 
+                but usually users Save to exit or we add a Cancel button in Builder */}
+            <button 
+                onClick={handleClose}
+                className="fixed top-4 right-4 z-50 px-4 py-2 bg-white/90 backdrop-blur text-slate-600 text-xs font-bold rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50"
+            >
+                Exit Builder
+            </button>
+            <ReportBuilder
+                connections={connections}
+                onSaved={handleSaved}
+                initialReportId={activeReportId || undefined}
+            />
+        </div>
+      )}
+
+      {mode === "VIEW" && activeReportId && (
+        <ReportViewer
+          initialReportId={activeReportId}
+          onClose={handleClose}
+        />
+      )}
     </div>
   );
 };

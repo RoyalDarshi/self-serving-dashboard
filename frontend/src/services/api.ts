@@ -69,6 +69,8 @@ export interface ReportDefinition {
   connection_id: number;
   base_table: string;
   visualization_config?: string;
+  report_type?: "TABLE" | "SEMANTIC" | "SQL"; // Added
+  sql_text?: string; // Added
   created_at?: string;
   updated_at?: string;
 }
@@ -76,6 +78,7 @@ export interface ReportDefinition {
 export interface ReportColumn {
   id?: number;
   report_id?: number;
+  table_name?: string; // Added
   column_name: string;
   alias?: string | null;
   data_type?: string | null;
@@ -87,23 +90,26 @@ export interface ReportVisualization {
   showChart: boolean;
   chartType: "bar" | "line" | "pie" | "area";
   xAxisColumn: string;
-  yAxisColumns: string[]; // Columns to aggregate (e.g., Sum of Sales)
+  yAxisColumns: string[]; 
   aggregation: "SUM" | "COUNT" | "AVG";
+  factIds?: number[]; // Added for Semantic
+  dimensionIds?: number[]; // Added for Semantic
 }
 
 export interface ReportFilter {
   id?: number;
   report_id?: number;
   column_name: string;
+  table_name?: string; // Added
   operator: string;
-  value: any; // can be string or array
+  value: any; 
   is_user_editable?: boolean;
   order_index?: number;
 }
 
 export interface ReportDrillConfig {
   target_report_id: number;
-  mapping_json: string; // JSON string from backend
+  mapping_json: any; // Changed from string to any to handle object directly if needed
   label?: string | null;
 }
 
@@ -118,20 +124,13 @@ export interface FullReportConfig {
 export interface RunReportResponse {
   mode: "chart" | "table" | "sql";
   sql: string;
-
-  // chart mode
-  data?: Record<string, any>[];
-
-  // table mode
-  rows?: Record<string, any>[];
+  data?: Record<string, any>[]; // chart data
+  rows?: Record<string, any>[]; // table rows
   page?: number;
   pageSize?: number;
-
-  // sql mode
-  preview?: Record<string, any>[];
+  preview?: Record<string, any>[]; // sql preview
   rowCount?: number;
 }
-
 
 export interface AggregationResponse {
   sql?: string;
@@ -200,6 +199,7 @@ export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
+  reportId?: number; // Added specific field often returned
 }
 
 export interface AuthResponse {
@@ -255,7 +255,8 @@ const createApiFetch = <T = unknown>(
         return { success: false, error: data.error || "Request failed" };
       }
 
-      return { success: true, data };
+      // Merge top-level properties into data if data is an object, or return as is
+      return { success: true, data, reportId: data.reportId }; 
     })
     .catch((error) => ({
       success: false,
@@ -504,7 +505,9 @@ export const apiService = {
   deleteChart: (chartId: string): Promise<ApiResponse<unknown>> =>
     createApiFetch(`/dashboard/chart/${chartId}`, "DELETE"),
 
-  // Report Management (Refactored)
+  // --------------------------------------------------------------------------
+  // Report Management
+  // --------------------------------------------------------------------------
   getReports: (): Promise<ReportDefinition[]> =>
     createApiFetch<ReportDefinition[]>("/reports/list", "GET").then(
       (response) => (response.success ? response.data || [] : [])
@@ -513,26 +516,45 @@ export const apiService = {
   getReportConfig: (reportId: number): Promise<ApiResponse<FullReportConfig>> =>
     createApiFetch(`/reports/${reportId}`, "GET"),
 
+  // Create New Report
   saveReport: (payload: {
-    id?: number;
     name: string;
     description?: string;
     connection_id: number;
     base_table: string;
     columns: ReportColumn[];
     filters: ReportFilter[];
-  }): Promise<ApiResponse<{ reportId?: number }>> => {
-    const method = payload.id ? "PUT" : "POST";
-    const endpoint = payload.id ? `/reports/${payload.id}` : "/reports/save";
-    return createApiFetch(endpoint, method, payload);
-  },
+    visualization_config?: any;
+    drillTargets?: ReportDrillConfig[];
+    report_type?: string;
+    sql_text?: string | null;
+  }): Promise<ApiResponse<{ reportId?: number }>> =>
+    createApiFetch("/reports/save", "POST", payload),
 
-  // Add this new function
+  // 🔥 ADDED THIS FUNCTION
+  updateReport: (
+    id: number,
+    payload: {
+      name: string;
+      description?: string;
+      connection_id: number;
+      base_table: string;
+      columns: ReportColumn[];
+      filters: ReportFilter[];
+      visualization_config?: any;
+      drillTargets?: ReportDrillConfig[];
+      report_type?: string;
+      sql_text?: string | null;
+    }
+  ): Promise<ApiResponse<{ reportId?: number }>> =>
+    createApiFetch(`/reports/${id}`, "PUT", payload),
+
   previewReport: (payload: {
     connection_id: number;
     base_table: string;
     columns: ReportColumn[];
     filters: ReportFilter[];
+    visualization_config?: any; // Added for Semantic/Charts
   }): Promise<ApiResponse<RunReportResponse>> =>
     createApiFetch("/reports/preview", "POST", payload),
 
@@ -564,7 +586,6 @@ export const apiService = {
       "GET"
     ).then((response) => (response.success ? response.data || [] : [])),
 
-  // For chart drill-through
   getChartDrillConfig: (
     chartId: string
   ): Promise<
