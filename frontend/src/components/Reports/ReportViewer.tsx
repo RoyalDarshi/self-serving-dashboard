@@ -5,6 +5,7 @@ import { SqlDisplay } from "./components/SqlDisplay";
 import { ChartSection } from "./components/ChartSection";
 import { TableSection } from "./components/TableSection";
 import { ArrowLeft, Share2, BarChart2, Table as TableIcon } from "lucide-react";
+import TemplateRenderer from "./components/TemplateRenderer";
 
 interface ReportViewerProps {
   initialReportId?: number;
@@ -30,6 +31,17 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
   const [sql, setSql] = useState<string>("");
   const [filterInputs, setFilterInputs] = useState<Record<string, string>>({});
   const [activeFilters, setActiveFilters] = useState<Record<string, any>>({});
+
+  const templateType = config?.report?.template_type || null;
+  const template =
+    typeof config?.report?.template_json === "string"
+      ? JSON.parse(config.report.template_json)
+      : config?.report?.template_json;
+
+  const templateJson =
+    typeof config?.report?.template_json === "string"
+      ? JSON.parse(config.report.template_json)
+      : config?.report?.template_json;
 
   useEffect(() => {
     if (initialReportId) {
@@ -167,38 +179,40 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
-          <button
-            onClick={() => setViewMode("table")}
-            className={`p-2 rounded-md transition-all ${
-              viewMode === "table"
-                ? "bg-white text-indigo-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <TableIcon className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setViewMode("chart")}
-            className={`p-2 rounded-md transition-all ${
-              viewMode === "chart"
-                ? "bg-white text-indigo-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <BarChart2 className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setViewMode("both")}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-              viewMode === "both"
-                ? "bg-white text-indigo-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            BOTH
-          </button>
-        </div>
+        {!templateType && (
+          <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+            <button
+              onClick={() => setViewMode("table")}
+              className={`p-2 rounded-md transition-all ${
+                viewMode === "table"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <TableIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("chart")}
+              className={`p-2 rounded-md transition-all ${
+                viewMode === "chart"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <BarChart2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode("both")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                viewMode === "both"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              BOTH
+            </button>
+          </div>
+        )}
         <button
           onClick={() => setShareOpen(true)}
           className="ml-4 p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
@@ -280,33 +294,53 @@ const ReportViewer: React.FC<ReportViewerProps> = ({
         )}
 
         {/* CHART */}
-        {viewMode !== "table" && config && !hasMissingMandatoryFilters() && (
-          <div className="w-full min-w-0">
-            <ChartSection
-              data={chartData}
-              config={config}
-              resolveKey={resolveKey}
-              onDrill={handleDrill}
-              colors={COLORS}
-            />
-          </div>
+        {/* ================= TEMPLATE RENDERING ================= */}
+
+        {templateType === "MARKSHEET" && !hasMissingMandatoryFilters() && (
+          <TemplateRenderer rows={tableRows} template={templateJson} />
         )}
 
-        {/* TABLE */}
-        {viewMode !== "chart" && config && !hasMissingMandatoryFilters() && (
-          <div className="w-full min-w-0">
-            <TableSection
-              rows={tableRows}
-              config={config}
-              currentPage={currentPage}
-              resolveKey={resolveKey}
-              onPageChange={(p) => {
-                setCurrentPage(p);
-                loadTable(config.report.id, activeFilters, p);
-              }}
-              onDrill={handleDrill}
-            />
-          </div>
+        {/* ================= NORMAL REPORT ================= */}
+
+        {!templateType && (
+          <>
+            {/* CHART */}
+            {viewMode !== "table" &&
+              config &&
+              !hasMissingMandatoryFilters() && (
+                <div className="w-full min-w-0">
+                  <ChartSection
+                    data={chartData}
+                    config={config}
+                    resolveKey={resolveKey}
+                    onDrill={handleDrill}
+                    colors={COLORS}
+                  />
+                </div>
+              )}
+
+            {/* TABLE */}
+            {config &&
+            !hasMissingMandatoryFilters() &&
+            template?.sections?.length ? (
+              <TemplateRenderer rows={tableRows} template={template} />
+            ) : (
+              viewMode !== "chart" &&
+              config && (
+                <TableSection
+                  rows={tableRows}
+                  config={config}
+                  currentPage={currentPage}
+                  resolveKey={resolveKey}
+                  onPageChange={(p) => {
+                    setCurrentPage(p);
+                    loadTable(config.report.id, activeFilters, p);
+                  }}
+                  onDrill={handleDrill}
+                />
+              )
+            )}
+          </>
         )}
       </div>
 

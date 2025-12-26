@@ -244,6 +244,8 @@ router.post("/save", async (req, res) => {
     drillTargets = [],
     report_type = "TABLE",
     sql_text = null,
+    template_json = null, // 🔥 NEW
+    template_type = null,
   } = req.body;
 
   if (!name || !connection_id) {
@@ -276,9 +278,13 @@ router.post("/save", async (req, res) => {
 
     // ---------------- SAVE REPORT ----------------
     const result = await db.run(
-      `INSERT INTO reports
-       (user_id, connection_id, name, description, base_table, visualization_config, report_type, sql_text)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO reports (
+  user_id, connection_id, name, description, base_table,
+  visualization_config, report_type, sql_text,
+  template_json, template_type
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`,
       [
         user.userId,
         connection_id,
@@ -288,6 +294,8 @@ router.post("/save", async (req, res) => {
         JSON.stringify(visualization_config || {}),
         report_type,
         sql_text,
+        JSON.stringify(template_json || null),
+        template_type || null,
       ]
     );
 
@@ -441,13 +449,14 @@ router.post("/preview", async (req, res) => {
     }
 
     const fixedFilters = filters
-      .filter(f => f.value !== "" && f.value !== null && f.value !== undefined)
-      .map(f => ({
+      .filter(
+        (f) => f.value !== "" && f.value !== null && f.value !== undefined
+      )
+      .map((f) => ({
         column: `${f.table_name}.${f.column_name}`, // ✅ NO GUESSING
         operator: f.operator,
         value: f.value,
       }));
-
 
     const limit = 100;
     // --------------------------------------------------
@@ -461,7 +470,6 @@ router.post("/preview", async (req, res) => {
       group_by,
       limit,
     });
-
 
     // --------------------------------------------------
     // 4️⃣ OUTER QUERY (DISPLAY NAMES)
@@ -477,7 +485,6 @@ router.post("/preview", async (req, res) => {
         return `${q(innerAlias)} AS ${q(c.column_name)}`;
       })
       .join(", ");
-
 
     const finalSQL = `
       SELECT ${outerSelect}
@@ -570,13 +577,14 @@ router.put("/:id", async (req, res) => {
     filters = [],
     visualization_config,
     drillTargets = [],
+    template_json = null, // 🔥 NEW
+    template_type = null,
   } = req.body;
 
   try {
-    const report = await db.get(
-      `SELECT user_id FROM reports WHERE id = ?`,
-      [id]
-    );
+    const report = await db.get(`SELECT user_id FROM reports WHERE id = ?`, [
+      id,
+    ]);
 
     if (!report) {
       return res.status(404).json({ error: "Report not found" });
@@ -592,14 +600,24 @@ router.put("/:id", async (req, res) => {
 
     // ---------------- UPDATE REPORT META ----------------
     await db.run(
-      `UPDATE reports
-       SET name = ?, description = ?, visualization_config = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
+      `
+  UPDATE reports
+  SET
+    name = ?,
+    description = ?,
+    visualization_config = ?,
+    template_json = ?,
+    template_type = ?,
+    updated_at = CURRENT_TIMESTAMP
+  WHERE id = ?
+  `,
       [
         name,
         description || null,
         JSON.stringify(visualization_config || {}),
-        id,
+        template_json ? JSON.stringify(template_json) : null,
+        template_type || null, // ✅ THIS WAS MISSING
+        id, // ✅ WHERE id = ?
       ]
     );
 
@@ -613,7 +631,7 @@ router.put("/:id", async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
-          col.table_name || null,     // 🔥 CRITICAL
+          col.table_name || null, // 🔥 CRITICAL
           col.column_name,
           col.alias || null,
           col.data_type || null,
@@ -633,7 +651,7 @@ router.put("/:id", async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
-          f.table_name || null,       // 🔥 CRITICAL
+          f.table_name || null, // 🔥 CRITICAL
           f.column_name,
           f.operator || "=",
           JSON.stringify(f.value ?? ""),
@@ -644,10 +662,9 @@ router.put("/:id", async (req, res) => {
     }
 
     // ---------------- REPLACE DRILL TARGETS ----------------
-    await db.run(
-      `DELETE FROM report_drillthrough WHERE parent_report_id = ?`,
-      [id]
-    );
+    await db.run(`DELETE FROM report_drillthrough WHERE parent_report_id = ?`, [
+      id,
+    ]);
 
     for (const dt of drillTargets || []) {
       await db.run(

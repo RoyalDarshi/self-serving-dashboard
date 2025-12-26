@@ -192,6 +192,8 @@ const SCHEMAS = {
       base_table TEXT NOT NULL,
       visualization_config TEXT,
 
+      template_json TEXT,              -- 🔥 NEW
+
       -- 🔥 NEW
       report_type TEXT DEFAULT 'TABLE',  -- TABLE | SEMANTIC | SQL
       sql_text TEXT,                     -- custom SELECT query
